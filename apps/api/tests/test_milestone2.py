@@ -27,6 +27,17 @@ def test_quota_deduction_and_idempotency(db):
     assert balance(db,"u","resume") == 1
 
 
+def test_quota_idempotency_is_scoped_by_user_and_type(db):
+    first = change(db, user_id="user-a", quota_type="resume", delta=2, reason="grant", idempotency_key="shared-key")
+    second = change(db, user_id="user-b", quota_type="resume", delta=3, reason="grant", idempotency_key="shared-key")
+    third = change(db, user_id="user-a", quota_type="application", delta=4, reason="grant", idempotency_key="shared-key")
+    db.commit()
+    assert len({first.id, second.id, third.id}) == 3
+    assert balance(db, "user-a", "resume") == 2
+    assert balance(db, "user-b", "resume") == 3
+    assert balance(db, "user-a", "application") == 4
+
+
 def test_application_valid_and_invalid_transitions(client, db):
     user = register(client)
     job = Job(created_by=user["id"],company_name="示例",title="工程师",raw_jd="负责机械设计",content_hash="1")
@@ -40,3 +51,18 @@ def test_application_valid_and_invalid_transitions(client, db):
     events = client.get(f"/api/applications/{app['id']}/events").json()
     assert events["total"] == 2
 
+
+def test_application_create_is_idempotent(client, db):
+    user = register(client)
+    job = Job(created_by=user["id"], company_name="示例", title="工程师", raw_jd="负责机械设计", content_hash="2")
+    db.add(job); db.flush()
+    change(db, user_id=user["id"], quota_type="application", delta=2, reason="test", idempotency_key="grant-app-idempotent")
+    db.commit()
+    headers = {"Idempotency-Key": "same-application-request"}
+    first = client.post("/api/applications", headers=headers, json={"job_id": job.id})
+    second = client.post("/api/applications", headers=headers, json={"job_id": job.id})
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] == second.json()["id"]
+    assert db.query(Application).count() == 1
+    assert balance(db, user["id"], "application") == 1

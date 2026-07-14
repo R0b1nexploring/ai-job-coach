@@ -38,10 +38,24 @@ async def create_version(data: VersionIn, idempotency_key: str | None = Header(d
     if not all([resume, job, match]): raise AppError("RESOURCE_NOT_FOUND", "简历、岗位或匹配报告不存在。", 404)
     if not resume.facts_confirmed_at: raise AppError("RESUME_FACTS_NOT_CONFIRMED", "请先确认简历事实库后再生成定制版本。", 409)
     key = idempotency_key or f"resume-version:{user.id}:{uuid.uuid4()}"
-    existing_ledger = db.scalar(select(QuotaLedger).where(QuotaLedger.idempotency_key == key))
+    existing_ledger = db.scalar(
+        select(QuotaLedger).where(
+            QuotaLedger.user_id == user.id,
+            QuotaLedger.quota_type == "resume",
+            QuotaLedger.idempotency_key == key,
+        )
+    )
     if existing_ledger and existing_ledger.reference_id:
-        existing = db.get(ResumeVersion, existing_ledger.reference_id)
-        if existing: return dump(existing)
+        existing = db.scalar(
+            select(ResumeVersion).where(
+                ResumeVersion.id == existing_ledger.reference_id,
+                ResumeVersion.user_id == user.id,
+            )
+        )
+        if existing:
+            return dump(existing)
+    if existing_ledger:
+        raise AppError("IDEMPOTENCY_KEY_REUSED", "该幂等键已用于其他额度操作，请更换后重试。", 409)
     facts = list(db.scalars(select(ResumeFact).where(ResumeFact.resume_id == resume.id, ResumeFact.user_id == user.id)))
     content, guard_status, new_claims = generate_resume(facts, job, data.inject_unverified)
     version = ResumeVersion(user_id=user.id, base_resume_id=resume.id, job_id=job.id, title=f"{job.company_name} - {job.title}", content_json=content, traceability_json={"new_claims": new_claims}, guard_status=guard_status)
@@ -103,10 +117,31 @@ class ApplicationIn(BaseModel):
 async def create_application(data: ApplicationIn, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), user: User = Depends(current_user), db: Session = Depends(get_db)):
     job = db.scalar(select(Job).where(Job.id == data.job_id, Job.created_by == user.id))
     if not job: raise AppError("JOB_NOT_FOUND", "岗位不存在。", 404)
-    if data.resume_version_id: owned_version(db, user, data.resume_version_id)
+    version = owned_version(db, user, data.resume_version_id) if data.resume_version_id else None
+    if version and version.job_id != job.id:
+        raise AppError("RESUME_VERSION_JOB_MISMATCH", "定制简历与所选岗位不一致。", 409)
+    key = idempotency_key or f"application:{user.id}:{uuid.uuid4()}"
+    existing_ledger = db.scalar(
+        select(QuotaLedger).where(
+            QuotaLedger.user_id == user.id,
+            QuotaLedger.quota_type == "application",
+            QuotaLedger.idempotency_key == key,
+        )
+    )
+    if existing_ledger and existing_ledger.reference_type == "application" and existing_ledger.reference_id:
+        existing = db.scalar(
+            select(Application).where(
+                Application.id == existing_ledger.reference_id,
+                Application.user_id == user.id,
+            )
+        )
+        if existing:
+            return dump(existing)
+    if existing_ledger:
+        raise AppError("IDEMPOTENCY_KEY_REUSED", "该幂等键已用于其他额度操作，请更换后重试。", 409)
     app = Application(user_id=user.id, job_id=job.id, resume_version_id=data.resume_version_id, source_url=job.source_url, notes=data.notes)
     db.add(app); db.flush()
-    change(db, user_id=user.id, quota_type="application", delta=-1, reason="加入投递队列", idempotency_key=idempotency_key or f"application:{app.id}", reference_type="application", reference_id=app.id)
+    change(db, user_id=user.id, quota_type="application", delta=-1, reason="加入投递队列", idempotency_key=key, reference_type="application", reference_id=app.id)
     db.add(ApplicationEvent(application_id=app.id, from_status=None, to_status=app.status, actor_user_id=user.id, note="创建投递")); db.commit(); return dump(app)
 
 
@@ -168,6 +203,9 @@ class InterviewIn(BaseModel):
 async def create_interview(data: InterviewIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     job = db.scalar(select(Job).where(Job.id == data.job_id, Job.created_by == user.id))
     if not job: raise AppError("JOB_NOT_FOUND", "岗位不存在。", 404)
+    version = owned_version(db, user, data.resume_version_id) if data.resume_version_id else None
+    if version and version.job_id != job.id:
+        raise AppError("RESUME_VERSION_JOB_MISMATCH", "定制简历与所选岗位不一致。", 409)
     change(db, user_id=user.id, quota_type="interview", delta=-1, reason="创建模拟面试", idempotency_key=f"interview:{user.id}:{uuid.uuid4()}")
     questions = generate_questions(job)
     row = Interview(user_id=user.id, job_id=job.id, resume_version_id=data.resume_version_id, question_set_json=questions)

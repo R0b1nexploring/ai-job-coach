@@ -238,7 +238,14 @@ class Order(Base):
 
 class QuotaLedger(Base):
     __tablename__ = "quota_ledger"
-    __table_args__ = (UniqueConstraint("idempotency_key"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "quota_type",
+            "idempotency_key",
+            name="uq_quota_ledger_user_type_idempotency",
+        ),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     order_id: Mapped[str | None] = mapped_column(ForeignKey("orders.id"), nullable=True)
@@ -272,4 +279,3 @@ class Notification(Base):
     body: Mapped[str] = mapped_column(Text)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-

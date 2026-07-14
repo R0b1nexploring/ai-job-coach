@@ -10,7 +10,13 @@ def balance(db: Session, user_id: str, quota_type: str) -> int:
 
 
 def change(db: Session, *, user_id: str, quota_type: str, delta: int, reason: str, idempotency_key: str, order_id: str | None = None, reference_type: str = "", reference_id: str = ""):
-    existing = db.scalar(select(QuotaLedger).where(QuotaLedger.idempotency_key == idempotency_key))
+    existing = db.scalar(
+        select(QuotaLedger).where(
+            QuotaLedger.user_id == user_id,
+            QuotaLedger.quota_type == quota_type,
+            QuotaLedger.idempotency_key == idempotency_key,
+        )
+    )
     if existing:
         return existing
     if delta < 0 and balance(db, user_id, quota_type) + delta < 0:
@@ -19,4 +25,3 @@ def change(db: Session, *, user_id: str, quota_type: str, delta: int, reason: st
     db.add(row)
     db.flush()
     return row
-
