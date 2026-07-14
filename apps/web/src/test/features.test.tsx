@@ -46,9 +46,10 @@ test('API 错误保留后端中文消息', async () => {
 
 test('顾问九队列同时展示空状态和任务状态', async () => {
   const names = ['新线索','待咨询','待付款','待核实','待修改','待投递','有面试','待复盘','退款/争议']
-  const queues = names.map((name, index) => ({ name, count: index === 4 ? 1 : 0, items: index === 4 ? [{ id: 'v1', user_id: 'user1', risk: 'medium', next_action: '审核简历' }] : [] }))
+  const queues = names.map((name, index) => ({ name, count: index === 4 ? 1 : 0, items: index === 4 ? [{ id: 'v1', user_id: 'user1', type: 'resume', risk: 'medium', next_action: '审核简历', can_review: true }] : [] }))
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ queues }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
   shell(<Advisor />)
   expect(await screen.findByText('审核简历')).toBeVisible()
+  expect(screen.getByRole('button', { name: '批准简历' })).toBeVisible()
   expect(screen.getAllByText('当前无任务')).toHaveLength(8)
 })

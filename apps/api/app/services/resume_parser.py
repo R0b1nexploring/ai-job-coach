@@ -21,7 +21,13 @@ def parse_resume(content: bytes, media_type: str, filename: str) -> tuple[str, l
     try:
         if suffix == ".docx":
             doc = Document(io.BytesIO(content))
-            text = "\n".join(p.text.strip() for p in doc.paragraphs if p.text.strip())
+            parts = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+            for table in doc.tables:
+                for row in table.rows:
+                    cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                    if cells:
+                        parts.append(" | ".join(dict.fromkeys(cells)))
+            text = "\n".join(parts)
         else:
             with pdfplumber.open(io.BytesIO(content)) as pdf:
                 text = "\n".join((page.extract_text() or "") for page in pdf.pages).strip()
@@ -45,4 +51,3 @@ def extract_facts(text: str) -> list[dict]:
         category = next((cat for cat, pattern in categories if re.search(pattern, line, re.I)), "other")
         facts.append({"category": category, "label": line[:30], "value_json": {"text": line}, "source_text": line})
     return facts[:30]
-

@@ -66,11 +66,15 @@ PowerShell：`.\scripts\test.ps1`。单独运行 E2E 前先启动前后端，或
 | 顾问 | `advisor@example.test` |
 | 用户 | `user@example.test` |
 
-种子脚本给 Demo 用户发放 20 次定制简历、40 次辅助投递和 2 次模拟面试额度。管理员也可通过 `POST /api/admin/quotas/grant` 发放/调整额度；必须填写原因和幂等键并写入审计日志。
+种子脚本给 Demo 用户发放 20 次匹配、20 次定制简历、40 次辅助投递和 2 次模拟面试额度。管理员也可通过 `POST /api/admin/quotas/grant` 发放/调整额度；必须填写原因和幂等键并写入审计日志。
 
 ## 数据与边界
 
-上传仅支持 DOCX 和文本型 PDF（扫描 PDF 不支持 OCR）。岗位仅支持人工粘贴、用户公开链接及受控样例；系统不保存招聘平台密码、不绕过登录/验证码、不承诺 Offer。原始上传、SQLite 与导出文件位于被 Git 忽略的 `var/`。
+上传支持 DOCX（含表格文字）和文本型 PDF（扫描 PDF 不支持 OCR）。批准后的定制版本可下载 DOCX，也可预览/下载单页 HTML 后通过浏览器打印 PDF。岗位仅支持人工粘贴、用户公开链接及受控样例；系统不保存招聘平台密码、不绕过登录/验证码、不承诺 Offer。原始上传、SQLite 与导出文件位于被 Git 忽略的 `var/`。
+
+系统允许纠正解析事实和加入真实完成的个人/课程/岗位实践项目，但不生成虚构雇主、任职、奖项、证书或冒用他人成果。普通用户提交定制简历后须由被分配顾问审核，事实检查和审核均通过后才能导出或进入正式投递队列。详见 [`docs/resume-integrity.md`](docs/resume-integrity.md)。
+
+外部简历优化项目的参考范围、许可证注意事项和安全适配见 [`docs/integrations.md`](docs/integrations.md)。
 
 ## 生产迁移
 

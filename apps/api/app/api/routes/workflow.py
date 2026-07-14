@@ -1,9 +1,11 @@
 import io
 import uuid
 from datetime import datetime, timezone
+from typing import Literal
 
 from docx import Document
-from fastapi import APIRouter, Depends, Header, Response
+from fastapi import APIRouter, Depends, Header, Query, Response
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,12 +13,13 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import current_user
 from app.errors import AppError
-from app.models.entities import Application, ApplicationEvent, Interview, Job, Match, Notification, Package, QuotaLedger, Resume, ResumeFact, ResumeVersion, User
+from app.models.entities import Application, ApplicationEvent, AuditLog, Interview, Job, Match, Notification, Package, QuotaLedger, Resume, ResumeFact, ResumeVersion, User
 from app.providers.storage.local import LocalStorage
 from app.services.quota_service import balance, change
 from app.services.report_service import weekly_report
 from app.services.resume_generator import generate_resume
 from app.services.interview_generator import generate_questions
+from app.services.html_resume_renderer import render_resume_html
 from .common import dump, listed
 
 
@@ -83,20 +86,50 @@ async def version_detail(version_id: str, user: User = Depends(current_user), db
 async def submit_review(version_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     row = owned_version(db, user, version_id)
     if row.guard_status != "passed": raise AppError("FACT_GUARD_BLOCKED", "检测到未经确认的新事实，不能提交审核。", 409, row.traceability_json)
-    row.review_status = "advisor_review"; db.commit(); return dump(row)
+    if row.review_status == "approved":
+        return dump(row)
+    row.review_status = "advisor_review"
+    db.add(AuditLog(actor_user_id=user.id, action="resume_version.submitted", entity_type="resume_version", entity_id=row.id))
+    db.commit()
+    return dump(row)
 
 
-@router.post("/resume-versions/{version_id}/approve")
-async def approve_self_demo(version_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def exportable_version(db, user, version_id):
     row = owned_version(db, user, version_id)
-    if row.guard_status != "passed": raise AppError("FACT_GUARD_BLOCKED", "事实检查未通过。", 409)
-    row.review_status = "approved"; row.reviewed_by = user.id; row.reviewed_at = datetime.now(timezone.utc); db.commit(); return dump(row)
+    if row.guard_status != "passed" or row.review_status != "approved": raise AppError("RESUME_NOT_APPROVED", "仅可导出事实检查通过且已审核的简历。", 409)
+    return row
+
+
+def html_security_headers(disposition: str) -> dict[str, str]:
+    return {
+        "Content-Disposition": disposition,
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:",
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+
+
+def audit_export(db: Session, user: User, row: ResumeVersion, format: str) -> None:
+    db.add(AuditLog(actor_user_id=user.id, action="resume_version.exported", entity_type="resume_version", entity_id=row.id, metadata_json={"format": format}))
+    db.commit()
+
+
+@router.get("/resume-versions/{version_id}/preview", response_class=HTMLResponse)
+async def preview_version(version_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    row = exportable_version(db, user, version_id)
+    audit_export(db, user, row, "html_preview")
+    return HTMLResponse(render_resume_html(row.content_json, row.title), headers=html_security_headers("inline"))
 
 
 @router.get("/resume-versions/{version_id}/download")
-async def download_version(version_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    row = owned_version(db, user, version_id)
-    if row.guard_status != "passed" or row.review_status != "approved": raise AppError("RESUME_NOT_APPROVED", "仅可导出事实检查通过且已审核的简历。", 409)
+async def download_version(version_id: str, format: Literal["docx", "html"] = Query(default="docx"), user: User = Depends(current_user), db: Session = Depends(get_db)):
+    row = exportable_version(db, user, version_id)
+    if format == "html":
+        audit_export(db, user, row, "html_download")
+        return HTMLResponse(
+            render_resume_html(row.content_json, row.title),
+            headers=html_security_headers('attachment; filename="tailored-resume.html"'),
+        )
     if not row.export_file_key:
         doc = Document(); doc.add_heading(row.content_json.get("headline", row.title), 0)
         for section in row.content_json.get("sections", []):
@@ -104,6 +137,7 @@ async def download_version(version_id: str, user: User = Depends(current_user), 
             for item in section.get("items", []): doc.add_paragraph(item.get("text", ""), style="List Bullet")
         stream = io.BytesIO(); doc.save(stream); row.export_file_key = LocalStorage().save(stream.getvalue(), ".docx"); db.commit()
     content = LocalStorage().path(row.export_file_key).read_bytes()
+    audit_export(db, user, row, "docx")
     return Response(content=content, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", headers={"Content-Disposition": 'attachment; filename="tailored-resume.docx"'})
 
 
@@ -120,6 +154,8 @@ async def create_application(data: ApplicationIn, idempotency_key: str | None = 
     version = owned_version(db, user, data.resume_version_id) if data.resume_version_id else None
     if version and version.job_id != job.id:
         raise AppError("RESUME_VERSION_JOB_MISMATCH", "定制简历与所选岗位不一致。", 409)
+    if version and (version.guard_status != "passed" or version.review_status != "approved"):
+        raise AppError("RESUME_NOT_APPROVED", "定制简历通过事实检查和顾问审核后才能进入投递队列。", 409)
     key = idempotency_key or f"application:{user.id}:{uuid.uuid4()}"
     existing_ledger = db.scalar(
         select(QuotaLedger).where(

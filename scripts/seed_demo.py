@@ -17,7 +17,14 @@ from app.providers.storage.local import LocalStorage  # noqa: E402
 def seed():
     settings = get_settings()
     with SessionLocal() as db:
-        if db.scalar(select(User).where(User.email == settings.demo_user_email)):
+        existing_user = db.scalar(select(User).where(User.email == settings.demo_user_email))
+        if existing_user:
+            match_key = f"seed:{existing_user.id}:match"
+            if not db.scalar(select(QuotaLedger).where(QuotaLedger.user_id == existing_user.id, QuotaLedger.quota_type == "match", QuotaLedger.idempotency_key == match_key)):
+                db.add(QuotaLedger(user_id=existing_user.id, quota_type="match", delta=20, reason="MVP-1 种子演示额度", reference_type="seed", reference_id="demo-user", idempotency_key=match_key))
+                db.commit()
+                print("Added missing Demo match quota; existing data preserved.")
+                return
             print("Demo data already exists; no changes made.")
             return
         admin = User(email=settings.demo_admin_email, password_hash=hash_password(settings.demo_admin_password), display_name="Demo 管理员", role="admin")
@@ -55,7 +62,7 @@ def seed():
         db.flush()
         match = Match(user_id=user.id, resume_id=resume.id, job_id=jobs[0].id, total_score=68, recommendation="可以尝试", dimension_scores_json={"hard_requirements": 24, "skills": 10, "experience": 16, "keywords": 6, "preferences": 7, "freshness": 5}, evidence_json=[{"requirement": "机械相关本科", "status": "met", "fact_ids": [facts[0].id], "explanation": "专业与学历有已确认事实。"}], gaps_json=[{"requirement": "设备点检", "severity": "medium", "action": "完成设备点检表练习项目"}], confirmations_json=["是否接受轮班"], ai_explanation_json={"summary": "专业和学历匹配，但设备维护证据较弱。", "provider": "mock"})
         db.add(match)
-        for quota, amount in [("resume", 20), ("application", 40), ("interview", 2)]:
+        for quota, amount in [("match", 20), ("resume", 20), ("application", 40), ("interview", 2)]:
             db.add(QuotaLedger(user_id=user.id, quota_type=quota, delta=amount, reason="MVP-1 种子演示额度", reference_type="seed", reference_id="demo-user", idempotency_key=f"seed:{user.id}:{quota}"))
         db.add(Notification(user_id=user.id, title="演示额度已发放", body="种子脚本已发放简历、投递和面试演示额度。在线支付尚未开放。"))
         version = ResumeVersion(user_id=user.id, base_resume_id=resume.id, job_id=jobs[0].id, title="示例制药设备有限公司 - 设备工程师", content_json={"headline": "机械工程应届生｜设备方向", "sections": [{"name": "项目经历", "items": [{"text": facts[1].value_json["text"], "source_fact_ids": [facts[1].id], "target_requirement_ids": [], "new_claims": []}]}], "excluded_gaps": ["设备点检"]}, traceability_json={"new_claims": []}, guard_status="passed", review_status="approved", reviewed_by=advisor.id, reviewed_at=datetime.now(timezone.utc))

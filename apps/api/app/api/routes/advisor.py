@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -28,8 +28,8 @@ async def queues(actor: User = Depends(require_roles("advisor", "admin")), db: S
     ids = assigned_ids(db, actor)
     labels = ["新线索", "待咨询", "待付款", "待核实", "待修改", "待投递", "有面试", "待复盘", "退款/争议"]
     tasks = {label: [] for label in labels}
-    for version in db.scalars(select(ResumeVersion).where(ResumeVersion.user_id.in_(ids), ResumeVersion.review_status.in_(["advisor_review", "draft"]))):
-        tasks["待核实" if version.guard_status == "blocked" else "待修改"].append({"id": version.id, "user_id": version.user_id, "type": "resume", "risk": "high" if version.guard_status == "blocked" else "medium", "next_action": "核查事实" if version.guard_status == "blocked" else "审核简历"})
+    for version in db.scalars(select(ResumeVersion).where(ResumeVersion.user_id.in_(ids), or_(ResumeVersion.guard_status == "blocked", ResumeVersion.review_status == "advisor_review"))):
+        tasks["待核实" if version.guard_status == "blocked" else "待修改"].append({"id": version.id, "user_id": version.user_id, "type": "resume", "risk": "high" if version.guard_status == "blocked" else "medium", "next_action": "核查事实" if version.guard_status == "blocked" else "审核简历", "can_review": version.guard_status == "passed" and version.review_status == "advisor_review"})
     for app in db.scalars(select(Application).where(Application.user_id.in_(ids), Application.status.in_(["pending_confirmation", "ready_to_apply"]))): tasks["待投递"].append({"id": app.id, "user_id": app.user_id, "type": "application", "risk": "low", "next_action": "确认并投递"})
     for interview in db.scalars(select(Interview).where(Interview.user_id.in_(ids), Interview.status.in_(["draft", "submitted"]))): tasks["有面试" if interview.status == "draft" else "待复盘"].append({"id": interview.id, "user_id": interview.user_id, "type": "interview", "risk": "medium", "next_action": "生成训练" if interview.status == "draft" else "评分复盘"})
     return {"queues": [{"name": label, "count": len(tasks[label]), "items": tasks[label]} for label in labels]}
@@ -64,7 +64,10 @@ async def review(version_id: str, data: ReviewIn, actor: User = Depends(require_
     row = db.get(ResumeVersion, version_id)
     if not row or not can_access_user(db, actor, row.user_id): raise AppError("FORBIDDEN", "无权审核该简历。", 403)
     if data.approved and row.guard_status != "passed": raise AppError("FACT_GUARD_BLOCKED", "事实检查未通过，不能批准。", 409)
-    row.review_status = "approved" if data.approved else "rejected"; row.reviewed_by = actor.id; row.reviewed_at = datetime.now(timezone.utc); db.commit(); return dump(row)
+    if data.approved and row.review_status != "advisor_review": raise AppError("RESUME_NOT_SUBMITTED", "用户尚未提交该简历审核。", 409)
+    row.review_status = "approved" if data.approved else "rejected"; row.reviewed_by = actor.id; row.reviewed_at = datetime.now(timezone.utc)
+    db.add(AuditLog(actor_user_id=actor.id, action="resume_version.approved" if data.approved else "resume_version.rejected", entity_type="resume_version", entity_id=row.id, metadata_json={"note": data.note[:500]}))
+    db.commit(); return dump(row)
 
 
 class ScoreIn(BaseModel): scorecard: dict; feedback: dict

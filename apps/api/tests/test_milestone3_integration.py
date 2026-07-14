@@ -55,8 +55,24 @@ def test_complete_registration_to_weekly_report_flow(client, db):
     version=client.post("/api/resume-versions",headers={"Idempotency-Key":"integration-version"},json={"base_resume_id":resume["id"],"job_id":job["id"],"match_id":match["id"]})
     assert version.status_code==201,version.text
     version=version.json(); assert version["guard_status"]=="passed"
-    client.post(f"/api/resume-versions/{version['id']}/approve")
+    assert client.post(f"/api/resume-versions/{version['id']}/approve").status_code == 404
+    assert client.get(f"/api/resume-versions/{version['id']}/download").status_code==409
+    unapproved_application = client.post("/api/applications",json={"job_id":job["id"],"resume_version_id":version["id"]})
+    assert unapproved_application.status_code == 409 and unapproved_application.json()["error"]["code"] == "RESUME_NOT_APPROVED"
+    assert client.post(f"/api/resume-versions/{version['id']}/submit-review").json()["review_status"] == "advisor_review"
+    assert client.post("/api/auth/logout").status_code == 204
+    assert client.post("/api/auth/login",json={"email":"flow-admin@example.test","password":"Password123!"}).status_code == 200
+    reviewed = client.post(f"/api/advisor/resume-versions/{version['id']}/review", json={"approved":True,"note":"集成测试审核"})
+    assert reviewed.status_code == 200 and reviewed.json()["review_status"] == "approved"
+    client.post("/api/auth/logout");client.post("/api/auth/login",json={"email":"a@example.test","password":"Password123!"})
     assert client.get(f"/api/resume-versions/{version['id']}/download").status_code==200
+    preview = client.get(f"/api/resume-versions/{version['id']}/preview")
+    assert preview.status_code == 200 and "text/html" in preview.headers["content-type"] and "size:A4" in preview.text
+    assert preview.headers["cache-control"] == "private, no-store"
+    html_download = client.get(f"/api/resume-versions/{version['id']}/download?format=html")
+    assert html_download.status_code == 200 and "tailored-resume.html" in html_download.headers["content-disposition"]
+    export_logs = list(db.scalars(select(AuditLog).where(AuditLog.action == "resume_version.exported", AuditLog.entity_id == version["id"])))
+    assert {row.metadata_json["format"] for row in export_logs} == {"docx", "html_preview", "html_download"}
     app=client.post("/api/applications",json={"job_id":job["id"],"resume_version_id":version["id"]}).json()
     for status in ["preparing_resume","ready_to_apply","applied"]: assert client.patch(f"/api/applications/{app['id']}/status",json={"status":status}).status_code==200
     interview=client.post("/api/interviews",json={"job_id":job["id"],"resume_version_id":version["id"]})

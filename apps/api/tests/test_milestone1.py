@@ -1,4 +1,7 @@
+import io
 from datetime import datetime, timedelta, timezone
+
+from docx import Document
 
 from app.models.entities import Job, ResumeFact, UserProfile
 from app.services.job_normalizer import normalize_job
@@ -23,6 +26,21 @@ def test_unsupported_resume_has_clear_error(client):
     response = client.post("/api/resumes", files={"file": ("resume.txt", b"hello", "text/plain")})
     assert response.status_code == 415
     assert "DOCX" in response.json()["error"]["message"]
+
+
+def test_docx_table_content_is_parsed(client):
+    register(client)
+    doc = Document()
+    doc.add_paragraph("机械工程本科")
+    table = doc.add_table(rows=1, cols=2)
+    table.cell(0, 0).text = "项目经历"
+    table.cell(0, 1).text = "使用 CAD 完成机构设计"
+    stream = io.BytesIO()
+    doc.save(stream)
+    response = client.post("/api/resumes", files={"file": ("table-resume.docx", stream.getvalue(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")})
+    assert response.status_code == 201
+    detail = client.get(f"/api/resumes/{response.json()['id']}").json()
+    assert "项目经历" in detail["parsed_text"] and "CAD" in detail["parsed_text"]
 
 
 def test_job_normalizer_is_deterministic():
@@ -55,4 +73,3 @@ def test_matching_api_shows_dimensions_evidence_gaps_and_confirmations(client):
     assert len(data["dimension_scores_json"]) == 6
     assert isinstance(data["evidence_json"], list) and isinstance(data["gaps_json"], list)
     assert "是否接受轮班" in data["confirmations_json"]
-
