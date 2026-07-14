@@ -1,0 +1,242 @@
+from datetime import datetime, timezone
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, Form, UploadFile
+from pydantic import BaseModel, Field
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session
+
+from app.config import get_settings
+from app.database import get_db
+from app.dependencies import current_user
+from app.errors import AppError
+from app.models.entities import Job, Match, QuotaLedger, Resume, ResumeFact, User, UserProfile, AuditLog
+from app.providers.storage.local import LocalStorage
+from app.services.job_normalizer import normalize_job
+from app.services.matcher import score_match
+from app.services.quota_service import change
+from app.services.resume_parser import ALLOWED, parse_resume
+from .common import dump, listed
+
+
+router = APIRouter(prefix="/api", tags=["core"])
+
+
+@router.get("/health")
+async def health(db: Session = Depends(get_db)):
+    db.execute(text("select 1"))
+    return {"status": "ok", "application": "ok", "database": "ok", "providers": {"llm": get_settings().llm_provider, "payment": get_settings().payment_provider}}
+
+
+class ProfileIn(BaseModel):
+    school: str = ""
+    major: str = ""
+    graduation_year: int | None = None
+    education_level: str = ""
+    target_cities: list[str] = []
+    target_roles: list[str] = []
+    target_industries: list[str] = []
+    salary_min: int | None = None
+    salary_max: int | None = None
+    accepts_shift: bool | None = None
+    accepts_travel: bool | None = None
+    accepts_factory: bool | None = None
+    notes: str = ""
+    consent: bool = False
+
+
+@router.get("/profile")
+async def get_profile(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    profile = db.get(UserProfile, user.id) or UserProfile(user_id=user.id)
+    data = dump(profile)
+    for key in ["cities", "roles", "industries"]:
+        data[f"target_{key}"] = data.pop(f"target_{key}_json")
+    return data
+
+
+@router.put("/profile")
+async def save_profile(data: ProfileIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    profile = db.get(UserProfile, user.id) or UserProfile(user_id=user.id)
+    for field in ["school", "major", "graduation_year", "education_level", "salary_min", "salary_max", "accepts_shift", "accepts_travel", "accepts_factory", "notes"]:
+        setattr(profile, field, getattr(data, field))
+    profile.target_cities_json = data.target_cities; profile.target_roles_json = data.target_roles; profile.target_industries_json = data.target_industries
+    if data.consent: profile.consented_at = datetime.now(timezone.utc)
+    db.add(profile); db.commit()
+    return await get_profile(user, db)
+
+
+@router.post("/resumes", status_code=201)
+async def upload_resume(file: UploadFile = File(...), user: User = Depends(current_user), db: Session = Depends(get_db)):
+    content = await file.read()
+    settings = get_settings()
+    if len(content) > settings.max_upload_mb * 1024 * 1024:
+        raise AppError("FILE_TOO_LARGE", f"文件不能超过 {settings.max_upload_mb}MB。", 413)
+    text_value, facts = parse_resume(content, file.content_type or "", file.filename or "resume")
+    suffix = ALLOWED[file.content_type]
+    key = LocalStorage().save(content, suffix)
+    resume = Resume(user_id=user.id, original_file_key=key, original_media_type=file.content_type or "", display_name=(file.filename or "简历")[:200], parse_status="parsed", parsed_text=text_value)
+    db.add(resume); db.flush()
+    for fact in facts:
+        db.add(ResumeFact(resume_id=resume.id, user_id=user.id, created_by=user.id, **fact))
+    db.commit()
+    return dump(resume, {"original_file_key", "parsed_text"})
+
+
+@router.get("/resumes")
+async def resumes(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    rows = db.scalars(select(Resume).where(Resume.user_id == user.id, Resume.deleted_at.is_(None)).order_by(Resume.created_at.desc())).all()
+    return listed([dump(x, {"original_file_key", "parsed_text"}) for x in rows])
+
+
+def owned_resume(db, user, resume_id):
+    row = db.scalar(select(Resume).where(Resume.id == resume_id, Resume.user_id == user.id, Resume.deleted_at.is_(None)))
+    if not row: raise AppError("RESUME_NOT_FOUND", "简历不存在。", 404)
+    return row
+
+
+@router.get("/resumes/{resume_id}")
+async def resume_detail(resume_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    return dump(owned_resume(db, user, resume_id), {"original_file_key"})
+
+
+@router.delete("/resumes/{resume_id}", status_code=204)
+async def delete_resume(resume_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    row = owned_resume(db, user, resume_id); row.deleted_at = datetime.now(timezone.utc); LocalStorage().delete(row.original_file_key); db.commit()
+
+
+@router.get("/resumes/{resume_id}/facts")
+async def facts(resume_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    owned_resume(db, user, resume_id)
+    rows = db.scalars(select(ResumeFact).where(ResumeFact.resume_id == resume_id, ResumeFact.user_id == user.id)).all()
+    return listed([dump(x) for x in rows])
+
+
+class FactIn(BaseModel):
+    label: str | None = None
+    value_json: dict | None = None
+
+
+def owned_fact(db, user, fact_id):
+    row = db.scalar(select(ResumeFact).where(ResumeFact.id == fact_id, ResumeFact.user_id == user.id))
+    if not row: raise AppError("FACT_NOT_FOUND", "事实不存在。", 404)
+    return row
+
+
+@router.patch("/resume-facts/{fact_id}")
+async def edit_fact(fact_id: str, data: FactIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    row = owned_fact(db, user, fact_id)
+    if data.label is not None: row.label = data.label
+    if data.value_json is not None: row.value_json = data.value_json
+    row.verification_status = "extracted"; row.confirmed_at = None; db.commit(); return dump(row)
+
+
+@router.post("/resume-facts/{fact_id}/confirm")
+async def confirm_fact(fact_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    row = owned_fact(db, user, fact_id); row.verification_status = "user_confirmed"; row.confirmed_at = datetime.now(timezone.utc); db.commit(); return dump(row)
+
+
+@router.post("/resume-facts/{fact_id}/reject")
+async def reject_fact(fact_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    row = owned_fact(db, user, fact_id); row.verification_status = "user_rejected"; db.commit(); return dump(row)
+
+
+@router.post("/resumes/{resume_id}/confirm-facts")
+async def confirm_all_facts(resume_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    row = owned_resume(db, user, resume_id)
+    for fact in db.scalars(select(ResumeFact).where(ResumeFact.resume_id == row.id, ResumeFact.user_id == user.id, ResumeFact.verification_status == "extracted")):
+        fact.verification_status = "user_confirmed"; fact.confirmed_at = datetime.now(timezone.utc)
+    row.facts_confirmed_at = datetime.now(timezone.utc); db.commit(); return {"status": "confirmed"}
+
+
+class JobIn(BaseModel):
+    raw_jd: str = Field(min_length=10)
+    title: str = ""
+    company_name: str = ""
+    city: str = ""
+    source_url: str = ""
+
+
+def create_job(data: JobIn, user: User, db: Session):
+    value = normalize_job(data.raw_jd, data.title, data.company_name, data.city)
+    existing = db.scalar(select(Job).where(Job.created_by == user.id, Job.company_name == value["company_name"], Job.title == value["title"], Job.city == value["city"], Job.content_hash == value["content_hash"]))
+    if existing:
+        return dump(existing, {"raw_jd"})
+    job = Job(created_by=user.id, raw_jd=data.raw_jd, source_url=data.source_url, source_type="user_url" if data.source_url else "manual", company_name=value["company_name"], title=value["title"], city=value["city"], responsibilities_json=value["responsibilities"], must_have_json=value["must_have"], nice_to_have_json=value["nice_to_have"], keywords_json=value["keywords"], work_conditions_json=value["work_conditions"], content_hash=value["content_hash"], published_at=datetime.now(timezone.utc))
+    db.add(job); db.commit(); return dump(job, {"raw_jd"})
+
+
+@router.post("/jobs/manual", status_code=201)
+async def manual_job(data: JobIn, user: User = Depends(current_user), db: Session = Depends(get_db)): return create_job(data, user, db)
+
+
+@router.post("/jobs/import-text", status_code=201)
+async def import_job(data: JobIn, user: User = Depends(current_user), db: Session = Depends(get_db)): return create_job(data, user, db)
+
+
+@router.get("/jobs")
+async def jobs(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    rows = db.scalars(select(Job).where(Job.created_by == user.id).order_by(Job.created_at.desc())).all()
+    return listed([dump(x, {"raw_jd"}) for x in rows])
+
+
+def owned_job(db, user, job_id):
+    row = db.scalar(select(Job).where(Job.id == job_id, Job.created_by == user.id))
+    if not row: raise AppError("JOB_NOT_FOUND", "岗位不存在。", 404)
+    return row
+
+
+@router.get("/jobs/{job_id}")
+async def job_detail(job_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)): return dump(owned_job(db, user, job_id))
+
+
+class JobPatch(BaseModel):
+    title: str | None = None
+    company_name: str | None = None
+    city: str | None = None
+    salary_text: str | None = None
+    source_url: str | None = None
+    status: str | None = None
+
+
+@router.patch("/jobs/{job_id}")
+async def update_job(job_id: str, data: JobPatch, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    row = owned_job(db, user, job_id)
+    for key, value in data.model_dump(exclude_none=True).items():
+        setattr(row, key, value)
+    db.commit(); return dump(row, {"raw_jd"})
+
+
+@router.post("/jobs/{job_id}/expire")
+async def expire_job(job_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    row = owned_job(db, user, job_id); row.status = "expired"; db.commit(); return dump(row, {"raw_jd"})
+
+
+class MatchIn(BaseModel):
+    resume_id: str
+    job_id: str
+
+
+@router.post("/matches", status_code=201)
+async def create_match(data: MatchIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    resume = owned_resume(db, user, data.resume_id); job = owned_job(db, user, data.job_id)
+    profile = db.get(UserProfile, user.id)
+    facts_list = list(db.scalars(select(ResumeFact).where(ResumeFact.resume_id == resume.id, ResumeFact.user_id == user.id)))
+    free_key = f"free-match:{user.id}"
+    if not db.scalar(select(QuotaLedger).where(QuotaLedger.idempotency_key == free_key)):
+        change(db, user_id=user.id, quota_type="match", delta=1, reason="免费诊断", idempotency_key=free_key)
+    change(db, user_id=user.id, quota_type="match", delta=-1, reason="生成匹配报告", idempotency_key=f"match:{resume.id}:{job.id}")
+    result = score_match(facts_list, job, profile)
+    match = Match(user_id=user.id, resume_id=resume.id, job_id=job.id, total_score=result["total_score"], recommendation=result["recommendation"], dimension_scores_json=result["dimension_scores"], evidence_json=result["evidence"], gaps_json=result["gaps"], confirmations_json=result["confirmations"], ai_explanation_json={"summary": f"综合匹配 {result['total_score']} 分，建议：{result['recommendation']}。", "provider": "mock"})
+    db.add(match); db.commit(); return dump(match)
+
+
+@router.get("/matches")
+async def matches(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    return listed([dump(x) for x in db.scalars(select(Match).where(Match.user_id == user.id).order_by(Match.created_at.desc())).all()])
+
+
+@router.get("/matches/{match_id}")
+async def match_detail(match_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    row = db.scalar(select(Match).where(Match.id == match_id, Match.user_id == user.id))
+    if not row: raise AppError("MATCH_NOT_FOUND", "匹配报告不存在。", 404)
+    return dump(row)

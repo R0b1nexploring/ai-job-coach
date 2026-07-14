@@ -1,0 +1,35 @@
+import uuid
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from .api.routes import advisor, auth, core, workflow
+from .config import get_settings
+from .errors import AppError, app_error_handler, generic_error_handler, http_error_handler, validation_error_handler
+
+
+settings = get_settings()
+app = FastAPI(title=settings.app_name, version="0.1.0")
+app.add_middleware(CORSMiddleware, allow_origins=[settings.frontend_origin], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_exception_handler(AppError, app_error_handler)
+app.add_exception_handler(RequestValidationError, validation_error_handler)
+app.add_exception_handler(StarletteHTTPException, http_error_handler)
+app.add_exception_handler(Exception, generic_error_handler)
+
+
+@app.middleware("http")
+async def request_id(request: Request, call_next):
+    request.state.request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
+    response = await call_next(request)
+    response.headers["x-request-id"] = request.state.request_id
+    return response
+
+
+app.include_router(auth.router)
+app.include_router(auth.account_router)
+app.include_router(core.router)
+app.include_router(workflow.router)
+app.include_router(advisor.router)
+app.include_router(advisor.admin_router)
