@@ -20,12 +20,18 @@ from app.models.entities import (
     UserProfile,
 )
 from app.providers.llm.runtime import generate_structured
-from app.providers.llm.schemas import JobStructuredOutput, MatchExplanationOutput
+from app.providers.llm.schemas import (
+    JobStructuredOutput,
+    MatchExplanationOutput,
+    ResumeAnalysisOutput,
+)
+from app.providers.jobs import discover_jobs
 from app.providers.storage.local import LocalStorage
 from app.services.job_normalizer import normalize_job
 from app.services.matcher import score_match
 from app.services.quota_service import change
 from app.services.resume_parser import ALLOWED, parse_resume
+from app.services.resume_analyzer import analyze_resume
 from .common import dump, listed
 
 
@@ -307,6 +313,64 @@ async def confirm_all_facts(
     return {"status": "confirmed"}
 
 
+@router.post("/resumes/{resume_id}/analysis")
+async def resume_analysis(
+    resume_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    resume = owned_resume(db, user, resume_id)
+    fact_rows = list(
+        db.scalars(
+            select(ResumeFact).where(
+                ResumeFact.resume_id == resume.id, ResumeFact.user_id == user.id
+            )
+        )
+    )
+    profile = db.get(UserProfile, user.id)
+    fallback = analyze_resume(fact_rows, profile)
+    structured, provider_name = await generate_structured(
+        task="resume_analysis",
+        system_prompt=(
+            "你是简历方向分析助手。只能基于输入的简历事实和用户偏好提出探索建议；"
+            "不得把未经确认信息写成已验证事实，不得虚构经验、数字或职业结论。输出严格 JSON。"
+        ),
+        user_payload={
+            "facts": [
+                {
+                    "id": fact.id,
+                    "status": fact.verification_status,
+                    "category": fact.category,
+                    "value": fact.value_json,
+                }
+                for fact in fact_rows
+                if fact.verification_status != "user_rejected"
+            ],
+            "profile": {
+                "target_roles": list(getattr(profile, "target_roles_json", []) or []),
+                "target_cities": list(getattr(profile, "target_cities_json", []) or []),
+            },
+            "mock_response": fallback,
+        },
+        response_model=ResumeAnalysisOutput,
+    )
+    result = structured.model_dump()
+    valid_ids = {fact.id for fact in fact_rows if fact.verification_status != "user_rejected"}
+    for suggestion in result["role_suggestions"]:
+        suggestion["evidence_fact_ids"] = [
+            fact_id for fact_id in suggestion["evidence_fact_ids"] if fact_id in valid_ids
+        ]
+    result.update(
+        {
+            "provider": provider_name,
+            "analysis_status": "advisory_not_verified",
+            "requires_fact_confirmation": any(
+                fact.verification_status not in {"user_confirmed", "user_rejected"}
+                for fact in fact_rows
+            ),
+        }
+    )
+    return result
+
+
 class JobIn(BaseModel):
     raw_jd: str = Field(min_length=10)
     title: str = ""
@@ -314,6 +378,13 @@ class JobIn(BaseModel):
     city: str = ""
     source_url: str = ""
     published_at: datetime | None = None
+
+
+class JobDiscoveryIn(BaseModel):
+    resume_id: str
+    provider: str = Field(default="sample", pattern="^(sample|public_catalog|greenhouse|lever)$")
+    source_key: str = Field(default="", max_length=100)
+    limit: int = Field(default=10, ge=1, le=30)
 
 
 async def create_job(data: JobIn, user: User, db: Session):
@@ -383,6 +454,74 @@ async def import_job(
     data: JobIn, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
     return await create_job(data, user, db)
+
+
+@router.post("/jobs/discover", status_code=201)
+async def discover_public_jobs(
+    data: JobDiscoveryIn, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    resume = owned_resume(db, user, data.resume_id)
+    if data.provider in {"greenhouse", "lever"} and not data.source_key:
+        raise AppError("JOB_SOURCE_REQUIRED", "请输入企业公开招聘页标识。", 422)
+    fact_rows = list(
+        db.scalars(
+            select(ResumeFact).where(
+                ResumeFact.resume_id == resume.id,
+                ResumeFact.user_id == user.id,
+                ResumeFact.verification_status != "user_rejected",
+            )
+        )
+    )
+    profile = db.get(UserProfile, user.id)
+    analysis = analyze_resume(fact_rows, profile)
+    keywords = list(
+        dict.fromkeys(
+            word
+            for suggestion in analysis["role_suggestions"]
+            for word in suggestion["search_keywords"]
+            if word.strip()
+        )
+    )[:15]
+    cities = list(getattr(profile, "target_cities_json", []) or [])
+    discovered, fallback_used, source_error = await discover_jobs(
+        provider=data.provider,
+        source_key=data.source_key,
+        keywords=keywords,
+        cities=cities,
+        limit=data.limit,
+    )
+    saved = []
+    for item in discovered:
+        result = await create_job(
+            JobIn(
+                raw_jd=item.raw_jd,
+                title=item.title,
+                company_name=item.company_name,
+                city=item.city,
+                source_url=item.source_url,
+                published_at=item.published_at,
+            ),
+            user,
+            db,
+        )
+        row = db.get(Job, result["id"])
+        if row:
+            row.source_type = "sample" if item.provider == "sample" else "company_site"
+            db.commit()
+            result = dump(row, {"raw_jd"})
+        result["discovery_provider"] = item.provider
+        result["content_quality"] = item.content_quality
+        result["matched_keywords"] = item.matched_keywords
+        saved.append(result)
+    return {
+        "items": saved,
+        "total": len(saved),
+        "provider": data.provider,
+        "fallback_used": fallback_used,
+        "source_error": source_error,
+        "search_keywords": keywords,
+        "notice": "岗位来自公开企业招聘接口或受控样例；入库内容仍需用户打开来源核对。",
+    }
 
 
 @router.get("/jobs")

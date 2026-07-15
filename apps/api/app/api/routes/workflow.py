@@ -37,7 +37,7 @@ from app.services.fact_guard import guard_content
 from app.services.quota_service import balance, change
 from app.services.report_service import weekly_report
 from app.services.resume_generator import generate_resume
-from app.services.interview_generator import generate_questions
+from app.services.interview_generator import generate_questions, guard_interview_guide
 from app.services.html_resume_renderer import render_resume_html
 from .common import dump, listed
 
@@ -520,7 +520,35 @@ async def create_interview(
             return dump(existing)
     if existing_ledger:
         raise AppError("IDEMPOTENCY_KEY_REUSED", "该幂等键已用于其他额度操作，请更换后重试。", 409)
-    fallback_questions = generate_questions(job, version.content_json if version else None)
+    base_resume = None
+    if version:
+        base_resume = db.get(Resume, version.base_resume_id)
+    else:
+        base_resume = db.scalar(
+            select(Resume)
+            .where(
+                Resume.user_id == user.id,
+                Resume.deleted_at.is_(None),
+                Resume.facts_confirmed_at.is_not(None),
+            )
+            .order_by(Resume.created_at.desc())
+        )
+    confirmed_facts = (
+        list(
+            db.scalars(
+                select(ResumeFact).where(
+                    ResumeFact.resume_id == base_resume.id,
+                    ResumeFact.user_id == user.id,
+                    ResumeFact.verification_status == "user_confirmed",
+                )
+            )
+        )
+        if base_resume
+        else []
+    )
+    fallback_questions = generate_questions(
+        job, version.content_json if version else None, confirmed_facts
+    )
     structured, provider_name = await generate_structured(
         task="interview_questions",
         system_prompt=(
@@ -535,12 +563,19 @@ async def create_interview(
                 "work_conditions": job.work_conditions_json,
             },
             "approved_resume": version.content_json if version else None,
+            "confirmed_facts": [
+                {"id": fact.id, "category": fact.category, "value": fact.value_json}
+                for fact in confirmed_facts
+            ],
             "mock_response": fallback_questions,
         },
         response_model=InterviewStructuredOutput,
     )
     questions = structured.model_dump()
     questions["provider"] = provider_name
+    guide_status, guide_issues = guard_interview_guide(questions, confirmed_facts)
+    questions["guide_guard_status"] = guide_status
+    questions["guide_guard_issues"] = guide_issues
     row = Interview(
         user_id=user.id,
         job_id=job.id,

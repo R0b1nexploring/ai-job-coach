@@ -6,7 +6,7 @@ from docx import Document
 from app.models.entities import Job, UserProfile
 from app.services.job_normalizer import normalize_job
 from app.services.matcher import score_match
-from conftest import docx_file, register
+from conftest import docx_file, pdf_file, register
 
 
 def test_resume_upload_type_and_user_isolation(client):
@@ -50,6 +50,15 @@ def test_docx_table_content_is_parsed(client):
     assert response.status_code == 201
     detail = client.get(f"/api/resumes/{response.json()['id']}").json()
     assert "项目经历" in detail["parsed_text"] and "CAD" in detail["parsed_text"]
+
+
+def test_text_pdf_is_uploaded_and_parsed(client):
+    register(client)
+    response = client.post("/api/resumes", files=pdf_file())
+    assert response.status_code == 201, response.text
+    detail = client.get(f"/api/resumes/{response.json()['id']}").json()
+    assert "Mechanical engineering" in detail["parsed_text"]
+    assert client.get(f"/api/resumes/{response.json()['id']}/facts").json()["total"] >= 1
 
 
 def test_job_normalizer_is_deterministic():

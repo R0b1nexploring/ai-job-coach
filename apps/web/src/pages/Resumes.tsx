@@ -24,9 +24,13 @@ export function Resumes() {
 
 function ResumeCard({ resume }: { resume: Resume }) {
   const client = useQueryClient()
+  const [analysis, setAnalysis] = useState<any>()
   const facts = useQuery({ queryKey: ['facts', resume.id], queryFn: () => api<any>(`/api/resumes/${resume.id}/facts`) })
   const confirmAll = useMutation({ mutationFn: () => api(`/api/resumes/${resume.id}/confirm-facts`, { method: 'POST' }), onSuccess: () => { client.invalidateQueries({ queryKey: ['resumes'] }); client.invalidateQueries({ queryKey: ['facts', resume.id] }) } })
-  return <article className="card"><div className="flex justify-between"><div><h2 className="font-bold">{resume.display_name}</h2><p className="text-sm text-black/50">解析状态：{parseStatusLabels[resume.parse_status] || '未知状态'}</p></div><button className="btn-secondary" onClick={() => confirmAll.mutate()}>{resume.facts_confirmed_at ? '已确认' : '确认全部事实'}</button></div>
+  const analyze = useMutation({ mutationFn: () => api<any>(`/api/resumes/${resume.id}/analysis`, { method: 'POST' }), onSuccess: setAnalysis })
+  return <article className="card"><div className="flex flex-wrap justify-between gap-3"><div><h2 className="font-bold">{resume.display_name}</h2><p className="text-sm text-black/50">解析状态：{parseStatusLabels[resume.parse_status] || '未知状态'}</p></div><div className="flex gap-2"><button className="btn-secondary" disabled={analyze.isPending} onClick={() => analyze.mutate()}>{analyze.isPending ? '分析中…' : '分析岗位方向'}</button><button className="btn-secondary" onClick={() => confirmAll.mutate()}>{resume.facts_confirmed_at ? '已确认' : '确认全部事实'}</button></div></div>
+    {analysis && <section className="mt-4 rounded-xl border border-sage/20 bg-green-50/50 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold">简历方向建议</h3><span className="badge">建议稿 · 非事实结论</span></div><p className="mt-2 text-sm">{analysis.summary}</p>{analysis.requires_fact_confirmation && <p className="mt-2 text-sm text-amber-800">部分事实尚未确认，请先核对事实库再生成定制简历。</p>}<div className="mt-3 grid gap-3 md:grid-cols-2">{analysis.role_suggestions.map((item: any) => <div className="rounded-lg bg-white p-3" key={item.role}><b>{item.role}</b><p className="mt-1 text-sm text-black/60">{item.reason}</p><p className="mt-2 text-xs text-sage">搜索词：{item.search_keywords.join(' / ')}</p></div>)}</div>{analysis.risks.length > 0 && <p className="mt-3 text-sm text-amber-800">注意：{analysis.risks.join('；')}</p>}</section>}
+    {analyze.error && <div className="mt-3"><ErrorState error={analyze.error} /></div>}
     <details className="mt-4"><summary className="cursor-pointer text-sage">查看与编辑事实库（{facts.data?.total ?? 0}）</summary><div className="mt-3 space-y-2">{facts.data?.items?.map((fact: any) => <FactRow key={fact.id} fact={fact} resumeId={resume.id} />)}</div><NewFactForm resumeId={resume.id} /></details></article>
 }
 

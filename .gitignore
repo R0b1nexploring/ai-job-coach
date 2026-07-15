@@ -16,4 +16,5 @@ __pycache__/
 *.egg-info/
 playwright-report/
 test-results/
+*.tsbuildinfo
 .DS_Store

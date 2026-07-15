@@ -67,12 +67,15 @@ test('用户可以填写模拟面试回答并提交顾问评分', async () => {
       : url.endsWith('/api/resume-versions')
         ? { items: [] }
         : url.endsWith('/api/interviews')
-          ? { items: [{ id: 'i1', status: 'draft', question_set_json: { questions: [{ id: 'q1', question: '你负责了什么？', why_asked: '核实贡献', rubric: ['说明个人职责'] }] }, answers_json: {}, scorecard_json: {}, feedback_json: {} }] }
+          ? { items: [{ id: 'i1', status: 'draft', question_set_json: { questions: [{ id: 'q1', question: '你负责了什么？', why_asked: '核实贡献', rubric: ['说明个人职责'] }], self_introduction: { duration_seconds: 90, text: '您好，我应聘设备工程师。', source_fact_ids: ['f1'] }, project_answers: [{ question: '介绍项目', answer: '按真实背景说明。', follow_ups: ['个人职责是什么？'] }], common_answers: [{ question: '为什么选择岗位？', answer: '结合 JD 回答。' }], preparation_plan: ['核对 JD'], risk_reminders: ['不要补造数字'] }, answers_json: {}, scorecard_json: {}, feedback_json: {} }] }
           : { id: 'i1', status: 'submitted' }
     return new Response(JSON.stringify(json), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }))
   shell(<Interviews />)
   const user = userEvent.setup()
+  expect(await screen.findByText(/您好，我应聘设备工程师/)).toBeVisible()
+  expect(screen.getByText('项目回答与追问')).toBeVisible()
+  expect(screen.getByText('面试前准备')).toBeVisible()
   await user.type(await screen.findByLabelText('回答第 1 题'), '我负责整理点检记录。')
   await user.click(screen.getByRole('button', { name: '提交顾问评分' }))
   await screen.findByText(/你负责了什么/)

@@ -208,7 +208,11 @@ def test_complete_registration_to_weekly_report_flow(client, db):
         "/api/interviews", json={"job_id": job["id"], "resume_version_id": version["id"]}
     )
     assert interview.status_code == 201 and interview.json()["question_set_json"]["questions"]
-    assert interview.json()["question_set_json"]["provider"] == "mock"
+    guide = interview.json()["question_set_json"]
+    assert guide["provider"] == "mock"
+    assert guide["guide_guard_status"] == "passed"
+    assert guide["self_introduction"]["text"]
+    assert guide["project_answers"] and guide["preparation_plan"] and guide["risk_reminders"]
     report = client.get("/api/reports/weekly").json()
     assert report["applied"] == 1 and report["new_jobs"] == 1
 

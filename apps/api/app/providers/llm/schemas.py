@@ -20,6 +20,21 @@ class MatchExplanationOutput(BaseModel):
     confirmations_needed: list[str] = Field(default_factory=list)
 
 
+class RoleSuggestionOutput(BaseModel):
+    role: str
+    reason: str
+    evidence_fact_ids: list[str] = Field(default_factory=list)
+    search_keywords: list[str] = Field(default_factory=list)
+
+
+class ResumeAnalysisOutput(BaseModel):
+    summary: str
+    strengths: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    role_suggestions: list[RoleSuggestionOutput] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
+
+
 class ResumeItemOutput(BaseModel):
     text: str
     source_fact_ids: list[str]
@@ -47,5 +62,23 @@ class InterviewQuestionOutput(BaseModel):
     follow_ups: list[str] = Field(default_factory=list)
 
 
+class InterviewAnswerOutput(BaseModel):
+    question: str
+    answer: str
+    source_fact_ids: list[str] = Field(default_factory=list)
+    follow_ups: list[str] = Field(default_factory=list)
+
+
+class SelfIntroductionOutput(BaseModel):
+    duration_seconds: int = 90
+    text: str
+    source_fact_ids: list[str] = Field(default_factory=list)
+
+
 class InterviewStructuredOutput(BaseModel):
     questions: list[InterviewQuestionOutput] = Field(default_factory=list)
+    self_introduction: SelfIntroductionOutput
+    project_answers: list[InterviewAnswerOutput] = Field(default_factory=list)
+    common_answers: list[InterviewAnswerOutput] = Field(default_factory=list)
+    preparation_plan: list[str] = Field(default_factory=list)
+    risk_reminders: list[str] = Field(default_factory=list)
