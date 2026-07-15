@@ -20,4 +20,3 @@ class LocalStorage:
 
     def delete(self, key: str) -> None:
         self.path(key).unlink(missing_ok=True)
-

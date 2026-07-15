@@ -27,7 +27,9 @@ def render_resume_html(content: dict, title: str) -> str:
             if value:
                 items_html.append(f"<li>{value}</li>")
         if items_html:
-            sections_html.append(f'<section><h2>{name}</h2><ul>{"".join(items_html)}</ul></section>')
+            sections_html.append(
+                f"<section><h2>{name}</h2><ul>{''.join(items_html)}</ul></section>"
+            )
     body = "".join(sections_html) or '<p class="empty">暂无可导出的已审核内容。</p>'
     return f"""<!doctype html>
 <html lang="zh-CN">

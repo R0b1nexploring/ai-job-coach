@@ -32,7 +32,9 @@ def parse_resume(content: bytes, media_type: str, filename: str) -> tuple[str, l
             with pdfplumber.open(io.BytesIO(content)) as pdf:
                 text = "\n".join((page.extract_text() or "") for page in pdf.pages).strip()
             if not text:
-                raise AppError("SCANNED_PDF_UNSUPPORTED", "该 PDF 可能是扫描件，MVP 暂不支持 OCR。", 422)
+                raise AppError(
+                    "SCANNED_PDF_UNSUPPORTED", "该 PDF 可能是扫描件，MVP 暂不支持 OCR。", 422
+                )
     except AppError:
         raise
     except Exception as exc:
@@ -45,9 +47,23 @@ def parse_resume(content: bytes, media_type: str, filename: str) -> tuple[str, l
 
 def extract_facts(text: str) -> list[dict]:
     lines = [line.strip() for line in text.splitlines() if len(line.strip()) >= 2]
-    categories = [("education", r"大学|学院|本科|硕士|专业"), ("skills", r"CAD|SolidWorks|Python|SOP|Excel"), ("projects", r"项目|设计|课题"), ("employment", r"实习|工作|公司")]
+    categories = [
+        ("education", r"大学|学院|本科|硕士|专业"),
+        ("skills", r"CAD|SolidWorks|Python|SOP|Excel"),
+        ("projects", r"项目|设计|课题"),
+        ("employment", r"实习|工作|公司"),
+    ]
     facts = []
     for line in lines[:80]:
-        category = next((cat for cat, pattern in categories if re.search(pattern, line, re.I)), "other")
-        facts.append({"category": category, "label": line[:30], "value_json": {"text": line}, "source_text": line})
+        category = next(
+            (cat for cat, pattern in categories if re.search(pattern, line, re.I)), "other"
+        )
+        facts.append(
+            {
+                "category": category,
+                "label": line[:30],
+                "value_json": {"text": line},
+                "source_text": line,
+            }
+        )
     return facts[:30]

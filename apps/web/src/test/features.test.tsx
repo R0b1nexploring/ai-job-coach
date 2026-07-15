@@ -24,6 +24,8 @@ test('匹配报告展示六项分数、缺口和待确认项', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(match), { status: 200, headers: { 'Content-Type': 'application/json' } })))
   shell(<Routes><Route path="/app/matches/:id" element={<MatchDetail />} /></Routes>, '/app/matches/m1')
   expect(await screen.findByText('六项评分')).toBeVisible()
+  expect(screen.getByText('硬性条件')).toBeVisible()
+  expect(screen.queryByText('hard_requirements')).not.toBeInTheDocument()
   expect(screen.getByText(/设备点检/)).toBeVisible()
   expect(screen.getByText('是否接受轮班')).toBeVisible()
 })

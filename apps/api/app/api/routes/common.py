@@ -14,4 +14,3 @@ def dump(row, exclude: set[str] | None = None) -> dict:
 
 def listed(items: list, page: int = 1, page_size: int = 20) -> dict:
     return {"items": items, "page": page, "page_size": page_size, "total": len(items)}
-

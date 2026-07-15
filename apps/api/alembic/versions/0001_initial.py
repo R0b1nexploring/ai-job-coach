@@ -1,4 +1,5 @@
 """Initial complete MVP schema."""
+
 from alembic import op
 from app.database import Base
 from app.models import entities  # noqa: F401
@@ -17,4 +18,3 @@ def upgrade():
 def downgrade():
     bind = op.get_bind()
     Base.metadata.drop_all(bind=bind)
-

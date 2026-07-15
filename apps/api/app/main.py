@@ -7,12 +7,24 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api.routes import advisor, auth, core, workflow
 from .config import get_settings
-from .errors import AppError, app_error_handler, generic_error_handler, http_error_handler, validation_error_handler
+from .errors import (
+    AppError,
+    app_error_handler,
+    generic_error_handler,
+    http_error_handler,
+    validation_error_handler,
+)
 
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.1.0")
-app.add_middleware(CORSMiddleware, allow_origins=[settings.frontend_origin], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.frontend_origin],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_exception_handler(AppError, app_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.add_exception_handler(StarletteHTTPException, http_error_handler)

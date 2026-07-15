@@ -28,4 +28,3 @@ def decode_token(token: str) -> str | None:
         return jwt.decode(token, get_settings().app_secret_key, algorithms=["HS256"])["sub"]
     except jwt.PyJWTError:
         return None
-

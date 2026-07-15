@@ -2,6 +2,8 @@
 
 面向机械、制造业和生物医药工程求职者的本地可运行全流程 Demo：事实受控简历、JD 匹配、投递、模拟面试、演示额度和顾问工作台。默认使用 Mock AI、Disabled Payment Provider 和本地私有文件存储，不需要外部密钥、Docker、Redis 或外部数据库。MVP-1 不提供支付、回调或退款接口。
 
+JD 结构化、匹配解释、定制简历和面试题统一通过结构化 LLM Provider。默认 `LLM_PROVIDER=mock`，结果稳定且可离线测试；如需切换兼容 Chat Completions 的服务，在 `.env` 设置 `LLM_PROVIDER=compatible`、`LLM_API_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL`。真实 Provider 配置不完整、超时或返回无效 JSON 时会安全回退到 Mock；确定性评分与 Fact Guard 始终在本地执行，AI 文本不会被直接当作已验证事实。
+
 ## 环境
 
 - 推荐 Windows 11 + WSL2 Ubuntu，仓库放在 `~/projects/ai-job-coach`

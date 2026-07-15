@@ -11,5 +11,6 @@ class ProviderError(Exception):
 
 
 class LLMProvider(Protocol):
-    async def generate_structured(self, *, task: str, system_prompt: str, user_payload: dict, response_model: type[T]) -> T: ...
-
+    async def generate_structured(
+        self, *, task: str, system_prompt: str, user_payload: dict, response_model: type[T]
+    ) -> T: ...

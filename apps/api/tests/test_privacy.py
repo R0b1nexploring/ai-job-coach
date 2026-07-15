@@ -158,7 +158,9 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
     assert interview.answers_json == {} and interview.question_set_json == {}
     assert db.scalar(select(ResumeFact).where(ResumeFact.user_id == user.id)) is None
     assert db.scalar(select(Notification).where(Notification.user_id == user.id)) is None
-    event = db.scalar(select(ApplicationEvent).where(ApplicationEvent.application_id == application.id))
+    event = db.scalar(
+        select(ApplicationEvent).where(ApplicationEvent.application_id == application.id)
+    )
     assert event.note == ""
     assert not storage.path(original_key).exists()
     assert not storage.path(export_key).exists()

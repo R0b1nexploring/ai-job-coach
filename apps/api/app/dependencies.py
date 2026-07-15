@@ -1,5 +1,5 @@
 from fastapi import Cookie, Depends
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import get_settings
@@ -25,6 +25,7 @@ def require_roles(*roles: str):
         if user.role not in roles:
             raise AppError("FORBIDDEN", "你没有执行此操作的权限。", 403)
         return user
+
     return dependency
 
 
@@ -32,10 +33,12 @@ def can_access_user(db: Session, actor: User, user_id: str) -> bool:
     if actor.role == "admin" or actor.id == user_id:
         return True
     if actor.role == "advisor":
-        assignment = db.scalar(select(AdvisorAssignment).where(
-            AdvisorAssignment.advisor_id == actor.id,
-            AdvisorAssignment.user_id == user_id,
-            AdvisorAssignment.status == "active",
-        ))
+        assignment = db.scalar(
+            select(AdvisorAssignment).where(
+                AdvisorAssignment.advisor_id == actor.id,
+                AdvisorAssignment.user_id == user_id,
+                AdvisorAssignment.status == "active",
+            )
+        )
         return assignment is not None
     return False

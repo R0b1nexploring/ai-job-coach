@@ -76,7 +76,9 @@ class Resume(Base):
     parse_status: Mapped[str] = mapped_column(String(30), default="uploaded")
     parsed_text: Mapped[str] = mapped_column(Text, default="")
     parser_version: Mapped[str] = mapped_column(String(20), default="1.0")
-    facts_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    facts_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -162,12 +164,18 @@ class Application(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"))
-    resume_version_id: Mapped[str | None] = mapped_column(ForeignKey("resume_versions.id"), nullable=True)
+    resume_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("resume_versions.id"), nullable=True
+    )
     status: Mapped[str] = mapped_column(String(40), default="pending_confirmation")
     source_url: Mapped[str] = mapped_column(String(1000), default="")
-    user_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    user_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_response_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_response_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     next_action_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -190,7 +198,9 @@ class Interview(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"))
-    resume_version_id: Mapped[str | None] = mapped_column(ForeignKey("resume_versions.id"), nullable=True)
+    resume_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("resume_versions.id"), nullable=True
+    )
     status: Mapped[str] = mapped_column(String(30), default="draft")
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     question_set_json: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -228,7 +238,7 @@ class Order(Base):
     amount_cents: Mapped[int] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(10), default="CNY")
     status: Mapped[str] = mapped_column(String(30), default="pending")
-    payment_provider: Mapped[str] = mapped_column(String(30), default="mock")
+    payment_provider: Mapped[str] = mapped_column(String(30), default="disabled")
     provider_order_id: Mapped[str] = mapped_column(String(100), default="")
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

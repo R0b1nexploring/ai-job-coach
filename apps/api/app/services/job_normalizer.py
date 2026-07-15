@@ -2,7 +2,18 @@ import hashlib
 import re
 
 
-KEYWORDS = ["设备点检", "SOP", "CAD", "SolidWorks", "机械", "本科", "轮班", "出差", "维护", "跨部门"]
+KEYWORDS = [
+    "设备点检",
+    "SOP",
+    "CAD",
+    "SolidWorks",
+    "机械",
+    "本科",
+    "轮班",
+    "出差",
+    "维护",
+    "跨部门",
+]
 
 
 def normalize_job(raw_jd: str, title: str = "", company_name: str = "", city: str = "") -> dict:
@@ -22,7 +33,8 @@ def normalize_job(raw_jd: str, title: str = "", company_name: str = "", city: st
         "nice_to_have": nice,
         "keywords": keywords,
         "work_conditions": work,
-        "uncertain_fields": [k for k, v in {"company_name": company_name, "city": city}.items() if not v],
+        "uncertain_fields": [
+            k for k, v in {"company_name": company_name, "city": city}.items() if not v
+        ],
         "content_hash": hashlib.sha256(raw_jd.strip().encode()).hexdigest(),
     }
-

@@ -37,10 +37,7 @@ def upgrade():
 
 def downgrade():
     constraints = inspect(op.get_bind()).get_unique_constraints("quota_ledger")
-    if any(
-        constraint["column_names"] == ["idempotency_key"]
-        for constraint in constraints
-    ):
+    if any(constraint["column_names"] == ["idempotency_key"] for constraint in constraints):
         return
     scoped = next(
         constraint

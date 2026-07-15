@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { Empty, ErrorState, Loading } from '../components/States'
+import { quotaLabels } from '../app/labels'
 
 const statusNames: Record<string, string> = {
   pending_confirmation: '待确认', preparing_resume: '待生成简历', ready_to_apply: '待投递',
@@ -21,6 +22,7 @@ export function Applications() {
     onSuccess: () => client.invalidateQueries({ queryKey: ['applications'] }),
   })
   if (query.isLoading) return <Loading />
+  if (query.error) return <ErrorState error={query.error} />
   return <><span className="badge">合法状态机</span><h1 className="mt-3 text-4xl font-black">投递看板</h1>
     {update.error && <div className="mt-4"><ErrorState error={update.error} /></div>}
     <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{query.data?.items?.length ? query.data.items.map((item: any) =>
@@ -100,7 +102,7 @@ export function Orders() {
   return <><span className="badge">MVP-1 演示额度</span><h1 className="mt-3 text-4xl font-black">套餐与额度</h1>
     <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800">在线支付尚未开放。当前额度由种子脚本或管理员发放，不代表真实付款。</p>
     <div className="mt-6 grid gap-4 md:grid-cols-4">{packages.data?.items?.map((item: any) => <article className="card" key={item.id}><h2 className="font-bold">{item.name}</h2><p className="my-3 text-3xl font-black">¥{item.price_cents / 100}</p><p className="text-xs text-black/50">简历 {item.resume_quota} · 投递 {item.application_quota} · 面试 {item.interview_quota}</p><p className="mt-4 text-sm">{item.features_json.join(' · ')}</p></article>)}</div>
-    <h2 className="mt-10 text-2xl font-bold">当前额度</h2><div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">{Object.entries(quotas.data || {}).map(([key, value]) => <div className="card" key={key}><p className="text-sm text-black/50">{key}</p><b className="text-3xl">{value}</b></div>)}</div>
-    <h2 className="mt-10 text-2xl font-bold">额度变化</h2><div className="mt-4 space-y-3">{ledger.data?.items?.length ? ledger.data.items.map((item: any) => <article className="card flex justify-between" key={item.id}><div><b>{item.reason}</b><p className="text-sm text-black/50">{item.quota_type}</p></div><b className={item.delta > 0 ? 'text-green-700' : 'text-coral'}>{item.delta > 0 ? '+' : ''}{item.delta}</b></article>) : <Empty title="暂无额度变化。" />}</div>
+    <h2 className="mt-10 text-2xl font-bold">当前额度</h2><div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">{Object.entries(quotas.data || {}).map(([key, value]) => <div className="card" key={key}><p className="text-sm text-black/50">{quotaLabels[key] || '其他额度'}</p><b className="text-3xl">{value}</b></div>)}</div>
+    <h2 className="mt-10 text-2xl font-bold">额度变化</h2><div className="mt-4 space-y-3">{ledger.data?.items?.length ? ledger.data.items.map((item: any) => <article className="card flex justify-between" key={item.id}><div><b>{item.reason}</b><p className="text-sm text-black/50">{quotaLabels[item.quota_type] || '其他额度'}</p></div><b className={item.delta > 0 ? 'text-green-700' : 'text-coral'}>{item.delta > 0 ? '+' : ''}{item.delta}</b></article>) : <Empty title="暂无额度变化。" />}</div>
   </>
 }
