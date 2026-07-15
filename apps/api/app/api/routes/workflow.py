@@ -5,7 +5,7 @@ from typing import Literal
 
 from docx import Document
 from fastapi import APIRouter, Depends, Header, Query, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import current_user
 from app.errors import AppError
-from app.models.entities import Application, ApplicationEvent, AuditLog, Interview, Job, Match, Notification, Package, QuotaLedger, Resume, ResumeFact, ResumeVersion, User
+from app.models.entities import Application, ApplicationEvent, AuditLog, Interview, Job, Match, Notification, Order, Package, QuotaLedger, Resume, ResumeFact, ResumeVersion, User, UserProfile
 from app.providers.storage.local import LocalStorage
 from app.services.quota_service import balance, change
 from app.services.report_service import weekly_report
@@ -236,16 +236,36 @@ class InterviewIn(BaseModel):
 
 
 @router.post("/interviews", status_code=201)
-async def create_interview(data: InterviewIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+async def create_interview(data: InterviewIn, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), user: User = Depends(current_user), db: Session = Depends(get_db)):
     job = db.scalar(select(Job).where(Job.id == data.job_id, Job.created_by == user.id))
     if not job: raise AppError("JOB_NOT_FOUND", "岗位不存在。", 404)
     version = owned_version(db, user, data.resume_version_id) if data.resume_version_id else None
     if version and version.job_id != job.id:
         raise AppError("RESUME_VERSION_JOB_MISMATCH", "定制简历与所选岗位不一致。", 409)
-    change(db, user_id=user.id, quota_type="interview", delta=-1, reason="创建模拟面试", idempotency_key=f"interview:{user.id}:{uuid.uuid4()}")
+    key = idempotency_key or f"interview:{user.id}:{uuid.uuid4()}"
+    existing_ledger = db.scalar(
+        select(QuotaLedger).where(
+            QuotaLedger.user_id == user.id,
+            QuotaLedger.quota_type == "interview",
+            QuotaLedger.idempotency_key == key,
+        )
+    )
+    if existing_ledger and existing_ledger.reference_type == "interview" and existing_ledger.reference_id:
+        existing = db.scalar(
+            select(Interview).where(
+                Interview.id == existing_ledger.reference_id,
+                Interview.user_id == user.id,
+            )
+        )
+        if existing:
+            return dump(existing)
+    if existing_ledger:
+        raise AppError("IDEMPOTENCY_KEY_REUSED", "该幂等键已用于其他额度操作，请更换后重试。", 409)
     questions = generate_questions(job)
     row = Interview(user_id=user.id, job_id=job.id, resume_version_id=data.resume_version_id, question_set_json=questions)
-    db.add(row); db.commit(); return dump(row)
+    db.add(row); db.flush()
+    change(db, user_id=user.id, quota_type="interview", delta=-1, reason="创建模拟面试", idempotency_key=key, reference_type="interview", reference_id=row.id)
+    db.commit(); return dump(row)
 
 
 @router.get("/interviews")
@@ -268,6 +288,7 @@ class AnswersIn(BaseModel): answers: dict
 async def answers(interview_id: str, data: AnswersIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     row = db.scalar(select(Interview).where(Interview.id == interview_id, Interview.user_id == user.id))
     if not row: raise AppError("INTERVIEW_NOT_FOUND", "模拟面试不存在。", 404)
+    if row.status != "draft": raise AppError("INTERVIEW_NOT_EDITABLE", "已提交的模拟面试不能继续修改回答。", 409)
     row.answers_json = data.answers; db.commit(); return dump(row)
 
 
@@ -275,6 +296,9 @@ async def answers(interview_id: str, data: AnswersIn, user: User = Depends(curre
 async def submit_interview(interview_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     row = db.scalar(select(Interview).where(Interview.id == interview_id, Interview.user_id == user.id))
     if not row: raise AppError("INTERVIEW_NOT_FOUND", "模拟面试不存在。", 404)
+    if row.status != "draft": raise AppError("INVALID_INTERVIEW_STATUS", "该模拟面试当前不能提交。", 409)
+    if not any(str(answer).strip() for answer in row.answers_json.values()):
+        raise AppError("INTERVIEW_ANSWERS_REQUIRED", "请至少填写一条回答后再提交。", 409)
     row.status = "submitted"; db.commit(); return dump(row)
 
 
@@ -313,4 +337,30 @@ async def read_notification(notification_id: str, user: User = Depends(current_u
 
 @router.get("/account/export")
 async def account_export(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    return {"user": dump(user, {"password_hash"}), "resumes": [dump(x, {"original_file_key"}) for x in db.scalars(select(Resume).where(Resume.user_id == user.id))], "applications": [dump(x) for x in db.scalars(select(Application).where(Application.user_id == user.id))]}
+    applications = list(db.scalars(select(Application).where(Application.user_id == user.id)))
+    application_ids = [application.id for application in applications]
+    payload = {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "user": dump(user, {"password_hash"}),
+        "profile": dump(db.get(UserProfile, user.id)) if db.get(UserProfile, user.id) else None,
+        "resumes": [dump(row, {"original_file_key"}) for row in db.scalars(select(Resume).where(Resume.user_id == user.id))],
+        "resume_facts": [dump(row) for row in db.scalars(select(ResumeFact).where(ResumeFact.user_id == user.id))],
+        "jobs": [dump(row) for row in db.scalars(select(Job).where(Job.created_by == user.id))],
+        "matches": [dump(row) for row in db.scalars(select(Match).where(Match.user_id == user.id))],
+        "resume_versions": [dump(row, {"export_file_key"}) for row in db.scalars(select(ResumeVersion).where(ResumeVersion.user_id == user.id))],
+        "applications": [dump(row) for row in applications],
+        "application_events": [dump(row) for row in db.scalars(select(ApplicationEvent).where(ApplicationEvent.application_id.in_(application_ids)))] if application_ids else [],
+        "interviews": [dump(row) for row in db.scalars(select(Interview).where(Interview.user_id == user.id))],
+        "orders": [dump(row) for row in db.scalars(select(Order).where(Order.user_id == user.id))],
+        "quota_ledger": [dump(row) for row in db.scalars(select(QuotaLedger).where(QuotaLedger.user_id == user.id))],
+        "notifications": [dump(row) for row in db.scalars(select(Notification).where(Notification.user_id == user.id))],
+        "audit_logs": [dump(row, {"ip_hash"}) for row in db.scalars(select(AuditLog).where(AuditLog.actor_user_id == user.id))],
+    }
+    return JSONResponse(
+        payload,
+        headers={
+            "Content-Disposition": 'attachment; filename="ai-job-coach-data.json"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

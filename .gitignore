@@ -13,7 +13,7 @@ htmlcov/
 __pycache__/
 *.py[cod]
 .ruff_cache/
+*.egg-info/
 playwright-report/
 test-results/
 .DS_Store
-

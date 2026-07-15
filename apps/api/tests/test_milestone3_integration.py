@@ -1,6 +1,6 @@
 from sqlalchemy import select
 
-from app.models.entities import AdvisorAssignment, AuditLog, Package, User
+from app.models.entities import AdvisorAssignment, AuditLog, Package, QuotaLedger, User
 from app.security import hash_password
 from app.providers.payment.disabled import DisabledPaymentProvider
 from app.errors import AppError
@@ -87,3 +87,50 @@ def test_advisor_only_sees_assigned_clients(client, db):
     clients=client.get('/api/advisor/clients').json()
     assert [x['id'] for x in clients['items']]==[user_a['id']]
     assert client.get(f"/api/advisor/clients/{user_b['id']}").status_code==403
+
+
+def test_interview_is_idempotent_and_answers_lock_after_submit(client, db):
+    user = register(client)
+    job = client.post(
+        "/api/jobs/import-text",
+        json={
+            "company_name": "虚构设备公司",
+            "title": "设备工程师",
+            "raw_jd": "负责设备点检、维护记录和跨部门协作，要求机械相关本科。",
+        },
+    ).json()
+    db.add(
+        QuotaLedger(
+            user_id=user["id"],
+            quota_type="interview",
+            delta=1,
+            reason="测试额度",
+            idempotency_key="interview-test-grant",
+        )
+    )
+    db.commit()
+
+    payload = {"job_id": job["id"], "resume_version_id": None}
+    headers = {"Idempotency-Key": "same-interview-request"}
+    first = client.post("/api/interviews", json=payload, headers=headers)
+    second = client.post("/api/interviews", json=payload, headers=headers)
+    assert first.status_code == 201 and second.status_code == 201
+    assert first.json()["id"] == second.json()["id"]
+    assert client.get("/api/quotas").json()["interview"] == 0
+
+    interview_id = first.json()["id"]
+    empty_submit = client.post(f"/api/interviews/{interview_id}/submit")
+    assert empty_submit.status_code == 409
+    assert empty_submit.json()["error"]["code"] == "INTERVIEW_ANSWERS_REQUIRED"
+    assert client.patch(
+        f"/api/interviews/{interview_id}/answers",
+        json={"answers": {"q1": "我负责整理点检记录并向项目成员同步异常。"}},
+    ).status_code == 200
+    submitted = client.post(f"/api/interviews/{interview_id}/submit")
+    assert submitted.status_code == 200 and submitted.json()["status"] == "submitted"
+    locked = client.patch(
+        f"/api/interviews/{interview_id}/answers",
+        json={"answers": {"q1": "提交后修改"}},
+    )
+    assert locked.status_code == 409
+    assert locked.json()["error"]["code"] == "INTERVIEW_NOT_EDITABLE"

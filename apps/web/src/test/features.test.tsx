@@ -6,6 +6,7 @@ import { vi } from 'vitest'
 import { api } from '../api/client'
 import { MatchDetail } from '../pages/Jobs'
 import { Advisor } from '../pages/Advisor'
+import { Interviews } from '../pages/Workflow'
 
 function shell(node: React.ReactNode, path = '/') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -52,4 +53,37 @@ test('顾问九队列同时展示空状态和任务状态', async () => {
   expect(await screen.findByText('审核简历')).toBeVisible()
   expect(screen.getByRole('button', { name: '批准简历' })).toBeVisible()
   expect(screen.getAllByText('当前无任务')).toHaveLength(8)
+})
+
+test('用户可以填写模拟面试回答并提交顾问评分', async () => {
+  const requests: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    requests.push(`${init?.method || 'GET'} ${url}`)
+    const json = url.endsWith('/api/jobs')
+      ? { items: [{ id: 'j1', company_name: '虚构公司', title: '设备工程师' }] }
+      : url.endsWith('/api/resume-versions')
+        ? { items: [] }
+        : url.endsWith('/api/interviews')
+          ? { items: [{ id: 'i1', status: 'draft', question_set_json: { questions: [{ id: 'q1', question: '你负责了什么？', why_asked: '核实贡献', rubric: ['说明个人职责'] }] }, answers_json: {}, scorecard_json: {}, feedback_json: {} }] }
+          : { id: 'i1', status: 'submitted' }
+    return new Response(JSON.stringify(json), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }))
+  shell(<Interviews />)
+  const user = userEvent.setup()
+  await user.type(await screen.findByLabelText('回答第 1 题'), '我负责整理点检记录。')
+  await user.click(screen.getByRole('button', { name: '提交顾问评分' }))
+  await screen.findByText(/你负责了什么/)
+  expect(requests.some((request) => request === 'PATCH /api/interviews/i1/answers')).toBe(true)
+  expect(requests.some((request) => request === 'POST /api/interviews/i1/submit')).toBe(true)
+})
+
+test('顾问可为已提交的模拟面试填写评分与复盘', async () => {
+  const names = ['新线索','待咨询','待付款','待核实','待修改','待投递','有面试','待复盘','退款/争议']
+  const queues = names.map((name) => ({ name, count: name === '待复盘' ? 1 : 0, items: name === '待复盘' ? [{ id: 'i1', user_id: 'user1', type: 'interview', risk: 'medium', next_action: '评分复盘', can_score: true }] : [] }))
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ queues }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+  shell(<Advisor />)
+  expect(await screen.findByLabelText('内容真实性')).toHaveValue(3)
+  expect(screen.getByLabelText('复盘总结')).toBeVisible()
+  expect(screen.getByRole('button', { name: '提交面试评分' })).toBeVisible()
 })

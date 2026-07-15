@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import can_access_user, current_user, require_roles
 from app.errors import AppError
-from app.models.entities import AdvisorAssignment, Application, AuditLog, Interview, Package, QuotaLedger, Resume, ResumeVersion, User
+from app.models.entities import AdvisorAssignment, Application, AuditLog, Interview, Package, QuotaLedger, ResumeVersion, User
 from app.providers.storage.local import LocalStorage
+from app.services.privacy_service import purge_user_data
 from app.services.quota_service import change
 from app.services.report_service import weekly_report
 from .common import dump, listed
@@ -31,7 +32,7 @@ async def queues(actor: User = Depends(require_roles("advisor", "admin")), db: S
     for version in db.scalars(select(ResumeVersion).where(ResumeVersion.user_id.in_(ids), or_(ResumeVersion.guard_status == "blocked", ResumeVersion.review_status == "advisor_review"))):
         tasks["待核实" if version.guard_status == "blocked" else "待修改"].append({"id": version.id, "user_id": version.user_id, "type": "resume", "risk": "high" if version.guard_status == "blocked" else "medium", "next_action": "核查事实" if version.guard_status == "blocked" else "审核简历", "can_review": version.guard_status == "passed" and version.review_status == "advisor_review"})
     for app in db.scalars(select(Application).where(Application.user_id.in_(ids), Application.status.in_(["pending_confirmation", "ready_to_apply"]))): tasks["待投递"].append({"id": app.id, "user_id": app.user_id, "type": "application", "risk": "low", "next_action": "确认并投递"})
-    for interview in db.scalars(select(Interview).where(Interview.user_id.in_(ids), Interview.status.in_(["draft", "submitted"]))): tasks["有面试" if interview.status == "draft" else "待复盘"].append({"id": interview.id, "user_id": interview.user_id, "type": "interview", "risk": "medium", "next_action": "生成训练" if interview.status == "draft" else "评分复盘"})
+    for interview in db.scalars(select(Interview).where(Interview.user_id.in_(ids), Interview.status.in_(["draft", "submitted"]))): tasks["有面试" if interview.status == "draft" else "待复盘"].append({"id": interview.id, "user_id": interview.user_id, "type": "interview", "risk": "medium", "next_action": "等待用户作答" if interview.status == "draft" else "评分复盘", "can_score": interview.status == "submitted"})
     return {"queues": [{"name": label, "count": len(tasks[label]), "items": tasks[label]} for label in labels]}
 
 
@@ -77,7 +78,10 @@ class ScoreIn(BaseModel): scorecard: dict; feedback: dict
 async def score_interview(interview_id: str, data: ScoreIn, actor: User = Depends(require_roles("advisor", "admin")), db: Session = Depends(get_db)):
     row = db.get(Interview, interview_id)
     if not row or not can_access_user(db, actor, row.user_id): raise AppError("FORBIDDEN", "无权评分该面试。", 403)
-    row.scorecard_json = data.scorecard; row.feedback_json = data.feedback; row.status = "scored"; row.advisor_id = actor.id; db.commit(); return dump(row)
+    if row.status != "submitted": raise AppError("INTERVIEW_NOT_SUBMITTED", "用户提交回答后才能评分。", 409)
+    row.scorecard_json = data.scorecard; row.feedback_json = data.feedback; row.status = "scored"; row.advisor_id = actor.id
+    db.add(AuditLog(actor_user_id=actor.id, action="interview.scored", entity_type="interview", entity_id=row.id))
+    db.commit(); return dump(row)
 
 
 @router.get("/reports/weekly/{user_id}")
@@ -153,14 +157,6 @@ async def admin_quota_ledger(actor: User = Depends(require_roles("admin")), db: 
 async def purge_account(user_id: str, actor: User = Depends(require_roles("admin")), db: Session = Depends(get_db)):
     user = db.get(User, user_id)
     if not user or user.status != "deletion_requested": raise AppError("ACCOUNT_NOT_READY_FOR_DELETION", "账号未申请删除。", 409)
-    storage = LocalStorage()
-    for resume in db.scalars(select(Resume).where(Resume.user_id == user_id)):
-        storage.delete(resume.original_file_key)
-        resume.parsed_text = ""
-        resume.deleted_at = datetime.now(timezone.utc)
-    for version in db.scalars(select(ResumeVersion).where(ResumeVersion.user_id == user_id)):
-        if version.export_file_key:
-            storage.delete(version.export_file_key)
-    user.status = "deleted"; user.deleted_at = datetime.now(timezone.utc); user.email = f"deleted-{user.id}@example.invalid"; user.display_name = "已删除用户"
-    db.add(AuditLog(actor_user_id=actor.id, action="account.purged", entity_type="user", entity_id=user.id, metadata_json={"files_removed": True}))
+    summary = purge_user_data(db, user, LocalStorage())
+    db.add(AuditLog(actor_user_id=actor.id, action="account.purged", entity_type="user", entity_id=user.id, metadata_json=summary))
     db.commit(); return {"status": "deleted"}
