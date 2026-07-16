@@ -74,6 +74,57 @@ def test_admin_grant_permission_audit_and_idempotency(client, db):
     assert db.scalar(select(AuditLog).where(AuditLog.action == "quota.grant")) is not None
 
 
+def test_admin_package_crud_has_validation_and_audit(client, db):
+    register(client)
+    admin = User(
+        email="package-admin@example.test",
+        password_hash=hash_password("Password123!"),
+        display_name="套餐管理员",
+        role="admin",
+    )
+    db.add(admin)
+    db.commit()
+    client.post("/api/auth/logout")
+    client.post("/api/auth/login", json={"email": admin.email, "password": "Password123!"})
+    system = client.get("/api/admin/system/status")
+    assert system.status_code == 200
+    assert system.json()["providers"]["llm"]["provider"] == "mock"
+    assert system.json()["maintenance"]["mode"] == "dry_run"
+    payload = {
+        "code": "career_plus",
+        "name": "求职进阶版",
+        "price_cents": 39900,
+        "billing_period": "once",
+        "resume_quota": 5,
+        "application_quota": 10,
+        "interview_quota": 2,
+        "features_json": ["定制简历", "模拟面试"],
+    }
+    created = client.post("/api/admin/packages", json=payload)
+    assert created.status_code == 201, created.text
+    package_id = created.json()["id"]
+    duplicate = client.post("/api/admin/packages", json=payload)
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "PACKAGE_CODE_EXISTS"
+    assert client.patch(f"/api/admin/packages/{package_id}", json={}).status_code == 422
+    assert (
+        client.patch(f"/api/admin/packages/{package_id}", json={"price_cents": -1}).status_code
+        == 422
+    )
+    updated = client.patch(
+        f"/api/admin/packages/{package_id}",
+        json={"name": "求职进阶版（更新）", "resume_quota": 8},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "求职进阶版（更新）"
+    assert updated.json()["resume_quota"] == 8
+    assert client.delete(f"/api/admin/packages/{package_id}").status_code == 204
+    rows = client.get("/api/admin/packages").json()["items"]
+    assert next(row for row in rows if row["id"] == package_id)["is_active"] is False
+    actions = set(db.scalars(select(AuditLog.action).where(AuditLog.entity_id == package_id)))
+    assert {"package.created", "package.updated", "package.disabled"}.issubset(actions)
+
+
 def test_complete_registration_to_weekly_report_flow(client, db):
     user = register(client)
     add_packages(db)
@@ -237,6 +288,19 @@ def test_advisor_only_sees_assigned_clients(client, db):
     )
     clients = client.get("/api/advisor/clients").json()
     assert [x["id"] for x in clients["items"]] == [user_a["id"]]
+    detail = client.get(f"/api/advisor/clients/{user_a['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["profile"] is not None
+    assert set(detail.json()["timeline"]) == {
+        "resumes",
+        "facts",
+        "jobs",
+        "matches",
+        "resume_versions",
+        "applications",
+        "interviews",
+        "orders",
+    }
     assert client.get(f"/api/advisor/clients/{user_b['id']}").status_code == 403
 
 

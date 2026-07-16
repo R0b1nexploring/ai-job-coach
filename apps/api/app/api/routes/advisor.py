@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -13,13 +14,21 @@ from app.models.entities import (
     Application,
     AuditLog,
     Interview,
+    Job,
+    Match,
+    Order,
     Package,
     QuotaLedger,
+    Resume,
+    ResumeFact,
     ResumeVersion,
     User,
+    UserProfile,
 )
 from app.providers.storage.local import LocalStorage
 from app.services.privacy_service import purge_user_data
+from app.services.maintenance_service import run_maintenance
+from app.services.provider_status import provider_status
 from app.services.quota_service import change
 from app.services.report_service import weekly_report
 from .common import dump, listed
@@ -57,6 +66,24 @@ async def queues(
         "退款/争议",
     ]
     tasks = {label: [] for label in labels}
+    users = {row.id: row for row in db.scalars(select(User).where(User.id.in_(ids)))}
+    package_names = {}
+    for order in db.scalars(
+        select(Order).where(Order.user_id.in_(ids)).order_by(Order.created_at.desc())
+    ):
+        package_names.setdefault(
+            order.user_id,
+            str((order.package_snapshot_json or {}).get("name") or "演示额度"),
+        )
+
+    def context(user_id: str, due_at=None):
+        owner = users.get(user_id)
+        return {
+            "user_name": owner.display_name if owner else "未知用户",
+            "package_name": package_names.get(user_id, "演示额度"),
+            "due_at": due_at,
+        }
+
     for version in db.scalars(
         select(ResumeVersion).where(
             ResumeVersion.user_id.in_(ids),
@@ -75,6 +102,7 @@ async def queues(
                 "next_action": "核查事实" if version.guard_status == "blocked" else "审核简历",
                 "can_review": version.guard_status == "passed"
                 and version.review_status == "advisor_review",
+                **context(version.user_id),
             }
         )
     for app in db.scalars(
@@ -90,6 +118,7 @@ async def queues(
                 "type": "application",
                 "risk": "low",
                 "next_action": "确认并投递",
+                **context(app.user_id, app.next_action_at),
             }
         )
     for interview in db.scalars(
@@ -105,6 +134,7 @@ async def queues(
                 "risk": "medium",
                 "next_action": "等待用户作答" if interview.status == "draft" else "评分复盘",
                 "can_score": interview.status == "submitted",
+                **context(interview.user_id, interview.scheduled_at),
             }
         )
     return {
@@ -139,7 +169,24 @@ async def client(
         raise AppError("USER_NOT_FOUND", "用户不存在。", 404)
     return {
         "user": dump(user, {"password_hash"}),
+        "profile": dump(db.get(UserProfile, user_id)) if db.get(UserProfile, user_id) else None,
         "timeline": {
+            "resumes": [
+                dump(x, {"original_file_key", "parsed_text"})
+                for x in db.scalars(select(Resume).where(Resume.user_id == user_id))
+            ],
+            "facts": [
+                dump(x) for x in db.scalars(select(ResumeFact).where(ResumeFact.user_id == user_id))
+            ],
+            "jobs": [
+                dump(x, {"raw_jd"})
+                for x in db.scalars(select(Job).where(Job.created_by == user_id))
+            ],
+            "matches": [dump(x) for x in db.scalars(select(Match).where(Match.user_id == user_id))],
+            "resume_versions": [
+                dump(x)
+                for x in db.scalars(select(ResumeVersion).where(ResumeVersion.user_id == user_id))
+            ],
             "applications": [
                 dump(x)
                 for x in db.scalars(select(Application).where(Application.user_id == user_id))
@@ -147,6 +194,7 @@ async def client(
             "interviews": [
                 dump(x) for x in db.scalars(select(Interview).where(Interview.user_id == user_id))
             ],
+            "orders": [dump(x) for x in db.scalars(select(Order).where(Order.user_id == user_id))],
         },
     }
 
@@ -274,14 +322,25 @@ admin_router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 class PackageIn(BaseModel):
-    code: str
-    name: str
-    price_cents: int
-    billing_period: str = "once"
-    resume_quota: int = 0
-    application_quota: int = 0
-    interview_quota: int = 0
-    features_json: list = Field(default_factory=list)
+    code: str = Field(pattern=r"^[a-z0-9_-]{2,50}$")
+    name: str = Field(min_length=1, max_length=100)
+    price_cents: int = Field(ge=0)
+    billing_period: Literal["once", "month", "year"] = "once"
+    resume_quota: int = Field(default=0, ge=0)
+    application_quota: int = Field(default=0, ge=0)
+    interview_quota: int = Field(default=0, ge=0)
+    features_json: list[str] = Field(default_factory=list, max_length=30)
+
+
+class PackagePatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    price_cents: int | None = Field(default=None, ge=0)
+    billing_period: Literal["once", "month", "year"] | None = None
+    resume_quota: int | None = Field(default=None, ge=0)
+    application_quota: int | None = Field(default=None, ge=0)
+    interview_quota: int | None = Field(default=None, ge=0)
+    features_json: list[str] | None = Field(default=None, max_length=30)
+    is_active: bool | None = None
 
 
 @admin_router.get("/packages")
@@ -295,6 +354,8 @@ async def admin_packages(
 async def create_package(
     data: PackageIn, actor: User = Depends(require_roles("admin")), db: Session = Depends(get_db)
 ):
+    if db.scalar(select(Package.id).where(Package.code == data.code)):
+        raise AppError("PACKAGE_CODE_EXISTS", "套餐代码已存在。", 409)
     row = Package(**data.model_dump())
     db.add(row)
     db.flush()
@@ -313,23 +374,25 @@ async def create_package(
 @admin_router.patch("/packages/{package_id}")
 async def update_package(
     package_id: str,
-    data: dict,
+    data: PackagePatch,
     actor: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
 ):
     row = db.get(Package, package_id)
     if not row:
         raise AppError("PACKAGE_NOT_FOUND", "套餐不存在。", 404)
-    for key, value in data.items():
-        if hasattr(row, key) and key not in {"id", "created_at"}:
-            setattr(row, key, value)
+    changes = data.model_dump(exclude_none=True)
+    if not changes:
+        raise AppError("PACKAGE_UPDATE_EMPTY", "请至少修改一个套餐字段。", 422)
+    for key, value in changes.items():
+        setattr(row, key, value)
     db.add(
         AuditLog(
             actor_user_id=actor.id,
             action="package.updated",
             entity_type="package",
             entity_id=row.id,
-            metadata_json={"fields": sorted(data.keys())},
+            metadata_json={"fields": sorted(changes.keys())},
         )
     )
     db.commit()
@@ -408,6 +471,28 @@ async def admin_quota_ledger(
 ):
     rows = db.scalars(select(QuotaLedger).order_by(QuotaLedger.created_at.desc())).all()
     return listed([dump(row) for row in rows])
+
+
+@admin_router.get("/accounts/deletion-requests")
+async def deletion_requests(
+    actor: User = Depends(require_roles("admin")), db: Session = Depends(get_db)
+):
+    rows = db.scalars(
+        select(User)
+        .where(User.role == "user", User.status == "deletion_requested")
+        .order_by(User.updated_at)
+    ).all()
+    return listed([dump(row, {"password_hash"}) for row in rows])
+
+
+@admin_router.get("/system/status")
+async def system_status(
+    actor: User = Depends(require_roles("admin")), db: Session = Depends(get_db)
+):
+    return {
+        "providers": provider_status(),
+        "maintenance": run_maintenance(db),
+    }
 
 
 @admin_router.post("/accounts/{user_id}/purge")

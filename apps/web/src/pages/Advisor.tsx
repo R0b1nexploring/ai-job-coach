@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import { ErrorState } from '../components/States'
+import { Empty, ErrorState, Loading } from '../components/States'
 
 
 export function Advisor() {
@@ -12,10 +12,11 @@ export function Advisor() {
     mutationFn: ({ id, approved }: { id: string; approved: boolean }) => api(`/api/advisor/resume-versions/${id}/review`, { method: 'POST', body: JSON.stringify({ approved, note: approved ? '顾问确认事实保护与表达均通过' : '退回用户修改' }) }),
     onSuccess: () => client.invalidateQueries({ queryKey: ['advisor-queues'] }),
   })
+  if (query.isLoading) return <Loading text="正在加载顾问队列…" />
   if (query.error) return <ErrorState error={query.error} />
   return <><span className="badge">仅分配客户</span><h1 className="mt-3 text-4xl font-black">顾问工作台</h1><p className="mt-2 text-black/60">九个处理队列，敏感操作均由后端再次鉴权。</p>
     {review.error && <div className="mt-4"><ErrorState error={review.error} /></div>}
-    <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{query.data?.queues?.map((queue: any) => <section className="card" key={queue.name}><div className="flex justify-between"><h2 className="font-bold">{queue.name}</h2><span className="badge">{queue.count}</span></div><div className="mt-4 space-y-3">{queue.items.length ? queue.items.map((item: any) => <div className="rounded-xl bg-cream p-3 text-sm" key={item.id}><b>{item.next_action}</b><p className="text-black/50">风险 {item.risk} · 用户 {item.user_id.slice(0, 6)}</p>{item.type === 'resume' && item.can_review && <div className="mt-3 flex gap-2"><button className="btn-secondary" onClick={() => review.mutate({ id: item.id, approved: false })}>退回修改</button><button className="btn" onClick={() => review.mutate({ id: item.id, approved: true })}>批准简历</button></div>}{item.type === 'interview' && item.can_score && <InterviewScoreForm interviewId={item.id} />}</div>) : <p className="text-sm text-black/40">当前无任务</p>}</div></section>)}</div>
+    <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{query.data?.queues?.map((queue: any) => <section className="card" key={queue.name}><div className="flex justify-between"><h2 className="font-bold">{queue.name}</h2><span className="badge">{queue.count}</span></div><div className="mt-4 space-y-3">{queue.items.length ? queue.items.map((item: any) => <div className="rounded-xl bg-cream p-3 text-sm" key={item.id}><b>{item.next_action}</b><p className="mt-1 text-black/60">{item.user_name} · {item.package_name}</p><p className="mt-1 text-xs text-black/45">风险：{item.risk} · 截止：{item.due_at ? new Date(item.due_at).toLocaleString('zh-CN') : '未设置'}</p><Link className="mt-2 inline-block text-sage" to={`/advisor/clients/${item.user_id}`}>查看客户详情</Link>{item.type === 'resume' && item.can_review && <div className="mt-3 flex gap-2"><button className="btn-secondary" onClick={() => review.mutate({ id: item.id, approved: false })}>退回修改</button><button className="btn" onClick={() => review.mutate({ id: item.id, approved: true })}>批准简历</button></div>}{item.type === 'interview' && item.can_score && <InterviewScoreForm interviewId={item.id} />}</div>) : <p className="text-sm text-black/40">当前无任务</p>}</div></section>)}</div>
   </>
 }
 
@@ -46,7 +47,13 @@ function InterviewScoreForm({ interviewId }: { interviewId: string }) {
 export function AdvisorClient() {
   const { id } = useParams()
   const query = useQuery({ queryKey: ['advisor-client', id], queryFn: () => api<any>(`/api/advisor/clients/${id}`) })
-  if (query.isLoading) return <p>正在加载客户时间线…</p>
+  if (query.isLoading) return <Loading text="正在加载客户时间线…" />
   if (query.error) return <ErrorState error={query.error} />
-  return <><Link to="/advisor" className="text-sage">← 返回工作台</Link><h1 className="mt-4 text-4xl font-black">{query.data.user.display_name}</h1><p className="mt-2 text-black/50">{query.data.user.email}</p><div className="mt-6 grid gap-4 md:grid-cols-3">{Object.entries(query.data.timeline).map(([name, items]) => <section className="card" key={name}><h2 className="font-bold">{name}</h2><p className="mt-3 text-3xl font-black">{(items as any[]).length}</p></section>)}</div></>
+  const labels: Record<string, string> = { resumes: '简历', facts: '事实库', jobs: '岗位', matches: '匹配报告', resume_versions: '定制简历', applications: '投递', interviews: '面试', orders: '订单' }
+  return <><Link to="/advisor" className="text-sage">← 返回工作台</Link><h1 className="mt-4 text-4xl font-black">{query.data.user.display_name}</h1><p className="mt-2 text-black/50">{query.data.user.email}</p><section className="card mt-6"><h2 className="font-bold">求职目标</h2><div className="mt-3 grid gap-2 text-sm md:grid-cols-3"><p>专业：{query.data.profile?.major || '待补充'}</p><p>目标城市：{query.data.profile?.target_cities_json?.join('、') || '待补充'}</p><p>目标岗位：{query.data.profile?.target_roles_json?.join('、') || '待补充'}</p></div></section><div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Object.entries(query.data.timeline).map(([name, items]) => <TimelineCard key={name} title={labels[name] || name} items={items as any[]} />)}</div></>
+}
+
+function TimelineCard({ title, items }: { title: string; items: any[] }) {
+  const describe = (item: any) => item.display_name || item.label || [item.company_name, item.title].filter(Boolean).join(' · ') || item.recommendation || item.review_status || item.status || item.order_number || item.id?.slice(0, 8)
+  return <section className="card"><div className="flex items-center justify-between"><h2 className="font-bold">{title}</h2><span className="badge">{items.length}</span></div>{items.length ? <ul className="mt-3 space-y-2">{items.slice(0, 5).map((item) => <li className="rounded-lg bg-cream p-2 text-sm" key={item.id}>{describe(item)}{item.verification_status && <span className="ml-2 text-xs text-black/45">{item.verification_status}</span>}{typeof item.total_score === 'number' && <span className="ml-2 text-xs text-black/45">{item.total_score} 分</span>}</li>)}</ul> : <div className="mt-3"><Empty title="暂无记录" /></div>}</section>
 }

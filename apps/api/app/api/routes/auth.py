@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
@@ -43,10 +44,13 @@ def set_session(response: Response, user: User):
 async def register(data: RegisterIn, response: Response, db: Session = Depends(get_db)):
     if db.scalar(select(User).where(User.email == data.email.lower())):
         raise AppError("EMAIL_ALREADY_REGISTERED", "该邮箱已注册。", 409)
+    now = datetime.now(timezone.utc)
     user = User(
         email=data.email.lower(),
         password_hash=hash_password(data.password),
         display_name=data.display_name,
+        last_active_at=now,
+        retention_expires_at=now + timedelta(days=get_settings().data_retention_days),
     )
     db.add(user)
     db.flush()
@@ -66,6 +70,14 @@ async def login(data: LoginIn, response: Response, db: Session = Depends(get_db)
     user = db.scalar(select(User).where(User.email == data.email.lower()))
     if not user or not verify_password(data.password, user.password_hash):
         raise AppError("INVALID_CREDENTIALS", "邮箱或密码错误。", 401)
+    if user.status not in {"active", "deletion_requested"}:
+        raise AppError("ACCOUNT_NOT_ACTIVE", "账号当前不可登录。", 403)
+    if user.status == "active":
+        now = datetime.now(timezone.utc)
+        user.last_active_at = now
+        if user.role == "user":
+            user.retention_expires_at = now + timedelta(days=get_settings().data_retention_days)
+        db.commit()
     set_session(response, user)
     return dump(user, {"password_hash"})
 
@@ -108,7 +120,9 @@ account_router = APIRouter(prefix="/api", tags=["account"])
 
 @account_router.delete("/account", status_code=202)
 async def request_deletion(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
     user.status = "deletion_requested"
+    user.deletion_requested_at = now
     db.add(
         AuditLog(
             actor_user_id=user.id,

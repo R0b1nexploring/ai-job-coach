@@ -6,7 +6,16 @@ def test_health(client):
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json()["database"] == "ok"
-    assert response.json()["providers"] == {"llm": "mock", "payment": "disabled"}
+    providers = response.json()["providers"]
+    assert providers["llm"]["provider"] == "mock"
+    assert providers["llm"]["operational"] is True
+    assert providers["payment"]["provider"] == "disabled"
+    assert providers["jobs"]["providers"] == [
+        "sample",
+        "public_catalog",
+        "greenhouse",
+        "lever",
+    ]
 
 
 def test_password_hash_and_login(client):

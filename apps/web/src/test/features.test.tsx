@@ -7,6 +7,7 @@ import { api } from '../api/client'
 import { MatchDetail } from '../pages/Jobs'
 import { Advisor } from '../pages/Advisor'
 import { Interviews } from '../pages/Workflow'
+import { AdminAccounts, AdminPackages, AdminSystem } from '../pages/Admin'
 
 function shell(node: React.ReactNode, path = '/') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -91,4 +92,50 @@ test('顾问可为已提交的模拟面试填写评分与复盘', async () => {
   expect(await screen.findByLabelText('内容真实性')).toHaveValue(3)
   expect(screen.getByLabelText('复盘总结')).toBeVisible()
   expect(screen.getByRole('button', { name: '提交面试评分' })).toBeVisible()
+})
+
+test('管理员可以处理用户主动提交的账号删除申请', async () => {
+  let purged = false
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (init?.method === 'POST' && url.includes('/purge')) {
+      purged = true
+      return new Response(JSON.stringify({ status: 'deleted' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ items: purged ? [] : [{ id: 'u1', display_name: '待删除用户', email: 'delete@example.test', updated_at: '2026-07-16T00:00:00Z' }], total: purged ? 0 : 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }))
+  shell(<AdminAccounts />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: '执行清理' }))
+  expect(await screen.findByText(/已完成清理/)).toBeVisible()
+  expect(await screen.findByText(/没有待处理/)).toBeVisible()
+})
+
+test('管理员可以创建套餐', async () => {
+  let packages: any[] = []
+  vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      packages = [{ id: 'p1', code: 'career_plus', name: '求职进阶版', price_cents: 39900, billing_period: 'once', resume_quota: 5, application_quota: 10, interview_quota: 2, features_json: ['定制简历'], is_active: true }]
+      return new Response(JSON.stringify(packages[0]), { status: 201, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ items: packages, total: packages.length }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }))
+  shell(<AdminPackages />)
+  const user = userEvent.setup()
+  await user.type(await screen.findByLabelText('套餐代码'), 'career_plus')
+  await user.type(screen.getByLabelText('套餐名称'), '求职进阶版')
+  await user.click(screen.getByRole('button', { name: '创建套餐' }))
+  expect(await screen.findByText('career_plus')).toBeVisible()
+  expect(screen.getByRole('button', { name: '保存套餐' })).toBeVisible()
+})
+
+test('系统状态页显示真实 AI 配置缺口且不暴露密钥', async () => {
+  const payload = { providers: { llm: { provider: 'compatible', operational: false, uses_fallback: true, missing_configuration: ['LLM_API_KEY'], notice: '失败会回退 Mock。' }, jobs: { operational: true, providers: ['sample', 'greenhouse'] }, storage: { provider: 'local', operational: true, notice: '本地私有存储。' }, payment: { provider: 'disabled', operational: true, notice: 'MVP-1 禁用真实支付。' } }, maintenance: { expired_user_count: 1, deletion_request_count: 2, stale_job_count: 3 } }
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+  shell(<AdminSystem />)
+  expect(await screen.findByText('真实 AI 配置不完整')).toBeVisible()
+  expect(screen.getByText(/LLM_API_KEY/)).toBeVisible()
+  expect(screen.getByText(/待标记过期岗位/)).toBeVisible()
+  expect(screen.queryByText(/gho_|sk-/)).not.toBeInTheDocument()
 })

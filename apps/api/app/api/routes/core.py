@@ -32,6 +32,7 @@ from app.services.matcher import score_match
 from app.services.quota_service import change
 from app.services.resume_parser import ALLOWED, parse_resume
 from app.services.resume_analyzer import analyze_resume
+from app.services.provider_status import provider_status
 from .common import dump, listed
 
 
@@ -45,10 +46,7 @@ async def health(db: Session = Depends(get_db)):
         "status": "ok",
         "application": "ok",
         "database": "ok",
-        "providers": {
-            "llm": get_settings().llm_provider,
-            "payment": get_settings().payment_provider,
-        },
+        "providers": provider_status(),
     }
 
 

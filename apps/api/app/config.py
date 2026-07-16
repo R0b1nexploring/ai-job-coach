@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     local_storage_path: str = "./var/uploads"
     max_upload_mb: int = 10
     data_retention_days: int = 180
+    deletion_grace_days: int = 7
+    job_stale_days: int = 45
     demo_admin_email: str = "admin@example.test"
     demo_admin_password: str = "ChangeMe123!"
     demo_advisor_email: str = "advisor@example.test"

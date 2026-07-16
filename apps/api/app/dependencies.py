@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import Cookie, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,6 +19,16 @@ async def current_user(
     user = db.get(User, user_id) if user_id else None
     if not user or user.status not in {"active", "deletion_requested"}:
         raise AppError("UNAUTHORIZED", "请先登录。", 401)
+    if user.status == "active":
+        now = datetime.now(timezone.utc)
+        last_active = user.last_active_at
+        if last_active and last_active.tzinfo is None:
+            last_active = last_active.replace(tzinfo=timezone.utc)
+        if last_active is None or last_active <= now - timedelta(days=1):
+            user.last_active_at = now
+            if user.role == "user":
+                user.retention_expires_at = now + timedelta(days=get_settings().data_retention_days)
+            db.commit()
     return user
 
 

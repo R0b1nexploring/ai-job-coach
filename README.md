@@ -58,6 +58,24 @@ PowerShell：`.\scripts\test.ps1`。单独运行 E2E 前先启动前后端，或
 
 首次运行 E2E 需安装浏览器：`cd apps/web && npx playwright install chromium`。精简 WSL 镜像若提示缺少 `libnspr4` 等库，再执行 `npx playwright install-deps chromium`。
 
+## 数据保留与维护任务
+
+用户最近活动会延长默认 180 天保留截止时间。用户提交删除申请超过 7 天，或普通用户保留期到期后，维护任务可以清理文件和个人内容；明确发布日期超过 45 天的活动岗位会标记为过期，但不会删除历史投递。
+
+先执行只读预览：
+
+```bash
+apps/api/.venv/bin/python scripts/maintenance.py
+```
+
+确认候选数量后再显式执行：
+
+```bash
+apps/api/.venv/bin/python scripts/maintenance.py --execute
+```
+
+正式环境应通过 cron、systemd timer 或 Windows 任务计划程序每天调用一次 `--execute`。命令只输出汇总计数，不输出完整简历、JD 或密钥。相关阈值由 `DATA_RETENTION_DAYS`、`DELETION_GRACE_DAYS` 和 `JOB_STALE_DAYS` 配置。
+
 ## Demo 账号
 
 以下账号仅用于本地虚构演示，密码均为 `ChangeMe123!`：
@@ -78,7 +96,7 @@ PowerShell：`.\scripts\test.ps1`。单独运行 E2E 前先启动前后端，或
 
 Greenhouse 的企业标识是公开招聘页 URL 中 `boards/` 后的 token；Lever 的企业标识是 `jobs.lever.co/` 后的 site。系统只读取公开 JSON 接口，不抓取需要登录或验证码的平台页面。
 
-模拟面试支持按岗位生成题目、保存真实回答、提交顾问六维评分并查看复盘任务。设置页可下载完整个人数据 JSON；账号清理会删除原始与导出文件，并擦除事实库、JD、投递备注和面试回答等派生个人内容。
+模拟面试支持按岗位生成题目、保存真实回答、提交顾问六维评分并查看复盘任务。设置页可下载完整个人数据 JSON；账号清理会删除原始与导出文件，并擦除事实库、JD、投递备注和面试回答等派生个人内容。管理员可在账号清理页处理用户申请，并在系统状态页查看 Provider 配置完整性和维护任务预览；页面从不显示密钥值。
 
 系统允许纠正解析事实和加入真实完成的个人/课程/岗位实践项目，但不生成虚构雇主、任职、奖项、证书或冒用他人成果。普通用户提交定制简历后须由被分配顾问审核，事实检查和审核均通过后才能导出或进入正式投递队列。详见 [`docs/resume-integrity.md`](docs/resume-integrity.md)。
 

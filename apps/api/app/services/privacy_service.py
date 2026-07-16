@@ -132,6 +132,7 @@ def purge_user_data(db: Session, user: User, storage: LocalStorage) -> dict[str,
 
     user.status = "deleted"
     user.deleted_at = now
+    user.retention_expires_at = now
     user.email = f"deleted-{user.id}@example.invalid"
     user.display_name = "已删除用户"
     user.password_hash = "account-deleted"

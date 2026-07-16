@@ -123,6 +123,8 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
     assert "original_file_key" not in exported_data["resumes"][0]
     assert "export_file_key" not in exported_data["resume_versions"][0]
     assert client.delete("/api/account").status_code == 202
+    db.refresh(user)
+    assert user.deletion_requested_at is not None
 
     admin = User(
         email="privacy-admin@example.test",
@@ -137,8 +139,14 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
         "/api/auth/login",
         json={"email": admin.email, "password": "Password123!"},
     )
+    pending = client.get("/api/admin/accounts/deletion-requests")
+    assert pending.status_code == 200
+    assert pending.json()["total"] == 1
+    assert pending.json()["items"][0]["id"] == user.id
+    assert "password_hash" not in pending.json()["items"][0]
     response = client.post(f"/api/admin/accounts/{user.id}/purge")
     assert response.status_code == 200, response.text
+    assert client.get("/api/admin/accounts/deletion-requests").json()["total"] == 0
 
     db.refresh(user)
     db.refresh(profile)
@@ -164,3 +172,9 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
     assert event.note == ""
     assert not storage.path(original_key).exists()
     assert not storage.path(export_key).exists()
+
+
+def test_regular_user_cannot_list_deletion_requests(client):
+    register(client)
+    response = client.get("/api/admin/accounts/deletion-requests")
+    assert response.status_code == 403
