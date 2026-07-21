@@ -36,6 +36,12 @@ def provider_status() -> dict:
         }
     return {
         "llm": llm,
+        "ocr": {
+            "provider": "rapidocr",
+            "operational": True,
+            "uses_fallback": False,
+            "notice": "JD 截图在本地识别，不上传到第三方；失败时可使用用户补充文字。",
+        },
         "jobs": {
             "operational": True,
             "providers": ["sample", "public_catalog", "greenhouse", "lever"],

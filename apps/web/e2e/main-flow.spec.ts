@@ -1,101 +1,51 @@
+import path from 'node:path'
 import { test, expect } from '@playwright/test'
 
-test('Demo 用户从登录查看简历、岗位、匹配、额度、投递与周报',async({page,request})=>{
+test('用户在单页完成简历和 JD 截图优化', async ({ page }) => {
   test.setTimeout(60_000)
-  await request.post('/api/auth/login',{data:{email:'admin@example.test',password:'ChangeMe123!'}})
-  const clients=await (await request.get('/api/advisor/clients')).json()
-  const demoUser=clients.items.find((item:any)=>item.email==='user@example.test')
-  const grantRun=Date.now()
-  for(const quotaType of ['match','resume','application','interview'])
-    await request.post('/api/admin/quotas/grant',{data:{user_id:demoUser.id,quota_type:quotaType,amount:5,reason:'Playwright 可重复验收额度',idempotency_key:`e2e-${grantRun}-${quotaType}`}})
-  await page.goto('/login')
-  await page.getByRole('button',{name:'登录'}).click()
-  await expect(page.getByRole('heading',{name:/下一步/})).toBeVisible()
-  await page.getByRole('link',{name:'简历'}).click()
-  await expect(page.getByText('机械工程应届生示例简历.docx')).toBeVisible()
-  await page.getByRole('button',{name:'分析岗位方向'}).first().click()
-  await expect(page.getByText('简历方向建议')).toBeVisible()
-  await page.getByRole('link',{name:'岗位'}).click()
-  await expect(page.getByText(/示例制药设备有限公司/).first()).toBeVisible()
-  await page.getByRole('button',{name:'按简历发现岗位'}).click()
-  await expect(page.getByText(/已发现并保存/)).toBeVisible()
-  const company=`E2E虚构设备公司${Date.now()}`
-  await page.getByPlaceholder('公司名称').fill(company)
-  await page.getByPlaceholder('岗位名称').fill('设备实践工程师')
-  await page.getByPlaceholder(/粘贴完整岗位描述/).fill('负责设备点检、数据库记录和维护工作流，要求机械工程本科并熟悉 CAD。')
-  await page.getByRole('button',{name:'导入并结构化'}).click()
-  await expect(page.getByText('岗位已结构化。')).toBeVisible()
-  await page.locator('article').filter({hasText:company}).getByRole('button',{name:'生成匹配'}).click()
-  await expect(page.getByText(/匹配完成/)).toBeVisible()
-  await page.getByRole('heading',{name:'最近匹配'}).locator('..').getByRole('link').first().click()
-  await expect(page.getByText('六项评分')).toBeVisible()
-  await page.getByRole('button',{name:'生成定制简历'}).click()
-  await expect(page.getByText('定制简历已生成，事实检查通过。')).toBeVisible()
-  await page.getByRole('button',{name:'提交顾问审核'}).click()
-  await expect(page.getByText(/已提交顾问审核/)).toBeVisible()
-  const matchUrl=page.url()
-  await page.getByRole('button',{name:'退出登录'}).click()
-  await page.goto('/login')
-  await page.getByLabel('邮箱').fill('advisor@example.test')
-  await page.getByLabel('密码').fill('ChangeMe123!')
-  await page.getByRole('button',{name:'登录'}).click()
-  await page.getByRole('link',{name:'顾问工作台'}).click()
-  await page.getByRole('button',{name:'批准简历'}).first().click()
-  await expect(page.getByRole('button',{name:'批准简历'})).toHaveCount(0)
-  await page.getByRole('button',{name:'退出登录'}).click()
-  await page.goto('/login')
-  await page.getByLabel('邮箱').fill('user@example.test')
-  await page.getByLabel('密码').fill('ChangeMe123!')
-  await page.getByRole('button',{name:'登录'}).click()
-  await expect(page.getByRole('heading',{name:/下一步/})).toBeVisible()
-  await page.goto(matchUrl)
-  await expect(page.getByRole('link',{name:'预览单页版'})).toBeVisible()
-  await expect(page.getByRole('link',{name:'下载 HTML'})).toBeVisible()
-  await expect(page.getByRole('link',{name:'下载 DOCX'})).toBeVisible()
-  await page.getByRole('link',{name:'面试'}).click()
-  await page.getByLabel('目标岗位').selectOption({label:`${company} · 设备实践工程师`})
-  await page.getByRole('button',{name:'生成模拟面试题'}).click()
-  await expect(page.getByText('题目已生成，请填写回答后提交顾问评分。')).toBeVisible()
-  const draftInterview=page.locator('article').filter({hasText:'待作答'}).first()
-  await expect(draftInterview.getByText(/完整自我介绍草稿/)).toBeVisible()
-  await expect(draftInterview.getByText('项目回答与追问')).toBeVisible()
-  await expect(draftInterview.getByText('面试前准备')).toBeVisible()
-  await draftInterview.getByRole('textbox').first().fill('我负责整理设备点检记录，并把异常项同步给项目成员。')
-  await draftInterview.getByRole('button',{name:'提交顾问评分'}).click()
-  await expect(page.getByText('回答已锁定，等待顾问评分与复盘。').first()).toBeVisible()
-  await page.getByRole('button',{name:'退出登录'}).click()
-  await page.goto('/login')
-  await page.getByLabel('邮箱').fill('advisor@example.test')
-  await page.getByLabel('密码').fill('ChangeMe123!')
-  await page.getByRole('button',{name:'登录'}).click()
-  await page.getByRole('link',{name:'顾问工作台'}).click()
-  const scoreButtons=page.getByRole('button',{name:'提交面试评分'})
-  let pendingScores=await scoreButtons.count()
-  while(pendingScores>0){
-    await scoreButtons.first().click()
-    pendingScores-=1
-    await expect(scoreButtons).toHaveCount(pendingScores)
-  }
-  await page.getByRole('button',{name:'退出登录'}).click()
-  await page.goto('/login')
-  await page.getByLabel('邮箱').fill('user@example.test')
-  await page.getByLabel('密码').fill('ChangeMe123!')
-  await page.getByRole('button',{name:'登录'}).click()
-  await page.getByRole('link',{name:'面试'}).click()
-  await expect(page.getByText('已完成复盘').first()).toBeVisible()
-  await expect(page.getByText(/用 STAR 结构重写/).first()).toBeVisible()
-  await page.goto(matchUrl)
-  await page.getByRole('button',{name:'加入投递队列'}).click()
-  await expect(page.getByText('已加入投递队列。')).toBeVisible()
-  await page.getByRole('link',{name:'额度'}).click()
-  await expect(page.getByText('在线支付尚未开放')).toBeVisible()
-  await expect(page.getByText('生成定制简历').first()).toBeVisible()
-  await page.getByRole('link',{name:'投递'}).click()
-  await expect(page.getByRole('heading',{name:'投递看板'})).toBeVisible()
-  await page.getByRole('button',{name:'推进到：待生成简历'}).first().click()
-  await page.getByRole('button',{name:'推进到：待投递'}).first().click()
-  await page.getByRole('button',{name:'推进到：已投递'}).first().click()
-  await expect(page.getByText('已投递').first()).toBeVisible()
-  await page.getByRole('link',{name:'概览'}).click()
-  await expect(page.getByText('本周周报')).toBeVisible()
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: /上传简历和 JD 截图/ })).toBeVisible()
+  await expect(page.getByRole('link', { name: '登录' })).toBeVisible()
+  await expect(page.getByText('投递')).toHaveCount(0)
+  await expect(page.getByText('套餐')).toHaveCount(0)
+
+  await page.getByRole('link', { name: '登录' }).click()
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page.getByRole('button', { name: '生成简历与面试建议' })).toBeVisible()
+
+  const jdBase64 = await page.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1200
+    canvas.height = 520
+    const context = canvas.getContext('2d')!
+    context.fillStyle = 'white'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.fillStyle = 'black'
+    context.font = '42px sans-serif'
+    const lines = [
+      '设备工程师',
+      '负责设备点检、维护和 CAD 图纸管理',
+      '要求机械工程本科，熟悉 CAD',
+      '能够与项目团队协作完成设备维护',
+    ]
+    lines.forEach((line, index) => context.fillText(line, 45, 80 + index * 100))
+    return canvas.toDataURL('image/png').split(',')[1]
+  })
+  const uploads = page.locator('input[type="file"]')
+  await uploads.nth(0).setInputFiles(path.resolve('../../data/samples/sample_resume.docx'))
+  await uploads.nth(1).setInputFiles({
+    name: '虚构岗位JD.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(jdBase64, 'base64'),
+  })
+  await page.getByLabel('JD 文字补充').fill('虚构设备公司招聘设备工程师，工作地点杭州。')
+  await page.getByRole('button', { name: '生成简历与面试建议' }).click()
+
+  await expect(page.getByText('虚构设备公司 · 设备工程师')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('heading', { name: '建议稿，请逐项核对' })).toBeVisible()
+  await expect(page.getByText(/约 90 秒自我介绍草稿/)).toBeVisible()
+  await expect(page.getByText('围绕真实经历准备回答')).toBeVisible()
+  const download = page.waitForEvent('download')
+  await page.getByRole('link', { name: '下载 DOCX' }).click()
+  expect((await download).suggestedFilename()).toMatch(/tailored-resume-\d{8}\.docx/)
 })

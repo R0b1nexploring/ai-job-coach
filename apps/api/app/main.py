@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .api.routes import advisor, auth, core, workflow
+from .api.routes import advisor, auth, coach, core, workflow
 from .config import get_settings
 from .errors import (
     AppError,
@@ -41,6 +41,7 @@ async def request_id(request: Request, call_next):
 
 app.include_router(auth.router)
 app.include_router(auth.account_router)
+app.include_router(coach.router)
 app.include_router(core.router)
 app.include_router(workflow.router)
 app.include_router(advisor.router)

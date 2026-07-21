@@ -1,6 +1,0 @@
-import { useQuery } from '@tanstack/react-query'
-import { api } from '../api/client'
-import { ErrorState, Loading } from '../components/States'
-
-export function Dashboard(){const q=useQuery({queryKey:['quotas'],queryFn:()=>api<Record<string,number>>('/api/quotas')});const report=useQuery({queryKey:['weekly'],queryFn:()=>api<any>('/api/reports/weekly')});if(q.isLoading)return <Loading/>;if(q.error)return <ErrorState error={q.error}/>;return <><p className="badge">本周执行中心</p><h1 className="mt-3 text-4xl font-black">下一步，比焦虑更重要</h1><div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Object.entries({resume:'定制简历',application:'辅助投递',interview:'模拟面试',match:'免费匹配'}).map(([k,label])=><div className="card" key={k}><p className="text-sm text-black/50">{label}额度</p><p className="mt-2 text-4xl font-black">{q.data?.[k]??0}</p></div>)}</div><section className="card mt-6"><h2 className="text-xl font-bold">本周周报</h2>{report.isLoading?<p>正在统计…</p>:<div className="mt-4 grid gap-3 sm:grid-cols-3"><p>岗位 <b>{report.data?.new_jobs}</b></p><p>已投递 <b>{report.data?.applied}</b></p><p>面试 <b>{report.data?.interview}</b></p><div className="sm:col-span-3"><b>下一步：</b>{report.data?.next_actions?.join('；')}</div></div>}</section></>}
-

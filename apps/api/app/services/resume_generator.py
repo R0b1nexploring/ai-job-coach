@@ -1,8 +1,15 @@
 from .fact_guard import guard_content
 
 
-def generate_resume(facts: list, job, inject_unverified: bool = False):
-    confirmed = [f for f in facts if f.verification_status == "user_confirmed"]
+def generate_resume(
+    facts: list,
+    job,
+    inject_unverified: bool = False,
+    allowed_statuses: set[str] | None = None,
+):
+    """Build a traceable draft from explicitly allowed source-fact statuses."""
+    statuses = allowed_statuses or {"user_confirmed"}
+    source_facts = [f for f in facts if f.verification_status in statuses]
     requirements = list(dict.fromkeys([*(job.must_have_json or []), *(job.keywords_json or [])]))
 
     def relevance(fact):
@@ -18,7 +25,7 @@ def generate_resume(facts: list, job, inject_unverified: bool = False):
         "other": 5,
     }
     ordered = sorted(
-        confirmed,
+        source_facts,
         key=lambda fact: (-relevance(fact), category_order.get(fact.category, 9)),
     )
     grouped = {}
@@ -51,7 +58,7 @@ def generate_resume(facts: list, job, inject_unverified: bool = False):
         sections[0]["items"].append(
             {
                 "text": "优化流程并提升效率 30%",
-                "source_fact_ids": [confirmed[0].id] if confirmed else [],
+                "source_fact_ids": [source_facts[0].id] if source_facts else [],
                 "target_requirement_ids": [],
                 "new_claims": [],
             }
@@ -62,8 +69,8 @@ def generate_resume(facts: list, job, inject_unverified: bool = False):
         "excluded_gaps": [
             k
             for k in (job.keywords_json or [])
-            if not any(k.lower() in str(f.value_json).lower() for f in confirmed)
+            if not any(k.lower() in str(f.value_json).lower() for f in source_facts)
         ],
     }
-    status, new_claims = guard_content(content, confirmed)
+    status, new_claims = guard_content(content, source_facts)
     return content, status, new_claims

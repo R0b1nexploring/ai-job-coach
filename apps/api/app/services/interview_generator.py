@@ -1,9 +1,15 @@
 from .fact_guard import ENTITY_PATTERN
 
 
-def generate_questions(job, resume_content: dict | None = None, facts: list | None = None) -> dict:
+def generate_questions(
+    job,
+    resume_content: dict | None = None,
+    facts: list | None = None,
+    allowed_statuses: set[str] | None = None,
+) -> dict:
     """Generate a fact-linked interview guide; it remains an editable practice draft."""
-    confirmed = [fact for fact in (facts or []) if fact.verification_status == "user_confirmed"]
+    statuses = allowed_statuses or {"user_confirmed"}
+    confirmed = [fact for fact in (facts or []) if fact.verification_status in statuses]
     evidence = [
         {
             "id": fact.id,
