@@ -1,10 +1,14 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+_DEFAULT_SECRET = "development-only-secret-change-me-123456789"
+_DEFAULT_PASSWORD = "ChangeMe123!"
 
 
 class Settings(BaseSettings):
@@ -37,6 +41,17 @@ class Settings(BaseSettings):
     demo_user_password: str = "ChangeMe123!"
 
     model_config = SettingsConfigDict(env_file=ROOT / ".env", extra="ignore")
+
+    @model_validator(mode="after")
+    def _check_production_secrets(self):
+        if self.app_env == "development":
+            return self
+        if self.app_secret_key == _DEFAULT_SECRET:
+            raise ValueError("生产环境必须设置 APP_SECRET_KEY，不能使用默认值。")
+        for field in ("demo_admin_password", "demo_advisor_password", "demo_user_password"):
+            if getattr(self, field, None) == _DEFAULT_PASSWORD:
+                raise ValueError(f"生产环境必须修改 {field}，不能使用默认密码。")
+        return self
 
     def resolved_database_url(self) -> str:
         if self.database_url == "sqlite:///./var/app.db":

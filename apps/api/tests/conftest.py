@@ -6,8 +6,18 @@ import pytest
 from docx import Document
 from sqlalchemy.orm import sessionmaker
 
+from app.config import get_settings
 from app.database import Base, get_db, make_engine
 from app.main import app
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _force_mock_llm():
+    get_settings.cache_clear()
+    settings = get_settings()
+    settings.llm_provider = "mock"
+    yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture()

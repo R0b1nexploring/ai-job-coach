@@ -66,6 +66,9 @@ def test_job_normalizer_is_deterministic():
     assert normalize_job(jd, company_name="示例公司") == normalize_job(jd, company_name="示例公司")
     result = normalize_job(jd)
     assert "设备点检" in result["keywords"] and "轮班" in result["work_conditions"][0]
+    inferred = normalize_job("虚构设备公司招聘设备工程师\n工作地点：杭州\n负责设备维护")
+    assert inferred["company_name"] == "虚构设备公司"
+    assert inferred["city"] == "杭州"
 
 
 def test_matching_boundaries_and_hard_block(db):

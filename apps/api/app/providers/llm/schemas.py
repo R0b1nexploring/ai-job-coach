@@ -40,6 +40,7 @@ class ResumeItemOutput(BaseModel):
     source_fact_ids: list[str]
     target_requirement_ids: list[str] = Field(default_factory=list)
     new_claims: list[str] = Field(default_factory=list)
+    improvement_suggestions: list[str] = Field(default_factory=list)
 
 
 class ResumeSectionOutput(BaseModel):
@@ -51,6 +52,9 @@ class ResumeStructuredOutput(BaseModel):
     headline: str
     sections: list[ResumeSectionOutput] = Field(default_factory=list)
     excluded_gaps: list[str] = Field(default_factory=list)
+    quality_score: int = 0
+    quality_dimensions: list[dict] = Field(default_factory=list)
+    quality_suggestions: list[str] = Field(default_factory=list)
 
 
 class InterviewQuestionOutput(BaseModel):
