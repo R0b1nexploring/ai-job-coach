@@ -1,9 +1,12 @@
+import logging
 import uuid
 
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+logger = logging.getLogger(__name__)
 
 
 class AppError(Exception):
@@ -33,6 +36,7 @@ async def app_error_handler(request: Request, exc: AppError):
 
 async def generic_error_handler(request: Request, exc: Exception):
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    logger.exception("未处理异常 [%s] (%s)", request_id, type(exc).__name__)
     return JSONResponse(
         status_code=500,
         content={

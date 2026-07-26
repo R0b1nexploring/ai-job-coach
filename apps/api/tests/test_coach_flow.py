@@ -59,6 +59,13 @@ def test_single_page_coach_flow_creates_traceable_draft(client, db, monkeypatch)
         for item in section["items"]
     ]
     assert items and all(item["source_fact_ids"] for item in items)
+    content = payload["tailored_resume"]["content"]
+    assert "quality_score" in content
+    assert isinstance(content["quality_score"], int)
+    assert "quality_dimensions" in content
+    assert isinstance(content["quality_dimensions"], list)
+    assert "quality_suggestions" in content
+    assert isinstance(content["quality_suggestions"], list)
     assert payload["interview_guide"]["self_introduction"]["text"]
     assert len(payload["interview_guide"]["questions"]) == 3
     assert all(
@@ -77,6 +84,11 @@ def test_single_page_coach_flow_creates_traceable_draft(client, db, monkeypatch)
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
     assert download.headers["cache-control"] == "private, no-store"
+
+
+def test_coach_requires_login(client):
+    response = client.post("/api/coach/optimize", files=coach_files())
+    assert response.status_code == 401
 
 
 def test_coach_uses_user_text_when_local_ocr_fails(client, monkeypatch):
@@ -107,6 +119,30 @@ def test_coach_rejects_unreadable_jd_without_text_fallback(client, monkeypatch):
     assert response.json()["error"]["code"] == "JD_TEXT_NOT_RECOGNIZED"
 
 
-def test_coach_requires_login(client):
-    response = client.post("/api/coach/optimize", files=coach_files())
-    assert response.status_code == 401
+def test_resume_scorer_returns_valid_score():
+    from app.services.resume_scorer import score_resume
+
+    content = {
+        "sections": [
+            {"name": "工作经历", "items": [
+                {"text": "主导设备点检系统优化，将故障率降低 15%"},
+                {"text": "搭建 CAD 图纸管理流程"},
+            ]},
+            {"name": "技能证书", "items": [
+                {"text": "熟练使用 CAD、SolidWorks、Python"},
+            ]},
+            {"name": "教育背景", "items": [
+                {"text": "机械工程本科"},
+            ]},
+        ],
+    }
+    job = {
+        "keywords": ["CAD", "设备点检", "机械"],
+        "must_have": ["本科"],
+        "responsibilities": ["设备维护"],
+    }
+    result = score_resume(content, job)
+    assert 0 <= result["score"] <= 100
+    assert len(result["dimensions"]) == 5
+    assert all("name" in d and "score" in d and "weight" in d for d in result["dimensions"])
+    assert isinstance(result["suggestions"], list)

@@ -34,8 +34,8 @@ from app.services.fact_guard import guard_content
 from app.services.interview_generator import generate_questions, guard_interview_guide
 from app.services.job_normalizer import normalize_job
 from app.services.resume_generator import generate_resume
-from app.services.resume_parser import ALLOWED as RESUME_TYPES
 from app.services.resume_parser import parse_resume
+from app.services.resume_scorer import score_resume
 
 
 router = APIRouter(prefix="/api/coach", tags=["coach"])
@@ -68,8 +68,17 @@ async def _structure_job(raw_jd: str) -> tuple[dict, str]:
     structured, provider_name = await generate_structured(
         task="job_normalization",
         system_prompt=(
-            "只提取岗位截图文字中明确存在的信息，不得猜测公司、城市、日期或要求。"
-            "不确定字段写入 uncertain_fields，输出严格 JSON。"
+            "请分析以下岗位 JD 文本，提取关键信息。\n"
+            "要求：\n"
+            "1. 识别岗位名称、公司名称、工作地点\n"
+            "2. 提取岗位职责（最多 8 条）\n"
+            "3. 提取任职要求（最多 8 条）\n"
+            "4. 提取加分项（最多 5 条）\n"
+            "5. 提取工作条件如轮班、出差等（最多 5 条）\n"
+            "6. 提取关键词（技术栈、工具、证书等）\n"
+            "7. 如果某些字段无法确认，放入 uncertain_fields\n"
+            "8. 只提取文本中明确存在的信息，不得猜测\n"
+            "输出严格 JSON。"
         ),
         user_payload={
             "raw_jd": raw_jd,
@@ -89,9 +98,20 @@ async def _tailor_resume(facts: list[ResumeFact], job: Job) -> tuple[dict, str, 
     structured, provider_name = await generate_structured(
         task="instant_tailored_resume",
         system_prompt=(
-            "你是简历编辑。只能重写、压缩和排序输入的原简历来源行；每个要点必须引用"
-            " source_fact_ids。不得新增公司、岗位、日期、工具、证书、成果或数字。"
-            "无证据要求放入 excluded_gaps。输入来源尚未经用户逐项核对，输出严格 JSON。"
+            "你是一位简历顾问。遵循以下启发式规则重写简历：\n"
+            "1. STAR法则：每段经历改写为「行动+方法+量化结果」格式\n"
+            "2. 强动词替换：将「负责」改为「主导/统筹/搭建」，将「参与」改为「独立完成/协调推动」\n"
+            "3. 量化优先：保留并突出所有数字、百分比、金额\n"
+            "4. 关键词三重放置：确保JD核心关键词出现在求职意向、技能栏、最近经历中\n"
+            "5. ATS友好：使用标准section标题（工作经历、项目经验、技能证书、教育背景）\n"
+            "6. 一岗一版：按JD相关性重新排列经历优先级\n\n"
+            "严格约束：\n"
+            "- 只能重写、压缩和排序输入的原简历来源行\n"
+            "- 每个要点必须引用 source_fact_ids\n"
+            "- 不得新增公司、岗位、日期、工具、证书、成果或数字\n"
+            "- 无证据要求放入 excluded_gaps 并附 improvement_suggestions\n"
+            "- 每条经历附 improvement_suggestions 标注可优化方向\n"
+            "输出严格 JSON。"
         ),
         user_payload={
             "source_facts": [
@@ -144,8 +164,13 @@ async def _create_interview_guide(
     structured, provider_name = await generate_structured(
         task="instant_interview_guide",
         system_prompt=(
-            "根据目标岗位和原简历来源生成面试练习建议。只引用 source_fact_ids，"
-            "不得声称题目来自目标公司，不得补造经历、数字或结果。输出严格 JSON。"
+            "根据目标岗位和原简历来源生成面试练习建议。遵循以下原则：\n"
+            "1. 自我介绍：控制在90秒，突出与岗位最匹配的2-3个核心经历\n"
+            "2. 项目回答：使用STAR框架（情境→任务→行动→结果），每个回答引用 source_fact_ids\n"
+            "3. 常见问题：回答框架要体现对岗位的理解，用已确认经历佐证\n"
+            "4. 准备计划：给出具体可执行的步骤，而非泛泛建议\n"
+            "严格约束：只引用 source_fact_ids，不得声称题目来自目标公司，"
+            "不得补造经历、数字或结果。输出严格 JSON。"
         ),
         user_payload={
             "job": {
@@ -215,7 +240,7 @@ async def optimize(
     storage = LocalStorage()
     stored_resume_key = ""
     try:
-        suffix = RESUME_TYPES[resume_file.content_type or ""]
+        suffix = "." + (resume_file.filename or "resume").rsplit(".", 1)[-1].lower()
         stored_resume_key = storage.save(resume_content, suffix)
         resume = Resume(
             user_id=user.id,
@@ -259,6 +284,17 @@ async def optimize(
         db.flush()
 
         tailored_content, resume_provider, new_claims = await _tailor_resume(facts, job)
+        quality = score_resume(
+            tailored_content,
+            {
+                "keywords": job.keywords_json,
+                "must_have": job.must_have_json,
+                "responsibilities": job.responsibilities_json,
+            },
+        )
+        tailored_content["quality_score"] = quality["score"]
+        tailored_content["quality_dimensions"] = quality["dimensions"]
+        tailored_content["quality_suggestions"] = quality["suggestions"]
         version = ResumeVersion(
             user_id=user.id,
             base_resume_id=resume.id,

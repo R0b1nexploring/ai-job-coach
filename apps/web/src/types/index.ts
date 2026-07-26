@@ -11,6 +11,7 @@ export type CoachResumeItem = {
   source_fact_ids: string[]
   target_requirement_ids: string[]
   new_claims: string[]
+  improvement_suggestions: string[]
 }
 
 export type CoachInterviewAnswer = {
@@ -41,6 +42,9 @@ export type CoachResult = {
       headline: string
       sections: Array<{ name: string; items: CoachResumeItem[] }>
       excluded_gaps: string[]
+      quality_score: number
+      quality_dimensions: Array<{ name: string; score: number; weight: number }>
+      quality_suggestions: string[]
     }
   }
   interview_guide: {
