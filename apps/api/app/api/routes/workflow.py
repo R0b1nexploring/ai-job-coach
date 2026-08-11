@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Response
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from app.models.entities import (
     Application,
     ApplicationEvent,
     AuditLog,
+    CapabilityTarget,
     Interview,
     Job,
     Match,
@@ -31,6 +32,7 @@ from app.models.entities import (
 from app.providers.llm.runtime import generate_structured
 from app.providers.llm.schemas import InterviewStructuredOutput, ResumeStructuredOutput
 from app.providers.storage.local import LocalStorage
+from app.services.capability_service import build_targets
 from app.services.docx_resume_renderer import render_resume_docx
 from app.services.fact_guard import guard_content
 from app.services.html_resume_renderer import render_resume_html
@@ -42,6 +44,167 @@ from app.services.resume_generator import generate_resume
 from .common import dump, listed
 
 router = APIRouter(prefix="/api", tags=["workflow"])
+
+
+class CapabilityTargetPatch(BaseModel):
+    status: Literal["pending", "in_progress", "achieved", "abandoned"]
+    evidence_text: str = Field(default="", max_length=10000)
+
+
+@router.post("/matches/{match_id}/capability-targets", status_code=201)
+async def create_capability_targets(
+    match_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    match = db.scalar(select(Match).where(Match.id == match_id, Match.user_id == user.id))
+    if not match:
+        raise AppError("MATCH_NOT_FOUND", "匹配报告不存在。", 404)
+    existing = list(
+        db.scalars(
+            select(CapabilityTarget)
+            .where(
+                CapabilityTarget.match_id == match.id,
+                CapabilityTarget.user_id == user.id,
+            )
+            .order_by(CapabilityTarget.created_at)
+        )
+    )
+    if existing:
+        return {"items": [dump(row) for row in existing], "total": len(existing), "provider": "existing"}
+    generated_before = db.scalar(
+        select(AuditLog.id).where(
+            AuditLog.actor_user_id == user.id,
+            AuditLog.action == "capability_targets.created",
+            AuditLog.entity_type == "match",
+            AuditLog.entity_id == match.id,
+        )
+    )
+    if generated_before:
+        return {"items": [], "total": 0, "provider": "existing"}
+    job = db.scalar(select(Job).where(Job.id == match.job_id, Job.created_by == user.id))
+    if not job:
+        raise AppError("JOB_NOT_FOUND", "岗位不存在。", 404)
+    facts = list(
+        db.scalars(
+            select(ResumeFact).where(
+                ResumeFact.resume_id == match.resume_id,
+                ResumeFact.user_id == user.id,
+            )
+        )
+    )
+    values, provider_name = await build_targets(match, job, facts)
+    rows = []
+    for value in values:
+        row = CapabilityTarget(
+            user_id=user.id,
+            job_id=job.id,
+            match_id=match.id,
+            **value,
+        )
+        db.add(row)
+        rows.append(row)
+    db.flush()
+    db.add(
+        AuditLog(
+            actor_user_id=user.id,
+            action="capability_targets.created",
+            entity_type="match",
+            entity_id=match.id,
+            metadata_json={"count": len(rows), "provider": provider_name},
+        )
+    )
+    db.commit()
+    return {"items": [dump(row) for row in rows], "total": len(rows), "provider": provider_name}
+
+
+@router.get("/capability-targets")
+async def capability_targets(
+    job_id: str | None = None,
+    status: Literal["pending", "in_progress", "achieved", "abandoned"] | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    statement = select(CapabilityTarget).where(CapabilityTarget.user_id == user.id)
+    if job_id:
+        statement = statement.where(CapabilityTarget.job_id == job_id)
+    if status:
+        statement = statement.where(CapabilityTarget.status == status)
+    rows = list(db.scalars(statement.order_by(CapabilityTarget.created_at.desc())))
+    return listed([dump(row) for row in rows])
+
+
+@router.patch("/capability-targets/{target_id}")
+async def update_capability_target(
+    target_id: str,
+    data: CapabilityTargetPatch,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    target = db.scalar(
+        select(CapabilityTarget).where(
+            CapabilityTarget.id == target_id,
+            CapabilityTarget.user_id == user.id,
+        )
+    )
+    if not target:
+        raise AppError("CAPABILITY_TARGET_NOT_FOUND", "学习目标不存在。", 404)
+    if target.status == "achieved":
+        if data.status == "achieved":
+            return dump(target)
+        raise AppError("CAPABILITY_TARGET_FINAL", "已达成目标不能回退状态。", 409)
+    if data.status == "achieved":
+        evidence_text = data.evidence_text.strip()
+        if not evidence_text:
+            raise AppError("CAPABILITY_EVIDENCE_REQUIRED", "标记达成时必须填写产出物证据。", 422)
+        match = db.scalar(
+            select(Match).where(
+                Match.id == target.match_id,
+                Match.user_id == user.id,
+            )
+        )
+        if not match:
+            raise AppError("MATCH_NOT_FOUND", "目标关联的匹配报告不存在。", 409)
+        fact = ResumeFact(
+            resume_id=match.resume_id,
+            user_id=user.id,
+            category=target.category,
+            label=target.requirement[:200],
+            value_json={"text": f"{target.deliverable}\n证据：{evidence_text}"},
+            organization="",
+            provenance="learned",
+            source_text=evidence_text,
+            source_location="学习目标证据",
+            verification_status="user_confirmed",
+            created_by=user.id,
+            confirmed_at=datetime.now(timezone.utc),
+        )
+        db.add(fact)
+        db.flush()
+        target.status = "achieved"
+        target.evidence_text = evidence_text
+        target.achieved_fact_id = fact.id
+        target.achieved_at = datetime.now(timezone.utc)
+        db.add(
+            AuditLog(
+                actor_user_id=user.id,
+                action="capability_target.achieved",
+                entity_type="capability_target",
+                entity_id=target.id,
+                metadata_json={"achieved_fact_id": fact.id},
+            )
+        )
+    else:
+        allowed = {
+            "pending": {"pending", "in_progress", "abandoned"},
+            "in_progress": {"pending", "in_progress", "abandoned"},
+            "abandoned": {"pending", "abandoned"},
+        }
+        if data.status not in allowed.get(target.status, set()):
+            raise AppError("INVALID_TARGET_STATUS", "该学习目标状态不能这样变更。", 409)
+        target.status = data.status
+    db.commit()
+    return dump(target)
 
 
 class VersionIn(BaseModel):
@@ -780,6 +943,12 @@ async def account_export(user: User = Depends(current_user), db: Session = Depen
         ],
         "resume_facts": [
             dump(row) for row in db.scalars(select(ResumeFact).where(ResumeFact.user_id == user.id))
+        ],
+        "capability_targets": [
+            dump(row)
+            for row in db.scalars(
+                select(CapabilityTarget).where(CapabilityTarget.user_id == user.id)
+            )
         ],
         "jobs": [dump(row) for row in db.scalars(select(Job).where(Job.created_by == user.id))],
         "matches": [dump(row) for row in db.scalars(select(Match).where(Match.user_id == user.id))],

@@ -274,3 +274,6 @@ def test_matching_api_shows_dimensions_evidence_gaps_and_confirmations(client):
     assert isinstance(data["evidence_json"], list) and isinstance(data["gaps_json"], list)
     assert "是否接受轮班" in data["confirmations_json"]
     assert data["ai_explanation_json"]["provider"] == "mock"
+    assert isinstance(data["ai_explanation_json"]["hard_block"], bool)
+    assert 0 <= data["ai_explanation_json"]["must_have_hit_rate"] <= 1
+    assert data["ai_explanation_json"]["experience_months"] >= 0

@@ -793,7 +793,14 @@ async def create_match(
         response_model=MatchExplanationOutput,
     )
     explanation_payload = explanation.model_dump()
-    explanation_payload["provider"] = provider_name
+    explanation_payload.update(
+        {
+            "provider": provider_name,
+            "hard_block": result["hard_block"],
+            "must_have_hit_rate": result["must_have_hit_rate"],
+            "experience_months": result["experience_months"],
+        }
+    )
     match = Match(
         user_id=user.id,
         resume_id=resume.id,

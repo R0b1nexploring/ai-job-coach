@@ -7,6 +7,7 @@ from app.models.entities import (
     AdvisorAssignment,
     Application,
     ApplicationEvent,
+    CapabilityTarget,
     Interview,
     Job,
     Match,
@@ -55,6 +56,11 @@ def purge_user_data(db: Session, user: User, storage: LocalStorage) -> dict[str,
         resume.parse_status = "failed"
         resume.facts_confirmed_at = None
         resume.deleted_at = now
+
+    targets = list(db.scalars(select(CapabilityTarget).where(CapabilityTarget.user_id == user.id)))
+    for target in targets:
+        db.delete(target)
+    db.flush()
 
     facts = list(db.scalars(select(ResumeFact).where(ResumeFact.user_id == user.id)))
     for fact in facts:
@@ -139,6 +145,7 @@ def purge_user_data(db: Session, user: User, storage: LocalStorage) -> dict[str,
 
     return {
         "files_removed": files_removed,
+        "capability_targets_removed": len(targets),
         "facts_removed": len(facts),
         "notifications_removed": len(notifications),
     }

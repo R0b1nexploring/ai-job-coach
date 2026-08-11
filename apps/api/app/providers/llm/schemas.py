@@ -33,6 +33,20 @@ class ResumeExtractionOutput(BaseModel):
     missing_information: list[ClarificationOutput] = Field(default_factory=list)
 
 
+class CapabilityTargetOutput(BaseModel):
+    requirement: str
+    category: str = "skills"
+    severity: str = "medium"
+    jd_evidence: str
+    deliverable: str
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    estimated_hours: int = 0
+
+
+class CapabilityPlanOutput(BaseModel):
+    targets: list[CapabilityTargetOutput] = Field(default_factory=list)
+
+
 class JobStructuredOutput(BaseModel):
     title: str
     company_name: str

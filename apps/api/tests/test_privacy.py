@@ -1,8 +1,10 @@
+from conftest import register
 from sqlalchemy import select
 
 from app.models.entities import (
     Application,
     ApplicationEvent,
+    CapabilityTarget,
     Interview,
     Job,
     Match,
@@ -15,7 +17,6 @@ from app.models.entities import (
 )
 from app.providers.storage.local import LocalStorage
 from app.security import hash_password
-from conftest import register
 
 
 def test_admin_purge_removes_files_and_personal_content(client, db):
@@ -80,6 +81,20 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
     )
     db.add_all([match, version])
     db.flush()
+    target = CapabilityTarget(
+        user_id=user.id,
+        job_id=job.id,
+        match_id=match.id,
+        requirement="私人学习目标",
+        jd_evidence="私人岗位要求",
+        deliverable="私人产出物",
+        acceptance_criteria_json=["私人标准"],
+        evidence_text="私人证据",
+        achieved_fact_id=fact.id,
+    )
+    db.add(target)
+    db.flush()
+    target_id = target.id
     application = Application(
         user_id=user.id,
         job_id=job.id,
@@ -118,6 +133,7 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
     exported_data = exported.json()
     assert exported_data["profile"]["school"] == "示例学校"
     assert exported_data["resume_facts"][0]["source_text"] == "原文事实"
+    assert exported_data["capability_targets"][0]["evidence_text"] == "私人证据"
     assert exported_data["jobs"][0]["raw_jd"] == "包含用户备注的 JD"
     assert exported_data["interviews"][0]["answers_json"]["q1"] == "私人回答"
     assert "original_file_key" not in exported_data["resumes"][0]
@@ -165,6 +181,7 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
     assert application.notes == "" and application.source_url == ""
     assert interview.answers_json == {} and interview.question_set_json == {}
     assert db.scalar(select(ResumeFact).where(ResumeFact.user_id == user.id)) is None
+    assert db.scalar(select(CapabilityTarget).where(CapabilityTarget.id == target_id)) is None
     assert db.scalar(select(Notification).where(Notification.user_id == user.id)) is None
     event = db.scalar(
         select(ApplicationEvent).where(ApplicationEvent.application_id == application.id)
