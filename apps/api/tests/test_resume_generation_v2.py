@@ -1,7 +1,6 @@
 from conftest import docx_file, register
 from sqlalchemy import select
 
-from app.api.routes import workflow
 from app.models.entities import ResumeFact, ResumeVersion
 from app.providers.llm.schemas import ResumeStructuredV2Output
 from app.services.html_resume_renderer import render_resume_html
@@ -159,7 +158,8 @@ def test_target_and_submittable_versions_use_distinct_sources_and_learned_facts(
 
 def test_invalid_llm_resume_falls_back_to_deterministic_content(client, db, monkeypatch):
     _user, resume, job, match, _targets = setup_resume_match(client, db)
-    fact_id = client.get(f"/api/resumes/{resume['id']}/facts").json()["items"][0]["id"]
+    fact_items = client.get(f"/api/resumes/{resume['id']}/facts").json()["items"]
+    fact_id = next(item["id"] for item in fact_items if "CAD" in str(item.get("value_json") or {}))
 
     async def fake_generate_structured(**_kwargs):
         return (
@@ -192,7 +192,9 @@ def test_invalid_llm_resume_falls_back_to_deterministic_content(client, db, monk
             "compatible",
         )
 
-    monkeypatch.setattr(workflow, "generate_structured", fake_generate_structured)
+    monkeypatch.setattr(
+        "app.services.resume_generator.generate_structured", fake_generate_structured
+    )
     response = client.post(
         "/api/resume-versions",
         headers={"Idempotency-Key": "invalid-model-version"},
@@ -207,6 +209,7 @@ def test_invalid_llm_resume_falls_back_to_deterministic_content(client, db, monk
     version = response.json()
     assert version["fallback_used"] is True
     assert version["traceability_json"]["fallback_reason"] == "model_output_failed_validation"
+    assert version["traceability_json"]["semantic_retry_used"] is True
     assert version["guard_status"] == "passed"
     assert all("30%" not in bullet["text"] for bullet in bullets(version["content_json"]))
 
@@ -247,7 +250,9 @@ def test_target_resume_falls_back_when_model_omits_all_learning_targets(client, 
             "compatible",
         )
 
-    monkeypatch.setattr(workflow, "generate_structured", fake_generate_structured)
+    monkeypatch.setattr(
+        "app.services.resume_generator.generate_structured", fake_generate_structured
+    )
     response = client.post(
         "/api/resume-versions",
         headers={"Idempotency-Key": "target-without-target-source"},
@@ -262,8 +267,83 @@ def test_target_resume_falls_back_when_model_omits_all_learning_targets(client, 
     assert response.status_code == 201, response.text
     version = response.json()
     assert version["fallback_used"] is True
+    assert version["traceability_json"]["semantic_retry_used"] is True
     assert version["unachieved_count"] >= 1
     assert any(bullet["source_target_ids"] for bullet in bullets(version["content_json"]))
+
+
+def test_target_resume_retries_once_after_semantic_validation_failure(client, db, monkeypatch):
+    _user, resume, job, match, targets = setup_resume_match(client, db)
+    fact_items = client.get(f"/api/resumes/{resume['id']}/facts").json()["items"]
+    fact_id = next(item["id"] for item in fact_items if "CAD" in str(item.get("value_json") or {}))
+    target_id = targets[0]["id"]
+    calls = []
+
+    async def fake_generate_structured(**kwargs):
+        calls.append(kwargs["user_payload"])
+        target_bullets = []
+        if len(calls) == 2:
+            target_bullets.append(
+                {
+                    "text": "完成岗位目标练习",
+                    "source_fact_ids": [],
+                    "source_target_ids": [target_id],
+                    "achieved": False,
+                }
+            )
+        return (
+            ResumeStructuredV2Output.model_validate(
+                {
+                    "content_version": 2,
+                    "kind": "target",
+                    "headline": "机械设计工程师",
+                    "contact": {},
+                    "sections": [
+                        {
+                            "name": "项目经历",
+                            "items": [
+                                {
+                                    "bullets": [
+                                        {
+                                            "text": "使用 CAD 完成机械机构设计",
+                                            "source_fact_ids": [fact_id],
+                                            "source_target_ids": [],
+                                            "achieved": True,
+                                        },
+                                        *target_bullets,
+                                    ]
+                                }
+                            ],
+                        }
+                    ],
+                    "excluded_gaps": [],
+                }
+            ),
+            "compatible",
+        )
+
+    monkeypatch.setattr(
+        "app.services.resume_generator.generate_structured", fake_generate_structured
+    )
+    response = client.post(
+        "/api/resume-versions",
+        headers={"Idempotency-Key": "target-semantic-retry"},
+        json={
+            "base_resume_id": resume["id"],
+            "job_id": job["id"],
+            "match_id": match["id"],
+            "kind": "target",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    version = response.json()
+    assert len(calls) == 2
+    assert calls[1]["previous_output_rejected"] is True
+    assert "蓝图简历未包含任何未达成学习目标" in calls[1]["validation_feedback"]
+    assert version["fallback_used"] is False, version["traceability_json"]
+    assert version["guard_status"] == "passed"
+    assert version["traceability_json"]["semantic_retry_used"] is True
 
 
 def test_v1_resume_content_remains_patchable_and_renderable(client, db):

@@ -81,6 +81,8 @@ def test_compatible_provider_uses_task_model_retries_and_logs_no_sensitive_text(
         llm_model_strong="strong-model",
         llm_max_retries=2,
         llm_max_output_tokens=3072,
+        llm_thinking_enabled=True,
+        llm_reasoning_effort="high",
     )
     monkeypatch.setattr("app.providers.llm.compatible.get_settings", lambda: settings)
     requests = []
@@ -115,6 +117,9 @@ def test_compatible_provider_uses_task_model_retries_and_logs_no_sensitive_text(
     assert requests[-1]["model"] == "strong-model"
     assert requests[-1]["max_tokens"] == 3072
     assert requests[-1]["response_format"] == {"type": "json_object"}
+    assert requests[-1]["stream"] is False
+    assert requests[-1]["thinking"] == {"type": "enabled"}
+    assert requests[-1]["reasoning_effort"] == "high"
     assert "JSON Schema" in requests[-1]["messages"][0]["content"]
     assert "结构示例" in requests[-1]["messages"][0]["content"]
     assert '"value"' in requests[-1]["messages"][0]["content"]

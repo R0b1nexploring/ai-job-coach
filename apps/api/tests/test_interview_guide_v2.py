@@ -1,8 +1,13 @@
+import asyncio
 from copy import deepcopy
 from types import SimpleNamespace
 
 from app.providers.llm.schemas import InterviewStructuredOutput
-from app.services.interview_generator import generate_questions, guard_interview_guide
+from app.services.interview_generator import (
+    generate_guarded_interview,
+    generate_questions,
+    guard_interview_guide,
+)
 
 
 def fact(**overrides):
@@ -118,3 +123,77 @@ def test_guard_rejects_semantically_empty_guide_when_project_facts_exist():
     assert status == "blocked"
     assert "面试指南缺少岗位问题" in issues
     assert "面试指南缺少已确认项目事实的回答" in issues
+
+
+def test_interview_generation_retries_once_after_guard_failure(monkeypatch):
+    original = fact(provenance="original_resume", organization="")
+    role = SimpleNamespace(
+        title="设备工程师",
+        responsibilities_json=["整理设备记录"],
+        must_have_json=["使用 Python"],
+        work_conditions_json=[],
+    )
+    fallback = generate_questions(role, facts=[original], targets=[target()], unachieved_count=1)
+    calls = []
+
+    async def fake_generate_structured(**kwargs):
+        calls.append(kwargs["user_payload"])
+        content = deepcopy(fallback)
+        if len(calls) == 1:
+            content["questions"] = []
+        return InterviewStructuredOutput.model_validate(content), "compatible"
+
+    monkeypatch.setattr(
+        "app.services.interview_generator.generate_structured", fake_generate_structured
+    )
+    result = asyncio.run(
+        generate_guarded_interview(
+            role,
+            None,
+            [original],
+            [target()],
+            expected_unachieved_count=1,
+        )
+    )
+
+    assert len(calls) == 2
+    assert calls[0]["output_requirements"]["project_fact_ids"] == [original.id]
+    assert calls[0]["output_requirements"]["fact_claim_entity_allowlist"][original.id] == ["Python"]
+    assert calls[1]["previous_output_rejected"] is True
+    assert "面试指南缺少岗位问题" in calls[1]["validation_feedback"]
+    assert result["fallback_used"] is False
+    assert result["guide_guard_status"] == "passed"
+    assert result["semantic_retry_used"] is True
+
+
+def test_interview_fact_bearing_sections_always_use_deterministic_grounding(monkeypatch):
+    original = fact(provenance="original_resume", organization="")
+    role = SimpleNamespace(
+        title="设备工程师",
+        responsibilities_json=["整理设备记录"],
+        must_have_json=["使用 Python"],
+        work_conditions_json=[],
+    )
+    generated = generate_questions(role, facts=[original], unachieved_count=0)
+    generated["project_answers"][0]["structure"]["result"] = "使用 pandas 处理 csv"
+
+    async def fake_generate_structured(**_kwargs):
+        return InterviewStructuredOutput.model_validate(generated), "compatible"
+
+    monkeypatch.setattr(
+        "app.services.interview_generator.generate_structured", fake_generate_structured
+    )
+    result = asyncio.run(
+        generate_guarded_interview(
+            role,
+            None,
+            [original],
+            expected_unachieved_count=0,
+        )
+    )
+
+    assert "pandas" not in str(result["project_answers"])
+    assert "csv" not in str(result["project_answers"])
+    assert result["fallback_used"] is False
+    assert result["guide_guard_status"] == "passed"
+    assert result["deterministic_grounding_used"] is True

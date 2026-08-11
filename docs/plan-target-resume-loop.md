@@ -79,12 +79,15 @@
 
 ```
 LLM_PROVIDER=mock                      # mock | compatible | mock_fallback
-LLM_API_BASE_URL=https://api.deepseek.com/v1
+LLM_API_BASE_URL=https://api.deepseek.com
 LLM_API_KEY=
-LLM_MODEL_CHEAP=deepseek-chat          # JD 结构化、匹配解释、追问生成
-LLM_MODEL_STRONG=deepseek-chat         # 简历改写、面试指南
-LLM_TIMEOUT_SECONDS=45
+LLM_MODEL_CHEAP=deepseek-v4-pro        # 当前两档统一使用 Pro
+LLM_MODEL_STRONG=deepseek-v4-pro
+LLM_TIMEOUT_SECONDS=120
 LLM_MAX_RETRIES=2
+LLM_MAX_OUTPUT_TOKENS=8192
+LLM_THINKING_ENABLED=true
+LLM_REASONING_EFFORT=high
 ```
 
 保留旧 `LLM_MODEL` 作为两档的兜底默认值，避免破坏现有 `.env`。新增 `Settings.model_for(task: str) -> str`，任务名到档位的映射写成模块级常量：
@@ -470,6 +473,8 @@ def guard_content(
 - 所有 `structure` 内容必须可溯源到 fact 的 `value_json.text` / `source_text` / target 的 `deliverable`，不得编造项目细节、数字、团队规模。
 - `guard_interview_guide` 同步升级为逐条溯源（与阶段 4 的 `guard_content` 共用实体抽取函数，抽到公共模块避免两份正则）。
 - 保留现有 `risk_reminders` 与「本文是练习草稿」的免责声明。
+
+**实施补正（2026-08-12）**：真实 Pro 回归证明模型会把已有工具联想扩写成未提供的工具。为落实“AI 文本不得当作已验证事实”，LLM 只负责岗位问题和准备建议；`self_introduction`、`project_answers`、`common_answers` 与 `exposure_warning` 均由已确认事实确定性生成。结构或语义 Guard 首次失败时只携带问题摘要重试一次，不把失败正文传回模型；仍失败才使用完整本地回退。
 
 ### 验收
 

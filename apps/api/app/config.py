@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -33,9 +34,11 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_model_cheap: str = ""
     llm_model_strong: str = ""
-    llm_timeout_seconds: int = 45
+    llm_timeout_seconds: int = 120
     llm_max_retries: int = 2
-    llm_max_output_tokens: int = 4096
+    llm_max_output_tokens: int = 8192
+    llm_thinking_enabled: bool = False
+    llm_reasoning_effort: Literal["", "high", "max"] = ""
     payment_provider: str = "disabled"
     payment_webhook_secret: str = "demo-secret"
     storage_provider: str = "local"

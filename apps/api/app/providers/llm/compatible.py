@@ -38,6 +38,7 @@ class CompatibleLLMProvider:
         body = {
             "model": model,
             "response_format": {"type": "json_object"},
+            "stream": False,
             "max_tokens": max(
                 MIN_OUTPUT_TOKENS,
                 min(settings.llm_max_output_tokens, MAX_OUTPUT_TOKENS),
@@ -50,6 +51,9 @@ class CompatibleLLMProvider:
                 {"role": "user", "content": json.dumps(safe_payload, ensure_ascii=False)},
             ],
         }
+        if settings.llm_thinking_enabled:
+            body["thinking"] = {"type": "enabled"}
+            body["reasoning_effort"] = settings.llm_reasoning_effort or "high"
         max_retries = max(0, settings.llm_max_retries)
         last_error_type = ""
         async with httpx.AsyncClient(

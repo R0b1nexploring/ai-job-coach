@@ -156,7 +156,10 @@ class InterviewQuestionOutput(BaseModel):
 class InterviewAnswerOutput(BaseModel):
     question: str
     answer: str
-    source_fact_ids: list[str] = Field(default_factory=list)
+    source_fact_ids: list[str] = Field(
+        default_factory=list,
+        description="只能逐字使用输入 confirmed_facts 中存在的 id，不得编造 id",
+    )
     follow_ups: list[str] = Field(default_factory=list)
 
 
@@ -176,7 +179,7 @@ class InterviewAnswerStructureOutput(BaseModel):
 
 
 class InterviewProjectAnswerOutput(BaseModel):
-    fact_id: str
+    fact_id: str = Field(description="必须逐字使用输入 project_fact_ids 中的一个 id")
     provenance: Literal["original_resume", "learned", "user_added"]
     question: str
     structure: InterviewAnswerStructureOutput
@@ -194,7 +197,10 @@ class InterviewExposureWarningOutput(BaseModel):
 class SelfIntroductionOutput(BaseModel):
     duration_seconds: int = 90
     text: str
-    source_fact_ids: list[str] = Field(default_factory=list)
+    source_fact_ids: list[str] = Field(
+        default_factory=list,
+        description="只能逐字使用输入 confirmed_facts 中存在的 id，不得编造 id",
+    )
 
 
 class InterviewStructuredOutput(BaseModel):

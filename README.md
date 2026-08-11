@@ -2,7 +2,7 @@
 
 面向机械、制造业和生物医药工程求职者的本地可运行全流程 Demo：结构化事实、JD 匹配、学习目标、蓝图/可投递双版本简历、投递渠道、模拟面试、演示额度和顾问工作台。默认使用 Mock AI、Disabled Payment Provider 和本地私有文件存储，不需要外部密钥、Docker、Redis 或外部数据库。MVP-1 不提供支付、回调或退款接口。
 
-JD 结构化、匹配解释、事实提取、学习目标、定制简历、面试指南和邮件草稿统一通过结构化 LLM Provider。默认 `LLM_PROVIDER=mock`，结果稳定且可离线测试；如需使用 DeepSeek，在被 Git 忽略的 `.env` 中设置 `LLM_PROVIDER=compatible` 与 `LLM_API_KEY`，并按需调整 `LLM_MODEL_CHEAP`、`LLM_MODEL_STRONG` 和 `LLM_MAX_OUTPUT_TOKENS`。旧的 `LLM_MODEL` 仍可作为两个档位的共同兜底。真实 Provider 配置不完整、超时、返回无效 JSON 或关键内容为空时会安全回退到 Mock；确定性评分与 Fact Guard 始终在本地执行，AI 文本不会被直接当作已验证事实。不要把密钥写入命令、代码、文档或日志。
+JD 结构化、匹配解释、事实提取、学习目标、定制简历、面试指南和邮件草稿统一通过结构化 LLM Provider。默认 `LLM_PROVIDER=mock`，结果稳定且可离线测试；如需使用 DeepSeek，在被 Git 忽略的 `.env` 中设置 `LLM_PROVIDER=compatible` 与 `LLM_API_KEY`，并按需调整 `LLM_MODEL_CHEAP`、`LLM_MODEL_STRONG`、`LLM_THINKING_ENABLED`、`LLM_REASONING_EFFORT` 和 `LLM_MAX_OUTPUT_TOKENS`。旧的 `LLM_MODEL` 仍可作为两个档位的共同兜底。真实 Provider 配置不完整、超时、返回无效 JSON 或未通过语义安全检查时，会先携带规则问题重试一次，再安全回退到本地结果；确定性评分与 Fact Guard 始终在本地执行。面试中的自我介绍、项目回答、通用回答和风险计数固定由已确认事实确定性生成，AI 文本不会被直接当作已验证事实。不要把密钥写入命令、代码、文档或日志。
 
 ## 环境
 
@@ -57,6 +57,15 @@ Copy-Item .env.example .env
 PowerShell：`.\scripts\test.ps1`。单独运行 E2E 前先启动前后端，或执行 `cd apps/web && npm run e2e`（Playwright 配置会自动启动服务）。
 
 完整测试脚本会强制使用 Mock Provider，避免消耗真实额度或让外部服务波动影响回归结果。真实 Provider 验收应使用虚构数据单独执行，且不得输出密钥、完整 Prompt 或完整简历。
+
+显式确认会产生真实费用后，可分别执行两套虚构数据回归：
+
+```bash
+apps/api/.venv/bin/python scripts/check_live_llm.py --case mechanical --acknowledge-cost
+apps/api/.venv/bin/python scripts/check_live_llm.py --case bioprocess --acknowledge-cost
+```
+
+排查高成本长输出时，可加 `--only interview_guide` 或 `--only email_draft`，避免重复调用已通过的任务；`--verbose-metadata` 只输出模型、耗时、Token、重试和错误类别。
 
 首次运行 E2E 需安装浏览器：`cd apps/web && npx playwright install chromium`。精简 WSL 镜像若提示缺少 `libnspr4` 等库，再执行 `npx playwright install-deps chromium`。
 

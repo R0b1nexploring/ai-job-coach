@@ -30,25 +30,17 @@ from app.models.entities import (
     User,
     UserProfile,
 )
-from app.providers.llm.runtime import generate_structured
-from app.providers.llm.schemas import (
-    InterviewStructuredOutput,
-    ResumeContentOutput,
-    ResumeStructuredV2Output,
-)
+from app.providers.llm.schemas import ResumeContentOutput
 from app.providers.storage.local import LocalStorage
 from app.services.capability_service import build_targets
 from app.services.docx_resume_renderer import render_resume_docx
 from app.services.html_resume_renderer import render_resume_html
-from app.services.interview_generator import generate_questions, guard_interview_guide
+from app.services.interview_generator import generate_guarded_interview
 from app.services.quota_service import balance, change
 from app.services.report_service import weekly_report
 from app.services.resume_generator import (
-    ACTION_PREFIXES,
-    enforce_page_budget,
     evaluate_resume_content,
-    generate_resume,
-    relevance,
+    generate_guarded_resume,
 )
 
 from .common import dump, listed
@@ -293,102 +285,18 @@ async def create_version(
         if data.kind == "target"
         else []
     )
-    fallback_content = generate_resume(
+    generated = await generate_guarded_resume(
         confirmed_facts,
         job,
         targets,
         kind=data.kind,
         contact=resume.contact_json,
     )
-    structured, provider_name = await generate_structured(
-        task="resume_rewrite",
-        system_prompt=(
-            "你是中文求职简历编辑。每个 bullet 必须引用 source_fact_ids 或 "
-            "source_target_ids；不得引入来源中不存在的数字、工具、公司、证书，不得把团队"
-            "成果写成个人成果。日期未知必须留空。每条不超过 45 字且以动作词开头，同一章节"
-            "动作词不重复。kind=target 且输入含 capability_targets 时，必须至少选择一条目标，"
-            "填写 source_target_ids 且 achieved 必须为 false。所有 new_claims 必须为空数组；"
-            "无法完全溯源的 bullet 直接省略。请在一页预算内取舍，"
-            "不要缩小字号。输出严格 JSON。"
-        ),
-        user_payload={
-            "confirmed_facts": [
-                {
-                    "id": fact.id,
-                    "category": fact.category,
-                    "label": fact.label,
-                    "text": fact.value_json.get("text", ""),
-                    "organization": fact.organization,
-                    "role_title": fact.role_title,
-                    "location": fact.location,
-                    "start_date": fact.start_date,
-                    "end_date": fact.end_date,
-                    "provenance": fact.provenance,
-                }
-                for fact in confirmed_facts
-            ],
-            "capability_targets": [
-                {
-                    "id": target.id,
-                    "requirement": target.requirement,
-                    "category": target.category,
-                    "severity": target.severity,
-                    "deliverable": target.deliverable,
-                    "acceptance_criteria": target.acceptance_criteria_json,
-                }
-                for target in targets
-            ],
-            "job": {
-                "title": job.title,
-                "company_name": job.company_name,
-                "must_have": job.must_have_json,
-                "keywords": job.keywords_json,
-            },
-            "kind": data.kind,
-            "output_requirements": {
-                "minimum_target_bullets": 1 if targets else 0,
-                "available_target_ids": [target.id for target in targets],
-                "allowed_action_prefixes": list(ACTION_PREFIXES),
-                "new_claims_must_be_empty": True,
-                "instruction": (
-                    "蓝图不能只复述已确认事实；至少一条 bullet 必须逐字使用上述 target id；"
-                    "目标条目优先以“完成”或“学习”开头。所有 new_claims 必须是空数组。"
-                    if targets
-                    else "不得引用学习目标；所有 new_claims 必须是空数组。"
-                ),
-            },
-            "contact": resume.contact_json,
-            "mock_response": fallback_content,
-        },
-        response_model=ResumeStructuredV2Output,
-    )
-    content = structured.model_dump()
-    fact_relevance = {
-        str(fact.id): relevance(
-            fact, list(dict.fromkeys([*(job.must_have_json or []), *(job.keywords_json or [])]))
-        )
-        for fact in confirmed_facts
-    }
-    target_severity = {str(target.id): target.severity for target in targets}
-    content = enforce_page_budget(content, fact_relevance, target_severity)
-    evaluation = evaluate_resume_content(
-        content,
-        confirmed_facts,
-        targets,
-        kind=data.kind,
-    )
-    fallback_used = provider_name != "compatible"
-    fallback_reason = "configured_mock" if fallback_used else ""
-    if evaluation["status"] == "blocked":
-        content = fallback_content
-        fallback_used = True
-        fallback_reason = "model_output_failed_validation"
-        evaluation = evaluate_resume_content(
-            content,
-            confirmed_facts,
-            targets,
-            kind=data.kind,
-        )
+    content = generated["content"]
+    provider_name = generated["provider"]
+    evaluation = generated["evaluation"]
+    fallback_used = generated["fallback_used"]
+    fallback_reason = generated["fallback_reason"]
     version = ResumeVersion(
         user_id=user.id,
         base_resume_id=resume.id,
@@ -403,6 +311,9 @@ async def create_version(
             "provider": provider_name,
             "fallback_used": fallback_used,
             "fallback_reason": fallback_reason,
+            "semantic_retry_used": generated["semantic_retry_used"],
+            "semantic_retry_issues": generated["semantic_retry_issues"],
+            "model_validation_issues": generated["model_validation_issues"],
         },
         guard_status=evaluation["status"],
         unachieved_count=evaluation["unachieved_count"],
@@ -907,76 +818,13 @@ async def create_interview(
         else []
     )
     expected_unachieved_count = version.unachieved_count if version else 0
-    fallback_questions = generate_questions(
+    questions = await generate_guarded_interview(
         job,
         version.content_json if version else None,
         confirmed_facts,
         interview_targets,
-        unachieved_count=expected_unachieved_count,
-    )
-    structured, provider_name = await generate_structured(
-        task="interview_guide",
-        system_prompt=(
-            "你是模拟面试指南生成助手。题目只能依据输入 JD 与已审核简历。每个项目回答"
-            "必须包含 background、my_role、actions、difficulties、result、verification 六部分，"
-            "且逐条引用对应 fact。不得补充来源中没有的数字、工具、组织、团队规模或项目细节。"
-            "learned 事实必须明确说是近期自主学习项目，提供 honesty_script，并至少生成一条"
-            "高风险追问，回答策略要承认边界。保留练习草稿免责声明。输出严格 JSON。"
-        ),
-        user_payload={
-            "job": {
-                "title": job.title,
-                "responsibilities": job.responsibilities_json,
-                "must_have": job.must_have_json,
-                "work_conditions": job.work_conditions_json,
-            },
-            "approved_resume": version.content_json if version else None,
-            "confirmed_facts": [
-                {
-                    "id": fact.id,
-                    "category": fact.category,
-                    "value": fact.value_json,
-                    "source_text": fact.source_text,
-                    "provenance": fact.provenance,
-                }
-                for fact in confirmed_facts
-            ],
-            "capability_targets": [
-                {
-                    "id": target.id,
-                    "requirement": target.requirement,
-                    "deliverable": target.deliverable,
-                    "status": target.status,
-                    "achieved_fact_id": target.achieved_fact_id,
-                }
-                for target in interview_targets
-            ],
-            "expected_unachieved_count": expected_unachieved_count,
-            "mock_response": fallback_questions,
-        },
-        response_model=InterviewStructuredOutput,
-    )
-    questions = structured.model_dump()
-    guide_status, guide_issues = guard_interview_guide(
-        questions,
-        confirmed_facts,
-        interview_targets,
         expected_unachieved_count=expected_unachieved_count,
     )
-    fallback_used = provider_name != "compatible"
-    if guide_status == "blocked":
-        questions = fallback_questions
-        fallback_used = True
-        guide_status, guide_issues = guard_interview_guide(
-            questions,
-            confirmed_facts,
-            interview_targets,
-            expected_unachieved_count=expected_unachieved_count,
-        )
-    questions["provider"] = provider_name
-    questions["fallback_used"] = fallback_used
-    questions["guide_guard_status"] = guide_status
-    questions["guide_guard_issues"] = guide_issues
     row = Interview(
         user_id=user.id,
         job_id=job.id,

@@ -1,3 +1,6 @@
+from app.providers.llm.runtime import generate_structured
+from app.providers.llm.schemas import InterviewStructuredOutput
+
 from .claim_entities import corpus_contains, extract_claim_entities
 
 PROJECT_CATEGORIES = {"projects", "employment"}
@@ -8,6 +11,16 @@ LEARNED_ROLE = "这是个人自主完成的学习练习，不代表公司、学�
 LEARNED_HONESTY = (
     "这是我为达到岗位要求最近自己做的学习项目，不是公司或校内课题；"
     "我会如实说明已经掌握的内容和仍需继续练习的边界。"
+)
+INTERVIEW_SYSTEM_PROMPT = (
+    "你是模拟面试指南生成助手。题目只能依据输入 JD 与已审核简历。每个项目回答"
+    "必须包含 background、my_role、actions、difficulties、result、verification 六部分，"
+    "且逐条引用对应 fact。不得补充来源中没有的数字、工具、组织、团队规模或项目细节。"
+    "learned 事实必须明确说是近期自主学习项目，提供 honesty_script，并至少生成一条"
+    "高风险追问，回答策略要承认边界。fact_id 和 source_fact_ids 必须逐字选自输入允许的"
+    "ID 列表，不得创建、缩写或改写 ID。每个项目回答中的数字、英文工具和证书词必须存在于"
+    "该 fact_id 的 fact_claim_entity_allowlist；不在白名单中的实体必须完全省略。"
+    "保留练习草稿免责声明。输出严格 JSON。"
 )
 
 
@@ -116,6 +129,192 @@ def generate_questions(
             "遇到未做过的工具或项目要明确说明，不要把团队成果写成个人成果。",
             "薪资、工作地点和工作条件以企业正式沟通为准。",
         ],
+    }
+
+
+async def generate_guarded_interview(
+    job,
+    resume_content: dict | None,
+    confirmed_facts: list,
+    targets: list | None = None,
+    *,
+    expected_unachieved_count: int = 0,
+) -> dict:
+    """Generate once, retry one semantic failure, then use the safe local guide."""
+    interview_targets = list(targets or [])
+    fallback = generate_questions(
+        job,
+        resume_content,
+        confirmed_facts,
+        interview_targets,
+        unachieved_count=expected_unachieved_count,
+    )
+    payload = _interview_llm_payload(
+        job,
+        resume_content,
+        confirmed_facts,
+        interview_targets,
+        expected_unachieved_count,
+        fallback,
+    )
+    structured, provider_name = await generate_structured(
+        task="interview_guide",
+        system_prompt=INTERVIEW_SYSTEM_PROMPT,
+        user_payload=payload,
+        response_model=InterviewStructuredOutput,
+    )
+    content = _apply_grounded_interview_sections(structured.model_dump(), fallback)
+    guide_status, guide_issues = guard_interview_guide(
+        content,
+        confirmed_facts,
+        interview_targets,
+        expected_unachieved_count=expected_unachieved_count,
+    )
+    semantic_retry_used = False
+    semantic_retry_issues: list[str] = []
+    if provider_name == "compatible" and guide_status == "blocked":
+        semantic_retry_used = True
+        semantic_retry_issues = list(guide_issues[:10])
+        structured, provider_name = await generate_structured(
+            task="interview_guide",
+            system_prompt=(
+                f"{INTERVIEW_SYSTEM_PROMPT}\n"
+                "上一次结果未通过本地安全检查。请只依据 validation_feedback 修正规则问题；"
+                "如果反馈指出无来源实体，必须将该实体完全删除，不得替换成另一个白名单外实体。"
+                "不要复述或猜测上一次正文，仍须生成完整 JSON。"
+            ),
+            user_payload={
+                **payload,
+                "previous_output_rejected": True,
+                "validation_feedback": semantic_retry_issues,
+            },
+            response_model=InterviewStructuredOutput,
+        )
+        content = _apply_grounded_interview_sections(structured.model_dump(), fallback)
+        guide_status, guide_issues = guard_interview_guide(
+            content,
+            confirmed_facts,
+            interview_targets,
+            expected_unachieved_count=expected_unachieved_count,
+        )
+
+    fallback_used = provider_name != "compatible"
+    model_validation_issues = list(guide_issues[:10]) if guide_status == "blocked" else []
+    if guide_status == "blocked":
+        content = fallback
+        fallback_used = True
+        guide_status, guide_issues = guard_interview_guide(
+            content,
+            confirmed_facts,
+            interview_targets,
+            expected_unachieved_count=expected_unachieved_count,
+        )
+    content.update(
+        {
+            "provider": provider_name,
+            "fallback_used": fallback_used,
+            "guide_guard_status": guide_status,
+            "guide_guard_issues": guide_issues,
+            "semantic_retry_used": semantic_retry_used,
+            "semantic_retry_issues": semantic_retry_issues,
+            "model_validation_issues": model_validation_issues,
+            "deterministic_grounding_used": True,
+        }
+    )
+    return content
+
+
+def _apply_grounded_interview_sections(content: dict, fallback: dict) -> dict:
+    """Keep all fact-bearing interview prose deterministic and source-linked."""
+    grounded = dict(content)
+    for field in (
+        "self_introduction",
+        "exposure_warning",
+        "project_answers",
+        "common_answers",
+    ):
+        grounded[field] = fallback[field]
+    return grounded
+
+
+def _interview_llm_payload(
+    job,
+    resume_content: dict | None,
+    confirmed_facts: list,
+    targets: list,
+    expected_unachieved_count: int,
+    fallback: dict,
+) -> dict:
+    available_fact_ids = [str(fact.id) for fact in confirmed_facts]
+    project_fact_ids = [
+        str(fact.id)
+        for fact in confirmed_facts
+        if fact.category in PROJECT_CATEGORIES or fact.provenance == "learned"
+    ]
+    fact_claim_entity_allowlist = {
+        str(fact.id): list(
+            dict.fromkeys(
+                entity
+                for text in (
+                    str((fact.value_json or {}).get("text") or ""),
+                    str(fact.source_text or ""),
+                    str(getattr(fact, "organization", "") or ""),
+                    str(getattr(fact, "role_title", "") or ""),
+                    str(getattr(fact, "location", "") or ""),
+                    str(getattr(fact, "start_date", "") or ""),
+                    str(getattr(fact, "end_date", "") or ""),
+                )
+                for entity in extract_claim_entities(text)
+            )
+        )
+        for fact in confirmed_facts
+    }
+    return {
+        "job": {
+            "title": job.title,
+            "responsibilities": job.responsibilities_json,
+            "must_have": job.must_have_json,
+            "work_conditions": job.work_conditions_json,
+        },
+        "approved_resume": resume_content,
+        "confirmed_facts": [
+            {
+                "id": fact.id,
+                "category": fact.category,
+                "value": fact.value_json,
+                "source_text": fact.source_text,
+                "provenance": fact.provenance,
+            }
+            for fact in confirmed_facts
+        ],
+        "capability_targets": [
+            {
+                "id": target.id,
+                "requirement": target.requirement,
+                "deliverable": target.deliverable,
+                "status": target.status,
+                "achieved_fact_id": target.achieved_fact_id,
+            }
+            for target in targets
+        ],
+        "expected_unachieved_count": expected_unachieved_count,
+        "output_requirements": {
+            "available_fact_ids": available_fact_ids,
+            "project_fact_ids": project_fact_ids,
+            "fact_claim_entity_allowlist": fact_claim_entity_allowlist,
+            "project_answers_instruction": (
+                "project_answers 的每个 fact_id 必须逐字选自 project_fact_ids；"
+                "至少覆盖一个项目事实，不得为不存在的事实生成回答。"
+            ),
+            "source_ids_instruction": (
+                "所有 source_fact_ids 必须逐字选自 available_fact_ids，不得编造 ID。"
+            ),
+            "claim_entities_instruction": (
+                "每个 project_answer 只能使用其 fact_id 对应白名单中的数字、英文工具和证书词；"
+                "不在白名单中的实体必须省略，不能根据常识补充。"
+            ),
+        },
+        "mock_response": fallback,
     }
 
 
