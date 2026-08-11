@@ -186,6 +186,14 @@ def test_complete_registration_to_weekly_report_flow(client, db):
     version = version.json()
     assert version["guard_status"] == "passed"
     assert version["traceability_json"]["provider"] == "mock"
+    edited_content = version["content_json"]
+    edited_content["headline"] = "设备工程师岗位定制简历"
+    edited_content["sections"][0]["items"][0]["text"] = "机械工程本科，完成机械机构设计"
+    edited = client.patch(f"/api/resume-versions/{version['id']}", json=edited_content)
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["guard_status"] == "passed"
+    assert edited.json()["review_status"] == "draft"
+    assert edited.json()["traceability_json"]["last_edit_source"] == "user"
     assert client.post(f"/api/resume-versions/{version['id']}/approve").status_code == 404
     assert client.get(f"/api/resume-versions/{version['id']}/download").status_code == 409
     unapproved_application = client.post(

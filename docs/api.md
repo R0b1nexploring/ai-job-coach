@@ -37,6 +37,17 @@ POST  /api/advisor/interviews/{id}/score      顾问评分与复盘
 
 人工导入岗位可选填 `published_at`。未提供时保存为未知，并在匹配时按规格计入 `2/5` 时效分；系统不会把导入时间冒充为岗位发布时间。
 
+## 公开岗位发现
+
+`POST /api/jobs/discover` 支持本地样例、公开企业合集、Greenhouse、Lever，以及
+白名单公开招聘页。使用 `public_jsonld` 时，`source_key` 必须是最终 HTTPS URL，
+且域名已配置在 `JOB_SOURCE_ALLOWED_HOSTS`。
+
+白名单页面 Provider 只读取页面公开提供的 schema.org `JobPosting` JSON-LD，
+遵守 `robots.txt`，拒绝 IP URL、本机或私网解析结果、重定向、非 HTML 和超大响应。
+读取失败时接口明确返回 `fallback_used=true` 与错误原因，并使用本地虚构样例；
+不会把回退数据标成真实抓取结果。
+
 ## 个人数据权利
 
 `GET /api/account/export` 下载包含档案、事实库、岗位、匹配、定制版本、投递、面试和额度记录的完整 JSON，不暴露内部文件路径。`DELETE /api/account` 提交删除请求，管理员通过 `POST /api/admin/accounts/{user_id}/purge` 擦除原始文件和派生个人内容。

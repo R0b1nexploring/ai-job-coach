@@ -1637,7 +1637,9 @@ MVP 默认只开启：
 
 - `ManualJobSource`：粘贴 JD；
 - `SampleJobSource`：读取虚构样例；
-- `CompanySiteSource` 接口：只留适配器和一个受控示例，不针对第三方招聘平台进行通用爬取。
+- `CompanySiteSource`：允许逐来源适配公开接口，或读取管理员白名单 HTTPS
+  页面明确提供的 `JobPosting` JSON-LD；必须遵守 `robots.txt`、限制响应大小并阻止
+  本机/私网访问，不使用通用 DOM 选择器抓取第三方招聘平台。
 
 每个来源必须返回标准 Job Schema、来源 URL、抓取时间和原始内容哈希。失败时保留上一次数据并显示来源异常，不把旧岗位伪装成新岗位。
 

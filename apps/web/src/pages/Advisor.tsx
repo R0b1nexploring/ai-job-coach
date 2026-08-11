@@ -7,7 +7,11 @@ import { Empty, ErrorState, Loading } from '../components/States'
 
 export function Advisor() {
   const client = useQueryClient()
-  const query = useQuery({ queryKey: ['advisor-queues'], queryFn: () => api<any>('/api/advisor/queues') })
+  const query = useQuery({
+    queryKey: ['advisor-queues'],
+    queryFn: () => api<any>('/api/advisor/queues'),
+    staleTime: 0,
+  })
   const review = useMutation({
     mutationFn: ({ id, approved }: { id: string; approved: boolean }) => api(`/api/advisor/resume-versions/${id}/review`, { method: 'POST', body: JSON.stringify({ approved, note: approved ? '顾问确认事实保护与表达均通过' : '退回用户修改' }) }),
     onSuccess: () => client.invalidateQueries({ queryKey: ['advisor-queues'] }),

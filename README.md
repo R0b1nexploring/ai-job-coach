@@ -30,9 +30,9 @@ cd apps/api
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
-alembic upgrade head
+python -m alembic upgrade head
 python ../../scripts/seed_demo.py
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 cd apps/web
 npm install
@@ -90,11 +90,17 @@ apps/api/.venv/bin/python scripts/maintenance.py --execute
 
 ## 数据与边界
 
-上传支持 DOCX（含表格文字）和文本型 PDF（扫描 PDF 不支持 OCR）。上传后可生成带“建议稿”标识的岗位方向分析；用户确认事实后，系统可按方向搜索词读取工程类公开企业职位合集、指定 Greenhouse 或 Lever 企业公开职位接口，也可使用本地受控样例。公开来源读取失败时会明确提示并回退到本地样例，入库岗位仍需用户打开来源人工核对。
+上传支持 DOCX（含表格文字）和文本型 PDF（扫描 PDF 不支持 OCR）。上传后可生成带“建议稿”标识的岗位方向分析；用户确认事实后，系统可按方向搜索词读取工程类公开企业职位合集、指定 Greenhouse 或 Lever 企业公开职位接口、白名单招聘页公开提供的 `JobPosting` JSON-LD，也可使用本地受控样例。公开来源读取失败时会明确提示并回退到本地样例，入库岗位仍需用户打开来源人工核对。
 
 批准后的岗位定制版本会按 JD 相关度排列已确认事实，保留逐条 `source_fact_ids`，可下载 DOCX，也可预览/下载单页 HTML 后通过浏览器打印 PDF。模拟面试包含约 90 秒自我介绍草稿、项目/经历回答、追问、常见问题框架、准备计划和真实性提醒。系统不保存招聘平台密码、不绕过登录/验证码、不执行无人值守投递，也不承诺 Offer。原始上传、SQLite 与导出文件位于被 Git 忽略的 `var/`。
 
 Greenhouse 的企业标识是公开招聘页 URL 中 `boards/` 后的 token；Lever 的企业标识是 `jobs.lever.co/` 后的 site。系统只读取公开 JSON 接口，不抓取需要登录或验证码的平台页面。
+
+如需读取其他企业或 ATS 的公开招聘详情页，先在 `.env` 的
+`JOB_SOURCE_ALLOWED_HOSTS` 中加入已经确认允许访问的域名（多个域名用逗号分隔，
+支持 `*.example.com`），再在岗位库选择“白名单公开招聘页（JSON-LD）”并输入最终
+HTTPS URL。系统会检查域名、公开 IP、`robots.txt`、响应类型和大小，只解析标准
+`JobPosting` 数据；不跟随重定向，也不使用 CSS 选择器抓取任意页面。
 
 模拟面试支持按岗位生成题目、保存真实回答、提交顾问六维评分并查看复盘任务。设置页可下载完整个人数据 JSON；账号清理会删除原始与导出文件，并擦除事实库、JD、投递备注和面试回答等派生个人内容。管理员可在账号清理页处理用户申请，并在系统状态页查看 Provider 配置完整性和维护任务预览；页面从不显示密钥值。
 

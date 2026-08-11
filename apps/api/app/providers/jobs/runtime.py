@@ -1,7 +1,10 @@
+from app.config import get_settings
+
 from .base import JobProviderError
 from .catalog import PublicCatalogJobProvider
 from .greenhouse import GreenhouseJobProvider
 from .lever import LeverJobProvider
+from .public_jsonld import PublicJsonLdJobProvider
 from .sample import SampleJobProvider
 
 
@@ -17,6 +20,11 @@ async def discover_jobs(
             selected = LeverJobProvider(source_key)
         elif provider == "public_catalog":
             selected = PublicCatalogJobProvider()
+        elif provider == "public_jsonld":
+            selected = PublicJsonLdJobProvider(
+                source_key,
+                allowed_hosts=get_settings().allowed_job_source_hosts(),
+            )
         elif provider == "sample":
             selected = SampleJobProvider()
         else:

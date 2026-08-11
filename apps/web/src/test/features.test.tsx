@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { vi } from 'vitest'
 import { api } from '../api/client'
-import { MatchDetail } from '../pages/Jobs'
+import { Jobs, MatchDetail } from '../pages/Jobs'
 import { Advisor } from '../pages/Advisor'
 import { Interviews } from '../pages/Workflow'
 import { AdminAccounts, AdminPackages, AdminSystem } from '../pages/Admin'
@@ -46,6 +46,26 @@ test('额度不足错误转换为清晰中文提示', async () => {
 test('API 错误保留后端中文消息', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: { code: 'X', message: '可理解的中文错误', details: {}, request_id: 'x' } }), { status: 400, headers: { 'Content-Type': 'application/json' } })))
   await expect(api('/api/example')).rejects.toThrow('可理解的中文错误')
+})
+
+test('岗位库可选择白名单 JSON-LD 招聘页', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    const payload = url.endsWith('/api/resumes')
+      ? { items: [{ id: 'r1', display_name: '机械工程简历' }], total: 1 }
+      : { items: [], total: 0 }
+    return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }))
+  shell(<Jobs />)
+  const user = userEvent.setup()
+  await screen.findByText('机械工程简历')
+  await user.selectOptions(screen.getByLabelText('公开岗位来源'), 'public_jsonld')
+  const input = screen.getByLabelText('公开招聘页 URL')
+  const button = screen.getByRole('button', { name: '按简历发现岗位' })
+  expect(input).toHaveAttribute('type', 'url')
+  expect(button).toBeDisabled()
+  await user.type(input, 'https://careers.example.com/jobs/123')
+  expect(button).toBeEnabled()
 })
 
 test('顾问九队列同时展示空状态和任务状态', async () => {

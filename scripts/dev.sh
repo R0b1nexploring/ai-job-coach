@@ -8,13 +8,12 @@ if [[ "$ROOT" == /mnt/c/* ]]; then
 fi
 [[ -f .env ]] || cp .env.example .env
 python3 -m venv apps/api/.venv
-apps/api/.venv/bin/pip install -e 'apps/api[dev]'
-(cd apps/api && .venv/bin/alembic upgrade head)
+apps/api/.venv/bin/python -m pip install -e 'apps/api[dev]'
+(cd apps/api && .venv/bin/python -m alembic upgrade head)
 apps/api/.venv/bin/python scripts/seed_demo.py
-(cd apps/api && .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000) &
+(cd apps/api && .venv/bin/python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000) &
 API_PID=$!
 (cd apps/web && npm install && npm run dev -- --host 0.0.0.0) &
 WEB_PID=$!
 trap 'kill "$API_PID" "$WEB_PID" 2>/dev/null || true' EXIT INT TERM
 wait
-

@@ -15,6 +15,7 @@ def test_health(client):
         "public_catalog",
         "greenhouse",
         "lever",
+        "public_jsonld",
     ]
 
 

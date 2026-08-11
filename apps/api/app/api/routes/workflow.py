@@ -1,9 +1,7 @@
-import io
 import uuid
 from datetime import datetime, timezone
 from typing import Literal
 
-from docx import Document
 from fastapi import APIRouter, Depends, Header, Query, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
@@ -33,14 +31,15 @@ from app.models.entities import (
 from app.providers.llm.runtime import generate_structured
 from app.providers.llm.schemas import InterviewStructuredOutput, ResumeStructuredOutput
 from app.providers.storage.local import LocalStorage
+from app.services.docx_resume_renderer import render_resume_docx
 from app.services.fact_guard import guard_content
+from app.services.html_resume_renderer import render_resume_html
+from app.services.interview_generator import generate_questions, guard_interview_guide
 from app.services.quota_service import balance, change
 from app.services.report_service import weekly_report
 from app.services.resume_generator import generate_resume
-from app.services.interview_generator import generate_questions, guard_interview_guide
-from app.services.html_resume_renderer import render_resume_html
-from .common import dump, listed
 
+from .common import dump, listed
 
 router = APIRouter(prefix="/api", tags=["workflow"])
 
@@ -193,6 +192,55 @@ async def version_detail(
     return dump(owned_version(db, user, version_id))
 
 
+@router.patch("/resume-versions/{version_id}")
+async def update_version(
+    version_id: str,
+    data: ResumeStructuredOutput,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    row = owned_version(db, user, version_id)
+    if row.review_status == "approved":
+        raise AppError(
+            "RESUME_ALREADY_APPROVED",
+            "已批准的简历不能直接修改，请重新生成一个定制版本。",
+            409,
+        )
+    confirmed_facts = list(
+        db.scalars(
+            select(ResumeFact).where(
+                ResumeFact.resume_id == row.base_resume_id,
+                ResumeFact.user_id == user.id,
+                ResumeFact.verification_status == "user_confirmed",
+            )
+        )
+    )
+    content = data.model_dump()
+    guard_status, new_claims = guard_content(content, confirmed_facts)
+    traceability = dict(row.traceability_json or {})
+    traceability.update({"new_claims": new_claims, "last_edit_source": "user"})
+    if row.export_file_key:
+        LocalStorage().delete(row.export_file_key)
+        row.export_file_key = ""
+    row.content_json = content
+    row.traceability_json = traceability
+    row.guard_status = guard_status
+    row.review_status = "draft"
+    row.reviewed_by = None
+    row.reviewed_at = None
+    db.add(
+        AuditLog(
+            actor_user_id=user.id,
+            action="resume_version.edited",
+            entity_type="resume_version",
+            entity_id=row.id,
+            metadata_json={"guard_status": guard_status},
+        )
+    )
+    db.commit()
+    return dump(row)
+
+
 @router.post("/resume-versions/{version_id}/submit-review")
 async def submit_review(
     version_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
@@ -275,15 +323,8 @@ async def download_version(
             headers=html_security_headers('attachment; filename="tailored-resume.html"'),
         )
     if not row.export_file_key:
-        doc = Document()
-        doc.add_heading(row.content_json.get("headline", row.title), 0)
-        for section in row.content_json.get("sections", []):
-            doc.add_heading(section.get("name", "经历"), level=1)
-            for item in section.get("items", []):
-                doc.add_paragraph(item.get("text", ""), style="List Bullet")
-        stream = io.BytesIO()
-        doc.save(stream)
-        row.export_file_key = LocalStorage().save(stream.getvalue(), ".docx")
+        content = render_resume_docx(row.content_json, row.title)
+        row.export_file_key = LocalStorage().save(content, ".docx")
         db.commit()
     content = LocalStorage().path(row.export_file_key).read_bytes()
     audit_export(db, user, row, "docx")

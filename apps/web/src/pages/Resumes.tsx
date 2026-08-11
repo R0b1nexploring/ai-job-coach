@@ -18,8 +18,32 @@ export function Resumes() {
   return <><div className="flex flex-wrap items-end justify-between gap-4"><div><span className="badge">事实优先</span><h1 className="mt-3 text-4xl font-black">简历与事实库</h1></div><label className="btn cursor-pointer">上传 DOCX / PDF<input className="hidden" type="file" accept=".docx,.pdf" onChange={(event) => event.target.files?.[0] && upload.mutate(event.target.files[0])} /></label></div>
     {(upload.error || resumes.error || versions.error) && <div className="mt-5"><ErrorState error={upload.error || resumes.error || versions.error} /></div>}{message && <p className="mt-5 rounded-xl bg-green-50 p-3 text-green-700">{message}</p>}
     <div className="mt-6 space-y-4">{resumes.data?.items.length ? resumes.data.items.map((resume) => <ResumeCard key={resume.id} resume={resume} />) : <Empty title="还没有简历，上传一份开始分析。" />}</div>
-    <section className="mt-10"><h2 className="text-2xl font-bold">定制版本</h2><div className="mt-4 space-y-3">{versions.data?.items?.length ? versions.data.items.map((version: any) => <article className="card flex flex-wrap items-center justify-between gap-3" key={version.id}><div><b>{version.title}</b><p className="text-sm text-black/50">事实检查：{guardStatusLabels[version.guard_status] || '未知状态'} · 审核：{reviewStatusLabels[version.review_status] || '未知状态'}</p></div>{version.guard_status === 'passed' && version.review_status === 'approved' && <div className="flex flex-wrap gap-2"><a className="btn-secondary" href={`/api/resume-versions/${version.id}/preview`} target="_blank" rel="noreferrer">预览单页版</a><a className="btn-secondary" href={`/api/resume-versions/${version.id}/download?format=html`}>下载 HTML</a><a className="btn-secondary" href={`/api/resume-versions/${version.id}/download`}>下载 DOCX</a></div>}</article>) : <Empty title="还没有岗位定制版本。" />}</div></section>
+    <section className="mt-10"><h2 className="text-2xl font-bold">定制版本</h2><div className="mt-4 space-y-3">{versions.data?.items?.length ? versions.data.items.map((version: any) => <VersionCard key={version.id} version={version} />) : <Empty title="还没有岗位定制版本。" />}</div></section>
   </>
+}
+
+function VersionCard({ version }: { version: any }) {
+  const client = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [headline, setHeadline] = useState(version.content_json.headline || version.title)
+  const [sections, setSections] = useState(version.content_json.sections || [])
+  const [gaps, setGaps] = useState((version.content_json.excluded_gaps || []).join('、'))
+  const save = useMutation({
+    mutationFn: () => api(`/api/resume-versions/${version.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        headline,
+        sections,
+        excluded_gaps: gaps.split(/[、,，\n]/).map((item: string) => item.trim()).filter(Boolean),
+      }),
+    }),
+    onSuccess: () => { setEditing(false); client.invalidateQueries({ queryKey: ['resume-versions'] }) },
+  })
+  const updateItem = (sectionIndex: number, itemIndex: number, text: string) => setSections((current: any[]) => current.map((section, currentSectionIndex) => currentSectionIndex === sectionIndex ? { ...section, items: section.items.map((item: any, currentItemIndex: number) => currentItemIndex === itemIndex ? { ...item, text } : item) } : section))
+  return <article className="card">
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><b>{version.title}</b><p className="text-sm text-black/50">事实检查：{guardStatusLabels[version.guard_status] || '未知状态'} · 审核：{reviewStatusLabels[version.review_status] || '未知状态'}</p></div><div className="flex flex-wrap gap-2">{version.review_status !== 'approved' && <button className="btn-secondary" onClick={() => setEditing((value) => !value)}>{editing ? '收起修改' : '修改内容'}</button>}{version.guard_status === 'passed' && version.review_status === 'approved' && <><a className="btn-secondary" href={`/api/resume-versions/${version.id}/preview`} target="_blank" rel="noreferrer">预览单页版</a><a className="btn-secondary" href={`/api/resume-versions/${version.id}/download?format=html`}>下载 HTML</a><a className="btn-secondary" href={`/api/resume-versions/${version.id}/download`}>下载 DOCX</a></>}</div></div>
+    {editing && <div className="mt-4 space-y-4 rounded-xl border border-sage/20 bg-green-50/40 p-4"><p className="text-xs text-black/55">只能压缩、排序和改写已确认事实。保存后会重新执行事实检查并回到草稿状态。</p><label><span className="label">简历标题</span><input aria-label="简历标题" className="field" value={headline} onChange={(event) => setHeadline(event.target.value)} /></label>{sections.map((section: any, sectionIndex: number) => <section key={`${section.name}-${sectionIndex}`}><h3 className="font-semibold">{section.name}</h3><div className="mt-2 space-y-2">{section.items.map((item: any, itemIndex: number) => <textarea aria-label={`${section.name}第${itemIndex + 1}条`} className="field min-h-24" key={`${section.name}-${itemIndex}`} value={item.text} onChange={(event) => updateItem(sectionIndex, itemIndex, event.target.value)} />)}</div></section>)}<label><span className="label">能力缺口（用顿号分隔）</span><textarea aria-label="能力缺口" className="field min-h-20" value={gaps} onChange={(event) => setGaps(event.target.value)} /></label><button className="btn" disabled={!headline.trim() || save.isPending} onClick={() => save.mutate()}>{save.isPending ? '正在检查…' : '保存修改并重新检查'}</button>{save.error && <ErrorState error={save.error} />}</div>}
+  </article>
 }
 
 function ResumeCard({ resume }: { resume: Resume }) {

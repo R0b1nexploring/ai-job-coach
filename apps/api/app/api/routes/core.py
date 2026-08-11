@@ -380,8 +380,11 @@ class JobIn(BaseModel):
 
 class JobDiscoveryIn(BaseModel):
     resume_id: str
-    provider: str = Field(default="sample", pattern="^(sample|public_catalog|greenhouse|lever)$")
-    source_key: str = Field(default="", max_length=100)
+    provider: str = Field(
+        default="sample",
+        pattern="^(sample|public_catalog|greenhouse|lever|public_jsonld)$",
+    )
+    source_key: str = Field(default="", max_length=2048)
     limit: int = Field(default=10, ge=1, le=30)
 
 
@@ -459,8 +462,8 @@ async def discover_public_jobs(
     data: JobDiscoveryIn, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
     resume = owned_resume(db, user, data.resume_id)
-    if data.provider in {"greenhouse", "lever"} and not data.source_key:
-        raise AppError("JOB_SOURCE_REQUIRED", "请输入企业公开招聘页标识。", 422)
+    if data.provider in {"greenhouse", "lever", "public_jsonld"} and not data.source_key:
+        raise AppError("JOB_SOURCE_REQUIRED", "请输入企业公开招聘页标识或 URL。", 422)
     fact_rows = list(
         db.scalars(
             select(ResumeFact).where(
@@ -518,7 +521,8 @@ async def discover_public_jobs(
         "fallback_used": fallback_used,
         "source_error": source_error,
         "search_keywords": keywords,
-        "notice": "岗位来自公开企业招聘接口或受控样例；入库内容仍需用户打开来源核对。",
+        "notice": "岗位来自公开企业招聘接口、白名单结构化招聘页或受控样例；"
+        "入库内容仍需用户打开来源核对。",
     }
 
 

@@ -70,6 +70,7 @@ test('Demo 用户从登录查看简历、岗位、匹配、额度、投递与周
   await page.getByRole('button',{name:'登录'}).click()
   await page.getByRole('link',{name:'顾问工作台'}).click()
   const scoreButtons=page.getByRole('button',{name:'提交面试评分'})
+  await expect(scoreButtons.first()).toBeVisible()
   let pendingScores=await scoreButtons.count()
   while(pendingScores>0){
     await scoreButtons.first().click()

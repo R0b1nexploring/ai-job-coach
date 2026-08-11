@@ -3,7 +3,6 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -29,6 +28,7 @@ class Settings(BaseSettings):
     data_retention_days: int = 180
     deletion_grace_days: int = 7
     job_stale_days: int = 45
+    job_source_allowed_hosts: str = ""
     demo_admin_email: str = "admin@example.test"
     demo_admin_password: str = "ChangeMe123!"
     demo_advisor_email: str = "advisor@example.test"
@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     def resolved_storage_path(self) -> Path:
         path = Path(self.local_storage_path)
         return path if path.is_absolute() else ROOT / path
+
+    def allowed_job_source_hosts(self) -> set[str]:
+        return {
+            host.strip().lower()
+            for host in self.job_source_allowed_hosts.split(",")
+            if host.strip()
+        }
 
 
 @lru_cache

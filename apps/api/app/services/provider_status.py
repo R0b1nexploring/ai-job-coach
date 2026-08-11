@@ -38,8 +38,15 @@ def provider_status() -> dict:
         "llm": llm,
         "jobs": {
             "operational": True,
-            "providers": ["sample", "public_catalog", "greenhouse", "lever"],
-            "notice": "只读取公开企业职位接口；外部失败时回退本地样例。",
+            "providers": [
+                "sample",
+                "public_catalog",
+                "greenhouse",
+                "lever",
+                "public_jsonld",
+            ],
+            "public_jsonld_configured": bool(settings.allowed_job_source_hosts()),
+            "notice": "只读取公开企业职位接口和白名单 JSON-LD；外部失败时回退本地样例。",
         },
         "storage": {
             "provider": settings.storage_provider,
