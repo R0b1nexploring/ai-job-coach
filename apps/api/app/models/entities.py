@@ -101,6 +101,12 @@ class ResumeFact(Base):
     category: Mapped[str] = mapped_column(String(50))
     label: Mapped[str] = mapped_column(String(200))
     value_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    organization: Mapped[str] = mapped_column(String(200), default="")
+    role_title: Mapped[str] = mapped_column(String(200), default="")
+    location: Mapped[str] = mapped_column(String(100), default="")
+    start_date: Mapped[str] = mapped_column(String(10), default="")
+    end_date: Mapped[str] = mapped_column(String(10), default="")
+    provenance: Mapped[str] = mapped_column(String(20), default="original_resume")
     source_text: Mapped[str] = mapped_column(Text, default="")
     source_location: Mapped[str] = mapped_column(String(100), default="")
     verification_status: Mapped[str] = mapped_column(String(30), default="extracted")
@@ -150,6 +156,31 @@ class Match(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class CapabilityTarget(Base):
+    """A JD requirement the user has not met yet, plus what would make it true."""
+
+    __tablename__ = "capability_targets"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"))
+    match_id: Mapped[str | None] = mapped_column(ForeignKey("matches.id"), nullable=True)
+    requirement: Mapped[str] = mapped_column(String(300))
+    category: Mapped[str] = mapped_column(String(50), default="skills")
+    severity: Mapped[str] = mapped_column(String(20), default="medium")
+    jd_evidence: Mapped[str] = mapped_column(Text, default="")
+    deliverable: Mapped[str] = mapped_column(Text, default="")
+    acceptance_criteria_json: Mapped[list] = mapped_column(JSON, default=list)
+    estimated_hours: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    evidence_text: Mapped[str] = mapped_column(Text, default="")
+    achieved_fact_id: Mapped[str | None] = mapped_column(
+        ForeignKey("resume_facts.id"), nullable=True
+    )
+    achieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class ResumeVersion(Base):
     __tablename__ = "resume_versions"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -157,9 +188,11 @@ class ResumeVersion(Base):
     base_resume_id: Mapped[str] = mapped_column(ForeignKey("resumes.id"))
     job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"))
     title: Mapped[str] = mapped_column(String(200))
+    kind: Mapped[str] = mapped_column(String(20), default="submittable")
     content_json: Mapped[dict] = mapped_column(JSON)
     traceability_json: Mapped[dict] = mapped_column(JSON)
     guard_status: Mapped[str] = mapped_column(String(20), default="pending")
+    unachieved_count: Mapped[int] = mapped_column(Integer, default=0)
     review_status: Mapped[str] = mapped_column(String(30), default="draft")
     reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
