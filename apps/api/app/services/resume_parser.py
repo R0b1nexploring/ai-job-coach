@@ -1,15 +1,51 @@
 import io
 import re
+from collections import Counter
 
 import pdfplumber
 from docx import Document
 
 from app.errors import AppError
 
-
 ALLOWED = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
     "application/pdf": ".pdf",
+}
+
+FACT_CATEGORIES = {"education", "employment", "projects", "skills", "certificates", "other"}
+SECTION_CATEGORIES = {
+    "教育背景": "education",
+    "教育经历": "education",
+    "工作经历": "employment",
+    "实习经历": "employment",
+    "项目经历": "projects",
+    "项目经验": "projects",
+    "技能": "skills",
+    "专业技能": "skills",
+    "证书": "certificates",
+    "证书资质": "certificates",
+}
+DATE_PART = r"(?:19|20)\d{2}(?:[./-](?:0?[1-9]|1[0-2])|年(?:0?[1-9]|1[0-2])月?)"
+DATE_RANGE = re.compile(
+    rf"(?P<start>{DATE_PART})\s*(?:至|到|[-–—~～])\s*(?P<end>{DATE_PART}|至今|现在)"
+)
+EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![\w.-])")
+PHONE = re.compile(r"(?<!\d)(?:\+?86[- ]?)?1[3-9]\d{9}(?!\d)")
+ORGANIZATION_WORDS = ("大学", "学院", "公司", "集团", "实验室", "研究院", "中心", "医院")
+ROLE_WORDS = ("工程师", "实习生", "助理", "经理", "负责人", "研究员", "设计师", "专员")
+KNOWN_CITIES = {
+    "北京",
+    "上海",
+    "广州",
+    "深圳",
+    "杭州",
+    "南京",
+    "苏州",
+    "成都",
+    "武汉",
+    "西安",
+    "天津",
+    "重庆",
 }
 
 
@@ -41,29 +77,252 @@ def parse_resume(content: bytes, media_type: str, filename: str) -> tuple[str, l
         raise AppError("RESUME_PARSE_FAILED", "文件无法解析，请确认文件未损坏。", 422) from exc
     if not text.strip():
         raise AppError("EMPTY_RESUME", "简历中没有可解析的文本。", 422)
+    return text, extract_facts(text)
+
+
+def preprocess_resume_lines(text: str) -> list[str]:
+    """Remove repeated page furniture while preserving source wording and line order."""
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines()]
+    lines = [line for line in lines if len(line) >= 2]
+    counts = Counter(lines)
+    return [line for line in lines if counts[line] < 3]
+
+
+def deterministic_extraction(text: str) -> dict:
     facts = extract_facts(text)
-    return text, facts
+    return {
+        "contact": extract_contact(text),
+        "facts": [
+            {
+                "category": fact["category"],
+                "label": fact["label"],
+                "organization": fact["organization"],
+                "role_title": fact["role_title"],
+                "location": fact["location"],
+                "start_date": fact["start_date"],
+                "end_date": fact["end_date"],
+                "text": fact["value_json"]["text"],
+                "source_text": fact["source_text"],
+            }
+            for fact in facts
+        ],
+        "missing_information": build_missing_information(facts),
+    }
 
 
 def extract_facts(text: str) -> list[dict]:
-    lines = [line.strip() for line in text.splitlines() if len(line.strip()) >= 2]
-    categories = [
-        ("education", r"大学|学院|本科|硕士|专业"),
-        ("skills", r"CAD|SolidWorks|Python|SOP|Excel"),
-        ("projects", r"项目|设计|课题"),
-        ("employment", r"实习|工作|公司"),
-    ]
     facts = []
-    for line in lines[:80]:
-        category = next(
-            (cat for cat, pattern in categories if re.search(pattern, line, re.I)), "other"
-        )
+    for category, source_text in _fact_blocks(preprocess_resume_lines(text))[:30]:
+        metadata = _metadata(source_text)
         facts.append(
             {
                 "category": category,
-                "label": line[:30],
-                "value_json": {"text": line},
-                "source_text": line,
+                "label": _label(source_text, metadata),
+                "value_json": {"text": source_text},
+                "organization": metadata["organization"],
+                "role_title": metadata["role_title"],
+                "location": metadata["location"],
+                "start_date": metadata["start_date"],
+                "end_date": metadata["end_date"],
+                "source_text": source_text,
             }
         )
-    return facts[:30]
+    return facts
+
+
+def extract_contact(text: str) -> dict:
+    email = EMAIL.search(text)
+    phone = PHONE.search(text)
+    name_match = re.search(r"(?:姓名|Name)\s*[:：]\s*([^\n|｜]{2,30})", text, re.IGNORECASE)
+    city_match = re.search(r"(?:城市|所在地|现居地)\s*[:：]\s*([^\n|｜]{2,30})", text)
+    return {
+        "name": name_match.group(1).strip() if name_match else "",
+        "phone": phone.group(0).strip() if phone else "",
+        "email": email.group(0).strip() if email else "",
+        "city": city_match.group(1).strip() if city_match else "",
+    }
+
+
+def sanitize_extraction(value: dict, source_text: str) -> dict:
+    """Discard generated claims that cannot be traced back to the uploaded text."""
+    raw_contact = value.get("contact") if isinstance(value.get("contact"), dict) else {}
+    contact = {
+        key: _evidenced_text(raw_contact.get(key), source_text)
+        for key in ("name", "phone", "email", "city")
+    }
+    facts = []
+    for raw in value.get("facts") or []:
+        if not isinstance(raw, dict):
+            continue
+        text_value = str(raw.get("text") or "").strip()
+        source_value = str(raw.get("source_text") or "").strip()
+        if text_value not in source_text:
+            text_value = source_value if source_value and source_value in source_text else ""
+        if not text_value:
+            continue
+        if not source_value or source_value not in source_text:
+            source_value = text_value
+        category = str(raw.get("category") or "other").strip().lower()
+        category = category if category in FACT_CATEGORIES else "other"
+        start_date = _evidenced_date(raw.get("start_date"), source_value)
+        end_raw = str(raw.get("end_date") or "").strip()
+        end_date = end_raw if end_raw in {"至今", "现在"} and end_raw in source_value else ""
+        if not end_date:
+            end_date = _evidenced_date(end_raw, source_value)
+        fact = {
+            "category": category,
+            "label": _evidenced_label(raw.get("label"), text_value),
+            "value_json": {"text": text_value},
+            "organization": _evidenced_text(raw.get("organization"), source_value),
+            "role_title": _evidenced_text(raw.get("role_title"), source_value),
+            "location": _evidenced_text(raw.get("location"), source_value),
+            "start_date": start_date,
+            "end_date": "至今" if end_date == "现在" else end_date,
+            "source_text": source_value,
+        }
+        facts.append(fact)
+    return {
+        "contact": contact,
+        "facts": facts,
+        "missing_information": build_missing_information(facts),
+    }
+
+
+def build_missing_information(facts: list) -> list[dict]:
+    missing = []
+    for index, fact in enumerate(facts):
+        category = _fact_value(fact, "category")
+        if category not in {"employment", "projects"}:
+            continue
+        fact_id = _fact_value(fact, "id") or None
+        label = _fact_value(fact, "label") or f"第 {index + 1} 条经历"
+        for field, field_label in (("organization", "组织名称"), ("start_date", "开始时间")):
+            if _fact_value(fact, field):
+                continue
+            missing.append(
+                {
+                    "fact_index": index,
+                    "fact_id": fact_id,
+                    "field": field,
+                    "question": f"“{label}”的{field_label}是什么？",
+                }
+            )
+    return missing
+
+
+def _fact_blocks(lines: list[str]) -> list[tuple[str, str]]:
+    blocks: list[tuple[str, list[str]]] = []
+    section = "other"
+    current_category = ""
+    current_lines: list[str] = []
+
+    def flush() -> None:
+        nonlocal current_category, current_lines
+        if current_lines:
+            blocks.append((current_category or "other", list(current_lines)))
+        current_category = ""
+        current_lines = []
+
+    for line in lines:
+        heading = re.sub(r"[：:\s]", "", line)
+        if heading in SECTION_CATEGORIES:
+            flush()
+            section = SECTION_CATEGORIES[heading]
+            continue
+        inferred = _infer_category(line, section)
+        if current_lines and (
+            (inferred != "other" and inferred != current_category) or _starts_new_fact(line)
+        ):
+            flush()
+        if not current_lines:
+            current_category = inferred
+        current_lines.append(line)
+    flush()
+    return [(category, "\n".join(parts)) for category, parts in blocks]
+
+
+def _infer_category(line: str, section: str) -> str:
+    patterns = (
+        ("education", r"大学|学院|本科|硕士|博士|专业|学历"),
+        ("certificates", r"证书|资格证|CET|PMP|CFA|六西格玛"),
+        ("skills", r"技能|CAD|SolidWorks|Python|SOP|Excel|PLC"),
+        ("projects", r"项目|设计|课题|作品"),
+        ("employment", r"实习|工作|任职|公司|工程师"),
+    )
+    if section != "other":
+        return section
+    return next(
+        (category for category, pattern in patterns if re.search(pattern, line, re.IGNORECASE)),
+        "other",
+    )
+
+
+def _starts_new_fact(line: str) -> bool:
+    return bool(DATE_RANGE.search(line) or any(word in line for word in ORGANIZATION_WORDS))
+
+
+def _metadata(source_text: str) -> dict:
+    first_line = source_text.splitlines()[0]
+    segments = [part.strip() for part in re.split(r"[|｜·•]", first_line) if part.strip()]
+    date_match = DATE_RANGE.search(source_text)
+    organization = next(
+        (part for part in segments if any(word in part for word in ORGANIZATION_WORDS)), ""
+    )
+    role_title = next((part for part in segments if any(word in part for word in ROLE_WORDS)), "")
+    location = next(
+        (
+            part
+            for part in segments
+            if part in KNOWN_CITIES or (len(part) <= 12 and part.endswith(("市", "省")))
+        ),
+        "",
+    )
+    return {
+        "organization": organization,
+        "role_title": role_title,
+        "location": location,
+        "start_date": _normalize_date(date_match.group("start")) if date_match else "",
+        "end_date": _normalize_date(date_match.group("end")) if date_match else "",
+    }
+
+
+def _normalize_date(value: str) -> str:
+    raw = str(value or "").strip()
+    if raw in {"至今", "现在"}:
+        return "至今"
+    match = re.fullmatch(r"((?:19|20)\d{2})[./-](0?[1-9]|1[0-2])", raw)
+    if not match:
+        match = re.fullmatch(r"((?:19|20)\d{2})年(0?[1-9]|1[0-2])月?", raw)
+    return f"{match.group(1)}-{int(match.group(2)):02d}" if match else ""
+
+
+def _evidenced_date(value, source_text: str) -> str:
+    normalized = _normalize_date(str(value or ""))
+    if not normalized:
+        return ""
+    evidenced_dates = {
+        _normalize_date(match.group(0)) for match in re.finditer(DATE_PART, source_text)
+    }
+    return normalized if normalized in evidenced_dates else ""
+
+
+def _evidenced_text(value, source_text: str) -> str:
+    text = str(value or "").strip()
+    return text if text and text.casefold() in source_text.casefold() else ""
+
+
+def _evidenced_label(value, source_text: str) -> str:
+    label = _evidenced_text(value, source_text)
+    return label[:200] if label else source_text.splitlines()[0][:30]
+
+
+def _label(source_text: str, metadata: dict) -> str:
+    return (
+        metadata.get("organization")
+        or metadata.get("role_title")
+        or source_text.splitlines()[0][:30]
+    )
+
+
+def _fact_value(fact, field: str):
+    return fact.get(field, "") if isinstance(fact, dict) else getattr(fact, field, "")

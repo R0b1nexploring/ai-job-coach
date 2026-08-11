@@ -1,12 +1,13 @@
 import io
 from datetime import datetime, timedelta, timezone
 
+from conftest import docx_file, pdf_file, register
 from docx import Document
 
 from app.models.entities import Job, UserProfile
 from app.services.job_normalizer import normalize_job
 from app.services.matcher import score_match
-from conftest import docx_file, pdf_file, register
+from app.services.resume_parser import sanitize_extraction
 
 
 def test_resume_upload_type_and_user_isolation(client):
@@ -50,6 +51,79 @@ def test_docx_table_content_is_parsed(client):
     assert response.status_code == 201
     detail = client.get(f"/api/resumes/{response.json()['id']}").json()
     assert "项目经历" in detail["parsed_text"] and "CAD" in detail["parsed_text"]
+
+
+def test_complete_timeline_is_extracted_into_structured_fact_fields(client):
+    register(client)
+    response = client.post(
+        "/api/resumes",
+        files=docx_file(
+            "姓名：张三\n邮箱：zhangsan@example.test\n工作经历\n"
+            "示例制造有限公司 | 机械设计实习生 | 杭州 | 2024-03 至 2024-09\n"
+            "负责 CAD 工程图维护"
+        ),
+    )
+    assert response.status_code == 201, response.text
+    resume = response.json()
+    facts = client.get(f"/api/resumes/{resume['id']}/facts").json()["items"]
+    employment = next(fact for fact in facts if fact["category"] == "employment")
+    assert employment["organization"] == "示例制造有限公司"
+    assert employment["role_title"] == "机械设计实习生"
+    assert employment["location"] == "杭州"
+    assert employment["start_date"] == "2024-03"
+    assert employment["end_date"] == "2024-09"
+    detail = client.get(f"/api/resumes/{resume['id']}").json()
+    assert detail["contact_json"]["email"] == "zhangsan@example.test"
+
+
+def test_bulk_confirmation_blocks_missing_critical_fields_then_accepts_answers(client):
+    register(client)
+    resume = client.post(
+        "/api/resumes",
+        files=docx_file("项目经历\n使用 CAD 完成机构设计"),
+    ).json()
+    blocked = client.post(f"/api/resumes/{resume['id']}/confirm-facts")
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "RESUME_FACTS_INCOMPLETE"
+    missing = blocked.json()["error"]["details"]["missing_information"]
+    assert {item["field"] for item in missing} == {"organization", "start_date"}
+    fact_id = missing[0]["fact_id"]
+
+    answered = client.post(
+        f"/api/resumes/{resume['id']}/answer-clarifications",
+        json=[
+            {"fact_id": fact_id, "field": "organization", "value": "个人项目"},
+            {"fact_id": fact_id, "field": "start_date", "value": "2024-03"},
+        ],
+    )
+    assert answered.status_code == 200, answered.text
+    assert answered.json()["missing_information"] == []
+    confirmed = client.post(f"/api/resumes/{resume['id']}/confirm-facts")
+    assert confirmed.status_code == 200, confirmed.text
+
+
+def test_unverified_dates_from_extractor_are_not_accepted():
+    source = "项目经历\n个人完成 CAD 机构设计"
+    value = {
+        "contact": {},
+        "facts": [
+            {
+                "category": "projects",
+                "label": "个人完成 CAD 机构设计",
+                "organization": "",
+                "role_title": "",
+                "location": "",
+                "start_date": "2024-03",
+                "end_date": "2024-06",
+                "text": "个人完成 CAD 机构设计",
+                "source_text": "个人完成 CAD 机构设计",
+            }
+        ],
+        "missing_information": [],
+    }
+    fact = sanitize_extraction(value, source)["facts"][0]
+    assert fact["start_date"] == ""
+    assert fact["end_date"] == ""
 
 
 def test_text_pdf_is_uploaded_and_parsed(client):

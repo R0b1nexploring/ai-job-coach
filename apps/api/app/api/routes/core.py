@@ -1,4 +1,6 @@
-from datetime import datetime, timezone
+import re
+from datetime import date, datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, UploadFile
 from pydantic import BaseModel, Field
@@ -19,22 +21,29 @@ from app.models.entities import (
     User,
     UserProfile,
 )
+from app.providers.jobs import discover_jobs
 from app.providers.llm.runtime import generate_structured
 from app.providers.llm.schemas import (
     JobStructuredOutput,
     MatchExplanationOutput,
     ResumeAnalysisOutput,
+    ResumeExtractionOutput,
 )
-from app.providers.jobs import discover_jobs
 from app.providers.storage.local import LocalStorage
 from app.services.job_normalizer import normalize_job
 from app.services.matcher import score_match
-from app.services.quota_service import change
-from app.services.resume_parser import ALLOWED, parse_resume
-from app.services.resume_analyzer import analyze_resume
 from app.services.provider_status import provider_status
-from .common import dump, listed
+from app.services.quota_service import change
+from app.services.resume_analyzer import analyze_resume
+from app.services.resume_parser import (
+    ALLOWED,
+    build_missing_information,
+    deterministic_extraction,
+    parse_resume,
+    sanitize_extraction,
+)
 
+from .common import dump, listed
 
 router = APIRouter(prefix="/api", tags=["core"])
 
@@ -112,7 +121,26 @@ async def upload_resume(
     settings = get_settings()
     if len(content) > settings.max_upload_mb * 1024 * 1024:
         raise AppError("FILE_TOO_LARGE", f"文件不能超过 {settings.max_upload_mb}MB。", 413)
-    text_value, facts = parse_resume(content, file.content_type or "", file.filename or "resume")
+    text_value, _preliminary_facts = parse_resume(
+        content, file.content_type or "", file.filename or "resume"
+    )
+    fallback = deterministic_extraction(text_value)
+    structured, provider_name = await generate_structured(
+        task="resume_extract",
+        system_prompt=(
+            "你是简历事实抽取器。text 和 source_text 必须逐字来自输入原文，不得润色；"
+            "日期、组织、职位和地点不确定时留空，绝不猜测。按给定结构输出严格 JSON。"
+        ),
+        user_payload={"resume_text": text_value, "mock_response": fallback},
+        response_model=ResumeExtractionOutput,
+    )
+    extraction = sanitize_extraction(structured.model_dump(), text_value)
+    fallback_extraction = sanitize_extraction(fallback, text_value)
+    if not extraction["facts"]:
+        extraction = fallback_extraction
+    else:
+        for field, value in fallback_extraction["contact"].items():
+            extraction["contact"][field] = extraction["contact"].get(field) or value
     suffix = ALLOWED[file.content_type]
     key = LocalStorage().save(content, suffix)
     resume = Resume(
@@ -122,11 +150,18 @@ async def upload_resume(
         display_name=(file.filename or "简历")[:200],
         parse_status="parsed",
         parsed_text=text_value,
+        parser_version=f"2.0:{provider_name}",
+        contact_json=extraction["contact"],
     )
     db.add(resume)
     db.flush()
-    for fact in facts:
-        db.add(ResumeFact(resume_id=resume.id, user_id=user.id, created_by=user.id, **fact))
+    created_facts = []
+    for fact in extraction["facts"]:
+        row = ResumeFact(resume_id=resume.id, user_id=user.id, created_by=user.id, **fact)
+        db.add(row)
+        db.flush()
+        created_facts.append(row)
+    resume.missing_information_json = build_missing_information(created_facts)
     db.commit()
     return dump(resume, {"original_file_key", "parsed_text"})
 
@@ -191,6 +226,12 @@ class FactCreateIn(BaseModel):
     source_location: str = Field(default="用户补充", max_length=100)
 
 
+class ClarificationAnswerIn(BaseModel):
+    fact_id: str
+    field: Literal["organization", "role_title", "location", "start_date", "end_date"]
+    value: str = Field(min_length=1, max_length=200)
+
+
 def owned_fact(db, user, fact_id):
     row = db.scalar(
         select(ResumeFact).where(ResumeFact.id == fact_id, ResumeFact.user_id == user.id)
@@ -230,6 +271,7 @@ async def create_fact(
         source_text=data.source_text,
         source_location=data.source_location,
         verification_status="proposed",
+        provenance="user_added",
         created_by=user.id,
     )
     resume.facts_confirmed_at = None
@@ -297,18 +339,114 @@ async def confirm_all_facts(
     resume_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
     row = owned_resume(db, user, resume_id)
-    for fact in db.scalars(
-        select(ResumeFact).where(
-            ResumeFact.resume_id == row.id,
-            ResumeFact.user_id == user.id,
-            ResumeFact.verification_status.in_(["extracted", "proposed"]),
+    pending_facts = list(
+        db.scalars(
+            select(ResumeFact).where(
+                ResumeFact.resume_id == row.id,
+                ResumeFact.user_id == user.id,
+                ResumeFact.verification_status.in_(["extracted", "proposed"]),
+            )
         )
-    ):
+    )
+    missing = build_missing_information(pending_facts)
+    if missing:
+        raise AppError(
+            "RESUME_FACTS_INCOMPLETE",
+            "工作或项目经历缺少关键信息，请先补充后再批量确认。",
+            409,
+            {"missing_information": missing},
+        )
+    for fact in pending_facts:
         fact.verification_status = "user_confirmed"
         fact.confirmed_at = datetime.now(timezone.utc)
     row.facts_confirmed_at = datetime.now(timezone.utc)
+    row.missing_information_json = build_missing_information(
+        list(
+            db.scalars(
+                select(ResumeFact).where(
+                    ResumeFact.resume_id == row.id,
+                    ResumeFact.user_id == user.id,
+                    ResumeFact.verification_status != "user_rejected",
+                )
+            )
+        )
+    )
     db.commit()
     return {"status": "confirmed"}
+
+
+@router.post("/resumes/{resume_id}/answer-clarifications")
+async def answer_clarifications(
+    resume_id: str,
+    data: list[ClarificationAnswerIn],
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    resume = owned_resume(db, user, resume_id)
+    if not data:
+        raise AppError("CLARIFICATION_REQUIRED", "请至少填写一项待补信息。", 422)
+    updated = []
+    for answer in data:
+        fact = db.scalar(
+            select(ResumeFact).where(
+                ResumeFact.id == answer.fact_id,
+                ResumeFact.resume_id == resume.id,
+                ResumeFact.user_id == user.id,
+            )
+        )
+        if not fact:
+            raise AppError("FACT_NOT_FOUND", "事实不存在。", 404)
+        value = answer.value.strip()
+        if answer.field in {"start_date", "end_date"} and not _valid_answered_date(
+            value, allow_present=answer.field == "end_date"
+        ):
+            raise AppError(
+                "INVALID_FACT_DATE",
+                "日期请使用 YYYY-MM、YYYY-MM-DD，结束时间也可填写“至今”。",
+                422,
+            )
+        setattr(fact, answer.field, "至今" if value == "现在" else value)
+        fact.verification_status = "extracted"
+        fact.confirmed_at = None
+        updated.append(fact)
+    resume.facts_confirmed_at = None
+    all_facts = list(
+        db.scalars(
+            select(ResumeFact).where(
+                ResumeFact.resume_id == resume.id,
+                ResumeFact.user_id == user.id,
+                ResumeFact.verification_status != "user_rejected",
+            )
+        )
+    )
+    resume.missing_information_json = build_missing_information(all_facts)
+    db.add(
+        AuditLog(
+            actor_user_id=user.id,
+            action="resume.clarifications_answered",
+            entity_type="resume",
+            entity_id=resume.id,
+            metadata_json={"updated_count": len(updated)},
+        )
+    )
+    db.commit()
+    return {
+        "items": [dump(fact) for fact in updated],
+        "missing_information": resume.missing_information_json,
+    }
+
+
+def _valid_answered_date(value: str, *, allow_present: bool) -> bool:
+    if allow_present and value in {"至今", "现在"}:
+        return True
+    if not re.fullmatch(r"(?:19|20)\d{2}-(?:0[1-9]|1[0-2])(?:-[0-3]\d)?", value):
+        return False
+    if len(value) == 10:
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            return False
+    return True
 
 
 @router.post("/resumes/{resume_id}/analysis")
@@ -351,6 +489,7 @@ async def resume_analysis(
         response_model=ResumeAnalysisOutput,
     )
     result = structured.model_dump()
+    result["missing_information"] = list(resume.missing_information_json or [])
     valid_ids = {fact.id for fact in fact_rows if fact.verification_status != "user_rejected"}
     for suggestion in result["role_suggestions"]:
         suggestion["evidence_fact_ids"] = [

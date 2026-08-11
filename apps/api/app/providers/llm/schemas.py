@@ -1,6 +1,38 @@
 from pydantic import BaseModel, Field
 
 
+class ResumeContactOutput(BaseModel):
+    name: str = ""
+    phone: str = ""
+    email: str = ""
+    city: str = ""
+
+
+class ExtractedResumeFactOutput(BaseModel):
+    category: str
+    label: str
+    organization: str = ""
+    role_title: str = ""
+    location: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    text: str
+    source_text: str
+
+
+class ClarificationOutput(BaseModel):
+    fact_index: int | None = None
+    fact_id: str | None = None
+    field: str
+    question: str
+
+
+class ResumeExtractionOutput(BaseModel):
+    contact: ResumeContactOutput = Field(default_factory=ResumeContactOutput)
+    facts: list[ExtractedResumeFactOutput] = Field(default_factory=list)
+    missing_information: list[ClarificationOutput] = Field(default_factory=list)
+
+
 class JobStructuredOutput(BaseModel):
     title: str
     company_name: str
@@ -32,7 +64,7 @@ class ResumeAnalysisOutput(BaseModel):
     strengths: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
     role_suggestions: list[RoleSuggestionOutput] = Field(default_factory=list)
-    missing_information: list[str] = Field(default_factory=list)
+    missing_information: list[ClarificationOutput] = Field(default_factory=list)
 
 
 class ResumeItemOutput(BaseModel):

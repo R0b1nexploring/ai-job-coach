@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -85,6 +85,8 @@ class Resume(Base):
     parse_status: Mapped[str] = mapped_column(String(30), default="uploaded")
     parsed_text: Mapped[str] = mapped_column(Text, default="")
     parser_version: Mapped[str] = mapped_column(String(20), default="1.0")
+    contact_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    missing_information_json: Mapped[list] = mapped_column(JSON, default=list)
     facts_confirmed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

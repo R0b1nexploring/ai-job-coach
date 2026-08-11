@@ -1,5 +1,5 @@
-import io
 import asyncio
+import io
 
 import httpx
 import pytest
@@ -74,7 +74,13 @@ def register(client, email="a@example.test", name="用户A"):
     return response.json()
 
 
-def docx_file(text="机械工程本科\n毕业设计：使用 CAD 完成机械机构设计"):
+def docx_file(
+    text=(
+        "机械工程本科\n项目经历\n"
+        "示例大学 | 毕业设计项目 | 杭州 | 2024-03 至 2024-06\n"
+        "使用 CAD 完成机械机构设计"
+    ),
+):
     doc = Document()
     for line in text.splitlines():
         doc.add_paragraph(line)

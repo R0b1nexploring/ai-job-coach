@@ -1,5 +1,6 @@
 from collections import Counter
 
+from app.services.resume_parser import build_missing_information
 
 ROLE_RULES = [
     ("设备工程师", ["机械", "设备", "点检", "维护", "cad", "sop"]),
@@ -70,13 +71,34 @@ def analyze_resume(facts: list, profile=None) -> dict:
         risks.append(f"仍有 {pending} 条事实未经用户确认，分析只可作为待核对建议。")
     if not categories.get("projects") and not categories.get("employment"):
         risks.append("缺少可核对的项目或工作经历，岗位匹配证据会偏弱。")
-    missing = []
+    missing = build_missing_information(source)
     if not categories.get("education"):
-        missing.append("教育背景")
+        missing.append(
+            {
+                "fact_index": None,
+                "fact_id": None,
+                "field": "education",
+                "question": "请补充一条可核对的教育背景。",
+            }
+        )
     if not categories.get("projects") and not categories.get("employment"):
-        missing.append("项目或工作经历中的个人职责与产出")
+        missing.append(
+            {
+                "fact_index": None,
+                "fact_id": None,
+                "field": "experience",
+                "question": "请补充项目或工作经历中的个人职责与产出。",
+            }
+        )
     if not categories.get("skills"):
-        missing.append("工具与技能熟练度")
+        missing.append(
+            {
+                "fact_index": None,
+                "fact_id": None,
+                "field": "skills",
+                "question": "请补充工具与技能的真实使用经历。",
+            }
+        )
     return {
         "summary": f"基于 {len(source)} 条{'已确认' if confirmed else '待确认'}事实，建议先探索 {suggestions[0]['role']} 等方向。",
         "strengths": strengths,
