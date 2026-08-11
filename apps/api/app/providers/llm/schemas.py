@@ -151,6 +151,37 @@ class InterviewAnswerOutput(BaseModel):
     follow_ups: list[str] = Field(default_factory=list)
 
 
+class InterviewFollowUpOutput(BaseModel):
+    question: str
+    how_to_answer: str
+    risk: Literal["low", "medium", "high"] = "medium"
+
+
+class InterviewAnswerStructureOutput(BaseModel):
+    background: str
+    my_role: str
+    actions: list[str] = Field(default_factory=list)
+    difficulties: str
+    result: str
+    verification: str
+
+
+class InterviewProjectAnswerOutput(BaseModel):
+    fact_id: str
+    provenance: Literal["original_resume", "learned", "user_added"]
+    question: str
+    structure: InterviewAnswerStructureOutput
+    follow_ups: list[InterviewFollowUpOutput] = Field(default_factory=list)
+    honesty_script: str = ""
+
+
+class InterviewExposureWarningOutput(BaseModel):
+    unachieved_count: int = 0
+    learned_count: int = 0
+    message: str
+    items: list[str] = Field(default_factory=list)
+
+
 class SelfIntroductionOutput(BaseModel):
     duration_seconds: int = 90
     text: str
@@ -160,7 +191,8 @@ class SelfIntroductionOutput(BaseModel):
 class InterviewStructuredOutput(BaseModel):
     questions: list[InterviewQuestionOutput] = Field(default_factory=list)
     self_introduction: SelfIntroductionOutput
-    project_answers: list[InterviewAnswerOutput] = Field(default_factory=list)
+    exposure_warning: InterviewExposureWarningOutput
+    project_answers: list[InterviewProjectAnswerOutput] = Field(default_factory=list)
     common_answers: list[InterviewAnswerOutput] = Field(default_factory=list)
     preparation_plan: list[str] = Field(default_factory=list)
     risk_reminders: list[str] = Field(default_factory=list)

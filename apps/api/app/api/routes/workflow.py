@@ -858,14 +858,34 @@ async def create_interview(
         if base_resume
         else []
     )
+    interview_targets = (
+        list(
+            db.scalars(
+                select(CapabilityTarget).where(
+                    CapabilityTarget.user_id == user.id,
+                    CapabilityTarget.job_id == job.id,
+                )
+            )
+        )
+        if version
+        else []
+    )
+    expected_unachieved_count = version.unachieved_count if version else 0
     fallback_questions = generate_questions(
-        job, version.content_json if version else None, confirmed_facts
+        job,
+        version.content_json if version else None,
+        confirmed_facts,
+        interview_targets,
+        unachieved_count=expected_unachieved_count,
     )
     structured, provider_name = await generate_structured(
         task="interview_guide",
         system_prompt=(
-            "你是模拟面试题生成助手。题目只能依据输入 JD 与已审核简历，覆盖简历真实性、"
-            "岗位知识、行为问题和工作条件；不得补充未提供的公司事实。输出严格 JSON。"
+            "你是模拟面试指南生成助手。题目只能依据输入 JD 与已审核简历。每个项目回答"
+            "必须包含 background、my_role、actions、difficulties、result、verification 六部分，"
+            "且逐条引用对应 fact。不得补充来源中没有的数字、工具、组织、团队规模或项目细节。"
+            "learned 事实必须明确说是近期自主学习项目，提供 honesty_script，并至少生成一条"
+            "高风险追问，回答策略要承认边界。保留练习草稿免责声明。输出严格 JSON。"
         ),
         user_payload={
             "job": {
@@ -876,16 +896,49 @@ async def create_interview(
             },
             "approved_resume": version.content_json if version else None,
             "confirmed_facts": [
-                {"id": fact.id, "category": fact.category, "value": fact.value_json}
+                {
+                    "id": fact.id,
+                    "category": fact.category,
+                    "value": fact.value_json,
+                    "source_text": fact.source_text,
+                    "provenance": fact.provenance,
+                }
                 for fact in confirmed_facts
             ],
+            "capability_targets": [
+                {
+                    "id": target.id,
+                    "requirement": target.requirement,
+                    "deliverable": target.deliverable,
+                    "status": target.status,
+                    "achieved_fact_id": target.achieved_fact_id,
+                }
+                for target in interview_targets
+            ],
+            "expected_unachieved_count": expected_unachieved_count,
             "mock_response": fallback_questions,
         },
         response_model=InterviewStructuredOutput,
     )
     questions = structured.model_dump()
+    guide_status, guide_issues = guard_interview_guide(
+        questions,
+        confirmed_facts,
+        interview_targets,
+        expected_unachieved_count=expected_unachieved_count,
+    )
+    fallback_used = provider_name != "compatible"
+    if guide_status == "blocked":
+        questions = fallback_questions
+        fallback_used = True
+        guide_status, guide_issues = guard_interview_guide(
+            questions,
+            confirmed_facts,
+            interview_targets,
+            expected_unachieved_count=expected_unachieved_count,
+        )
     questions["provider"] = provider_name
-    guide_status, guide_issues = guard_interview_guide(questions, confirmed_facts)
+    questions["fallback_used"] = fallback_used
     questions["guide_guard_status"] = guide_status
     questions["guide_guard_issues"] = guide_issues
     row = Interview(

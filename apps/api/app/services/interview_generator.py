@@ -1,28 +1,30 @@
 from .claim_entities import corpus_contains, extract_claim_entities
 
+PROJECT_CATEGORIES = {"projects", "employment"}
+LEARNED_BACKGROUND = (
+    "这是为达到岗位要求近期自主完成的学习项目，内容以可核对的过程记录和产出物为准。"
+)
+LEARNED_ROLE = "这是个人自主完成的学习练习，不代表公司、学校或团队项目经历。"
+LEARNED_HONESTY = (
+    "这是我为达到岗位要求最近自己做的学习项目，不是公司或校内课题；"
+    "我会如实说明已经掌握的内容和仍需继续练习的边界。"
+)
 
-def generate_questions(job, resume_content: dict | None = None, facts: list | None = None) -> dict:
-    """Generate a fact-linked interview guide; it remains an editable practice draft."""
+
+def generate_questions(
+    job,
+    resume_content: dict | None = None,
+    facts: list | None = None,
+    targets: list | None = None,
+    *,
+    unachieved_count: int = 0,
+) -> dict:
+    """Generate a fact-linked, editable interview practice guide."""
     confirmed = [fact for fact in (facts or []) if fact.verification_status == "user_confirmed"]
-    evidence = [
-        {
-            "id": fact.id,
-            "text": str(fact.value_json.get("text", fact.label)),
-            "category": fact.category,
-        }
-        for fact in confirmed
-    ]
+    evidence = [_fact_evidence(fact) for fact in confirmed]
     if not evidence and resume_content:
-        for section in resume_content.get("sections", []):
-            for item in section.get("items", []) if isinstance(section, dict) else []:
-                if isinstance(item, dict) and item.get("text"):
-                    evidence.append(
-                        {
-                            "id": str((item.get("source_fact_ids") or [""])[0]),
-                            "text": str(item["text"]),
-                            "category": "resume",
-                        }
-                    )
+        evidence = _resume_evidence(resume_content)
+
     resume_evidence = evidence[0]["text"][:40] if evidence else "简历中的相关经历"
     intro_parts = [item["text"] for item in evidence[:3]]
     intro = (
@@ -32,22 +34,21 @@ def generate_questions(job, resume_content: dict | None = None, facts: list | No
             if intro_parts
             else "目前简历事实仍需补充，我会如实说明已有经历。"
         )
-        + "我希望结合岗位职责进一步说明自己的匹配点，也会明确回答尚未接触的内容。"
+        + "我会结合岗位职责说明匹配点，并明确说明尚未接触的内容。"
     )
-    projects = [item for item in evidence if item["category"] in {"projects", "employment"}]
-    answer_evidence = projects or evidence[:1]
-    project_answers = [
-        {
-            "question": f"请完整介绍这段经历：{item['text'][:35]}",
-            "answer": (
-                f"背景与目标：面试时先补充这段经历的真实背景。我的实际经历是：{item['text']}。"
-                "个人行动：只展开自己确实完成的步骤。结果与复盘：说明可核对的产物，未知数字不要补写。"
-            ),
-            "source_fact_ids": [item["id"]],
-            "follow_ups": ["你个人完成了哪一部分？", "遇到的困难和取舍是什么？", "结果如何核对？"],
-        }
-        for item in answer_evidence[:3]
+    projects = [
+        item
+        for item in evidence
+        if item["category"] in PROJECT_CATEGORIES or item["provenance"] == "learned"
     ]
+    project_answers = [_project_answer(item) for item in (projects or evidence[:1])[:5]]
+    target_items = [
+        str(getattr(target, "requirement", "") or getattr(target, "deliverable", "")).strip()
+        for target in targets or []
+        if getattr(target, "status", "pending") != "achieved"
+    ][:unachieved_count]
+    learned_count = sum(item["provenance"] == "learned" for item in evidence)
+
     return {
         "questions": [
             {
@@ -64,7 +65,7 @@ def generate_questions(job, resume_content: dict | None = None, facts: list | No
                 "question": f"你如何理解{job.title}的核心职责？",
                 "why_asked": "检验岗位理解",
                 "rubric": ["结合 JD", "结构完整"],
-                "follow_ups": ["入职前三个月怎么做？"],
+                "follow_ups": ["入职后如何验证自己的理解？"],
             },
             {
                 "id": "q3",
@@ -80,6 +81,15 @@ def generate_questions(job, resume_content: dict | None = None, facts: list | No
             "text": intro,
             "source_fact_ids": [item["id"] for item in evidence[:3] if item["id"]],
         },
+        "exposure_warning": {
+            "unachieved_count": unachieved_count,
+            "learned_count": learned_count,
+            "message": (
+                f"该版本包含 {unachieved_count} 条未达成目标和 {learned_count} 条新学经历；"
+                "这些内容最可能在面试中被深挖，请明确区分目标、练习和已验证经历。"
+            ),
+            "items": target_items,
+        },
         "project_answers": project_answers,
         "common_answers": [
             {
@@ -90,9 +100,9 @@ def generate_questions(job, resume_content: dict | None = None, facts: list | No
             },
             {
                 "question": "你的优势与不足是什么？",
-                "answer": "优势用已确认事实举例；不足选择真实且可改善的一项，并说明正在采取的具体行动。",
+                "answer": "优势用已确认事实举例；不足选择真实且可改善的一项，并说明正在采取的真实行动。",
                 "source_fact_ids": [item["id"] for item in evidence[:1] if item["id"]],
-                "follow_ups": ["最近一次改进是什么？"],
+                "follow_ups": ["最近一次真实改进是什么？"],
             },
         ],
         "preparation_plan": [
@@ -109,17 +119,168 @@ def generate_questions(job, resume_content: dict | None = None, facts: list | No
     }
 
 
-def guard_interview_guide(guide: dict, confirmed_facts: list) -> tuple[str, list[str]]:
-    allowed_ids = {str(fact.id) for fact in confirmed_facts}
-    allowed_text = " ".join(str(fact.value_json) for fact in confirmed_facts).lower()
-    issues = []
-    entries = [guide.get("self_introduction", {}), *guide.get("project_answers", [])]
-    for entry in entries:
-        ids = {str(value) for value in entry.get("source_fact_ids", []) if value}
-        if ids and not ids.issubset(allowed_ids):
-            issues.append("面试稿引用了未确认事实")
-        text = str(entry.get("text") or entry.get("answer") or "")
-        for entity in extract_claim_entities(text):
-            if not corpus_contains(allowed_text, entity):
-                issues.append(entity)
+def guard_interview_guide(
+    guide: dict,
+    confirmed_facts: list,
+    targets: list | None = None,
+    *,
+    expected_unachieved_count: int | None = None,
+) -> tuple[str, list[str]]:
+    """Verify each project answer against only its own fact and linked target."""
+    facts_by_id = {
+        str(fact.id): fact
+        for fact in confirmed_facts
+        if fact.verification_status == "user_confirmed"
+    }
+    targets_by_fact: dict[str, list] = {}
+    for target in targets or []:
+        if getattr(target, "achieved_fact_id", None):
+            targets_by_fact.setdefault(str(target.achieved_fact_id), []).append(target)
+    issues: list[str] = []
+
+    warning = guide.get("exposure_warning") or {}
+    if (
+        expected_unachieved_count is not None
+        and warning.get("unachieved_count") != expected_unachieved_count
+    ):
+        issues.append("面试暴露风险中的未达成条目数与简历版本不一致")
+
+    for index, entry in enumerate(guide.get("project_answers") or []):
+        fact_id = str(entry.get("fact_id") or "")
+        fact = facts_by_id.get(fact_id)
+        location = f"第 {index + 1} 个项目回答"
+        if not fact:
+            issues.append(f"{location}引用了未确认事实")
+            continue
+        provenance = str(getattr(fact, "provenance", "original_resume") or "original_resume")
+        if entry.get("provenance") != provenance:
+            issues.append(f"{location}的事实来源类型不一致")
+
+        corpus = _fact_corpus(fact, targets_by_fact.get(fact_id, []))
+        for text in _project_claim_texts(entry):
+            for entity in extract_claim_entities(text):
+                if not corpus_contains(corpus, entity):
+                    issues.append(f"{location}包含无来源实体：{entity}")
+
+        follow_ups = entry.get("follow_ups") or []
+        if not follow_ups:
+            issues.append(f"{location}缺少追问")
+        if provenance == "learned":
+            background = str((entry.get("structure") or {}).get("background") or "")
+            honesty_script = str(entry.get("honesty_script") or "")
+            if not honesty_script:
+                issues.append(f"{location}缺少学习项目诚实说明")
+            if not any(keyword in background for keyword in ("自主", "自学", "学习项目")):
+                issues.append(f"{location}未如实标注为自主学习项目")
+            organizations = [
+                str(getattr(fact, "organization", "") or "").strip(),
+                "公司项目",
+                "校内课题",
+                "学校项目",
+            ]
+            if any(value and value in background for value in organizations):
+                issues.append(f"{location}把学习项目包装成组织项目")
+            if not any(item.get("risk") == "high" for item in follow_ups):
+                issues.append(f"{location}缺少高风险追问")
+
     return ("blocked" if issues else "passed", sorted(set(issues)))
+
+
+def _fact_evidence(fact) -> dict:
+    value = getattr(fact, "value_json", {}) or {}
+    return {
+        "id": str(fact.id),
+        "text": str(value.get("text") or getattr(fact, "label", "") or ""),
+        "category": str(getattr(fact, "category", "other") or "other"),
+        "provenance": str(getattr(fact, "provenance", "original_resume") or "original_resume"),
+        "source_text": str(getattr(fact, "source_text", "") or ""),
+    }
+
+
+def _resume_evidence(resume_content: dict) -> list[dict]:
+    evidence = []
+    for section in resume_content.get("sections") or []:
+        for item in section.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            for bullet in item.get("bullets") or []:
+                fact_ids = bullet.get("source_fact_ids") or []
+                if bullet.get("text") and fact_ids:
+                    evidence.append(
+                        {
+                            "id": str(fact_ids[0]),
+                            "text": str(bullet["text"]),
+                            "category": "resume",
+                            "provenance": "original_resume",
+                            "source_text": str(bullet["text"]),
+                        }
+                    )
+    return evidence
+
+
+def _project_answer(item: dict) -> dict:
+    text = item["text"]
+    learned = item["provenance"] == "learned"
+    source_text = item["source_text"] or text
+    return {
+        "fact_id": item["id"],
+        "provenance": item["provenance"],
+        "question": f"请完整介绍这段经历：{text[:35]}",
+        "structure": {
+            "background": LEARNED_BACKGROUND if learned else f"背景与目标依据已确认事实：{text}",
+            "my_role": LEARNED_ROLE if learned else f"我的职责边界以已确认记录为准：{text}",
+            "actions": [f"已确认的过程记录：{text}"],
+            "difficulties": "尚未记录可核对的困难与取舍；面试前只补充真实发生的内容。",
+            "result": f"可核对产出：{text}",
+            "verification": f"可核对来源：{source_text}",
+        },
+        "follow_ups": [
+            {
+                "question": "哪些部分是你亲自完成的，哪些内容尚未掌握？",
+                "how_to_answer": "先承认能力边界，再依据已确认记录说明亲自完成的部分；没有记录的细节不猜测。",
+                "risk": "high" if learned else "medium",
+            },
+            {
+                "question": "结果可以通过什么材料核对？",
+                "how_to_answer": f"只展示或说明已有来源记录：{source_text}",
+                "risk": "medium",
+            },
+        ],
+        "honesty_script": LEARNED_HONESTY if learned else "",
+    }
+
+
+def _fact_corpus(fact, linked_targets: list) -> str:
+    fields = [
+        str(getattr(fact, "value_json", {}) or {}),
+        str(getattr(fact, "source_text", "") or ""),
+        str(getattr(fact, "organization", "") or ""),
+        str(getattr(fact, "role_title", "") or ""),
+        str(getattr(fact, "location", "") or ""),
+        str(getattr(fact, "start_date", "") or ""),
+        str(getattr(fact, "end_date", "") or ""),
+    ]
+    for target in linked_targets:
+        fields.extend(
+            [
+                str(getattr(target, "requirement", "") or ""),
+                str(getattr(target, "deliverable", "") or ""),
+                str(getattr(target, "evidence_text", "") or ""),
+            ]
+        )
+    return " ".join(fields).casefold()
+
+
+def _project_claim_texts(entry: dict) -> list[str]:
+    structure = entry.get("structure") or {}
+    values = [
+        str(structure.get("background") or ""),
+        str(structure.get("my_role") or ""),
+        *(str(item) for item in structure.get("actions") or []),
+        str(structure.get("difficulties") or ""),
+        str(structure.get("result") or ""),
+        str(structure.get("verification") or ""),
+        str(entry.get("honesty_script") or ""),
+    ]
+    values.extend(str(item.get("how_to_answer") or "") for item in entry.get("follow_ups") or [])
+    return values
