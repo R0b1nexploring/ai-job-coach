@@ -18,3 +18,5 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 .DS_Store
+data/channel-imports/*
+!data/channel-imports/.gitkeep

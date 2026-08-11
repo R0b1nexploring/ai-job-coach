@@ -78,7 +78,9 @@ def _validate_url(source_url: str, allowed_hosts: set[str]):
     else:
         raise JobProviderError("公开招聘页不允许使用 IP 地址。")
     if not allowed_hosts or not _allowed_host(host, allowed_hosts):
-        raise JobProviderError("该公开招聘页域名未加入 JOB_SOURCE_ALLOWED_HOSTS 白名单。")
+        raise JobProviderError(
+            "该公开招聘页域名未加入白名单/允许列表（JOB_SOURCE_ALLOWED_HOSTS 或已导入投递渠道）。"
+        )
     return parsed, host
 
 

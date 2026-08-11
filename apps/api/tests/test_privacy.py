@@ -3,6 +3,7 @@ from sqlalchemy import select
 
 from app.models.entities import (
     Application,
+    ApplicationChannel,
     ApplicationEvent,
     CapabilityTarget,
     Interview,
@@ -102,6 +103,23 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
         source_url="https://example.test/private",
         notes="私人投递备注",
     )
+    global_channel = ApplicationChannel(
+        company_name="公共公司",
+        company_name_normalized="公共公司",
+        channel_type="email",
+        email="global@example.test",
+        source="test",
+        content_hash="global-channel-hash",
+    )
+    private_channel = ApplicationChannel(
+        owner_user_id=user.id,
+        company_name="私有公司",
+        company_name_normalized="私有公司",
+        channel_type="email",
+        email="private@example.test",
+        source="test",
+        content_hash="private-channel-hash",
+    )
     interview = Interview(
         user_id=user.id,
         job_id=job.id,
@@ -111,7 +129,7 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
         feedback_json={"text": "私人反馈"},
     )
     notification = Notification(user_id=user.id, title="私人通知", body="通知正文")
-    db.add_all([application, interview, notification])
+    db.add_all([application, interview, notification, global_channel, private_channel])
     db.flush()
     db.add(
         ApplicationEvent(
@@ -183,6 +201,8 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
     assert db.scalar(select(ResumeFact).where(ResumeFact.user_id == user.id)) is None
     assert db.scalar(select(CapabilityTarget).where(CapabilityTarget.id == target_id)) is None
     assert db.scalar(select(Notification).where(Notification.user_id == user.id)) is None
+    assert db.get(ApplicationChannel, private_channel.id) is None
+    assert db.get(ApplicationChannel, global_channel.id) is not None
     event = db.scalar(
         select(ApplicationEvent).where(ApplicationEvent.application_id == application.id)
     )

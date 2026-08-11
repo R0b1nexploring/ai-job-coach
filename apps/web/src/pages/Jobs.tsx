@@ -52,21 +52,24 @@ export function MatchDetail() {
   const [message, setMessage] = useState('')
   const query = useQuery({ queryKey: ['match', id], queryFn: () => api<Match>(`/api/matches/${id}`) })
   const versions = useQuery({ queryKey: ['resume-versions'], queryFn: () => api<ListResponse<any>>('/api/resume-versions') })
-  if (query.isLoading) return <Loading text="正在加载报告…" />
-  if (query.error) return <ErrorState error={query.error} />
+  const channels = useQuery({ queryKey: ['channels'], queryFn: () => api<ListResponse<any>>('/api/channels') })
+  if (query.isLoading || channels.isLoading) return <Loading text="正在加载报告…" />
+  if (query.error || channels.error) return <ErrorState error={query.error || channels.error} />
   const data = query.data!
   return <><Link to="/app/jobs" className="text-sage">← 返回岗位</Link>{message && <p className="mt-4 rounded-xl bg-green-50 p-3 text-green-700">{message}</p>}
-    <div className="mt-5 grid gap-5 lg:grid-cols-[.65fr_1.35fr]"><aside className="card bg-sage text-white"><p className="opacity-70">综合匹配</p><p className="mt-4 text-7xl font-black">{data.total_score}</p><h1 className="mt-2 text-2xl font-bold">{data.recommendation}</h1><p className="mt-5 text-sm opacity-80">{data.ai_explanation_json.summary}</p></aside><main className="space-y-5"><section className="card"><h2 className="font-bold">六项评分</h2><div className="mt-4 grid grid-cols-2 gap-3">{Object.entries(data.dimension_scores_json).map(([key, value]) => <div key={key} className="rounded-xl bg-cream p-3"><p className="text-xs text-black/50">{dimensionLabels[key] || '其他维度'}</p><b className="text-2xl">{value}</b></div>)}</div></section><section className="card"><h2 className="font-bold">能力缺口</h2>{data.gaps_json.length ? <ul className="mt-3 space-y-2">{data.gaps_json.map((gap: any, index) => <li key={index}>△ {gap.requirement}：{gap.action}</li>)}</ul> : <p className="mt-2 text-black/50">未发现明确缺口。</p>}</section><section className="card"><h2 className="font-bold">待确认项</h2><p className="mt-2">{data.confirmations_json.join('；') || '暂无'}</p></section><MatchActions match={data} versions={(versions.data?.items || []).filter((item: any) => item.base_resume_id === data.resume_id && item.job_id === data.job_id)} setMessage={setMessage} /></main></div>
+    <div className="mt-5 grid gap-5 lg:grid-cols-[.65fr_1.35fr]"><aside className="card bg-sage text-white"><p className="opacity-70">综合匹配</p><p className="mt-4 text-7xl font-black">{data.total_score}</p><h1 className="mt-2 text-2xl font-bold">{data.recommendation}</h1><p className="mt-5 text-sm opacity-80">{data.ai_explanation_json.summary}</p></aside><main className="space-y-5"><section className="card"><h2 className="font-bold">六项评分</h2><div className="mt-4 grid grid-cols-2 gap-3">{Object.entries(data.dimension_scores_json).map(([key, value]) => <div key={key} className="rounded-xl bg-cream p-3"><p className="text-xs text-black/50">{dimensionLabels[key] || '其他维度'}</p><b className="text-2xl">{value}</b></div>)}</div></section><section className="card"><h2 className="font-bold">能力缺口</h2>{data.gaps_json.length ? <ul className="mt-3 space-y-2">{data.gaps_json.map((gap: any, index) => <li key={index}>△ {gap.requirement}：{gap.action}</li>)}</ul> : <p className="mt-2 text-black/50">未发现明确缺口。</p>}</section><section className="card"><h2 className="font-bold">待确认项</h2><p className="mt-2">{data.confirmations_json.join('；') || '暂无'}</p></section><MatchActions match={data} versions={(versions.data?.items || []).filter((item: any) => item.base_resume_id === data.resume_id && item.job_id === data.job_id)} channels={(channels.data?.items || []).filter((item: any) => item.verify_status !== 'dead')} setMessage={setMessage} /></main></div>
   </>
 }
 
-function MatchActions({ match, versions, setMessage }: {
+function MatchActions({ match, versions, channels, setMessage }: {
   match: Match
   versions: any[]
+  channels: any[]
   setMessage: (message: string) => void
 }) {
   const client = useQueryClient()
   const [warningVersion, setWarningVersion] = useState<any | null>(null)
+  const [channelId, setChannelId] = useState('')
   const createTargets = useMutation({
     mutationFn: () => api<any>(`/api/matches/${match.id}/capability-targets`, { method: 'POST' }),
     onSuccess: (data) => {
@@ -101,7 +104,7 @@ function MatchActions({ match, versions, setMessage }: {
     mutationFn: (version: any) => api<any>('/api/applications', {
       method: 'POST',
       headers: { 'Idempotency-Key': `web-application-${match.id}-${version.id}-${Date.now()}` },
-      body: JSON.stringify({ job_id: match.job_id, resume_version_id: version.id }),
+      body: JSON.stringify({ job_id: match.job_id, resume_version_id: version.id, channel_id: channelId || null }),
     }),
     onSuccess: () => setMessage('已加入投递队列。'),
   })
@@ -129,6 +132,13 @@ function MatchActions({ match, versions, setMessage }: {
   return (
     <section className="card">
       <h2 className="font-bold">下一步</h2>
+      <label className="mt-4 block">
+        <span className="label">加入投递队列时使用的渠道（可选）</span>
+        <select aria-label="投递渠道" className="field" value={channelId} onChange={(event) => setChannelId(event.target.value)}>
+          <option value="">暂不关联具体入口</option>
+          {channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.company_name} · {channel.channel_type === 'email' ? '邮箱' : channel.channel_type === 'career_page' ? '招聘页' : '表单'}</option>)}
+        </select>
+      </label>
       <div className="mt-4 flex flex-wrap gap-3">
         {match.gaps_json.length > 0 && (
           <button className="btn-secondary" disabled={createTargets.isPending} onClick={() => createTargets.mutate()}>

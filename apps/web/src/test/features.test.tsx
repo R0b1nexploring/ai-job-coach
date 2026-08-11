@@ -6,10 +6,11 @@ import { vi } from 'vitest'
 import { api } from '../api/client'
 import { Jobs, MatchDetail } from '../pages/Jobs'
 import { Advisor } from '../pages/Advisor'
-import { Interviews } from '../pages/Workflow'
+import { Applications, Interviews } from '../pages/Workflow'
 import { AdminAccounts, AdminPackages, AdminSystem } from '../pages/Admin'
 import { CapabilityTargets } from '../pages/CapabilityTargets'
 import { Resumes } from '../pages/Resumes'
+import { Channels } from '../pages/Channels'
 
 function shell(node: React.ReactNode, path = '/') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -34,9 +35,12 @@ test('匹配报告展示六项分数、缺口和待确认项', async () => {
 })
 
 test('额度不足错误转换为清晰中文提示', async () => {
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url.includes('/api/matches/')) return new Response(JSON.stringify(match), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    if (!init?.method && (url.endsWith('/api/resume-versions') || url.endsWith('/api/channels'))) {
+      return new Response(JSON.stringify({ items: [], total: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
     return new Response(JSON.stringify({ error: { code: 'QUOTA_EXHAUSTED', message: 'resume 额度不足，请联系管理员发放演示额度。', details: {}, request_id: 'x' } }), { status: 409, headers: { 'Content-Type': 'application/json' } })
   }))
   shell(<Routes><Route path="/app/matches/:id" element={<MatchDetail />} /></Routes>, '/app/matches/m1')
@@ -93,6 +97,7 @@ test('简历页明确区分蓝图和可投递版本', async () => {
 
 test('蓝图投递只提示一次未达成目标', async () => {
   let applicationRequests = 0
+  const queuedChannelIds: Array<string | null> = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url.includes('/api/matches/')) {
@@ -101,14 +106,19 @@ test('蓝图投递只提示一次未达成目标', async () => {
     if (url.endsWith('/api/resume-versions')) {
       return new Response(JSON.stringify({ items: [{ id: 'v-target', base_resume_id: 'r1', job_id: 'j1', kind: 'target', unachieved_count: 1, guard_status: 'passed', review_status: 'approved', content_json: { sections: [{ items: [{ bullets: [{ text: '完成设备点检练习', achieved: false }] }] }] } }], total: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }
+    if (url.endsWith('/api/channels')) {
+      return new Response(JSON.stringify({ items: [{ id: 'c1', company_name: '示例公司', channel_type: 'email', verify_status: 'unverified' }], total: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
     if (url.endsWith('/api/applications') && init?.method === 'POST') {
       applicationRequests += 1
+      queuedChannelIds.push(JSON.parse(String(init.body)).channel_id)
       return new Response(JSON.stringify({ id: `a${applicationRequests}` }), { status: 201, headers: { 'Content-Type': 'application/json' } })
     }
     return new Response(JSON.stringify({ items: [], total: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }))
   shell(<Routes><Route path="/app/matches/:id" element={<MatchDetail />} /></Routes>, '/app/matches/m1')
   const user = userEvent.setup()
+  await user.selectOptions(await screen.findByLabelText('投递渠道'), 'c1')
   const queueButton = await screen.findByRole('button', { name: '加入投递队列' })
   await user.click(queueButton)
   expect(screen.getByRole('dialog', { name: '未达成目标投递提示' })).toBeVisible()
@@ -118,6 +128,7 @@ test('蓝图投递只提示一次未达成目标', async () => {
   await user.click(queueButton)
   expect(screen.queryByRole('dialog', { name: '未达成目标投递提示' })).not.toBeInTheDocument()
   expect(applicationRequests).toBe(2)
+  expect(queuedChannelIds).toEqual(['c1', 'c1'])
 })
 
 test('岗位库可选择白名单 JSON-LD 招聘页', async () => {
@@ -138,6 +149,41 @@ test('岗位库可选择白名单 JSON-LD 招聘页', async () => {
   expect(button).toBeDisabled()
   await user.type(input, 'https://careers.example.com/jobs/123')
   expect(button).toBeEnabled()
+})
+
+test('投递渠道页展示公司入口和失效状态', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    const payload = url.endsWith('/api/resumes')
+      ? { items: [], total: 0 }
+      : { items: [{ id: 'c1', company_name: '示例制造公司', channel_type: 'career_page', url: 'https://careers.example.com/jobs', email: '', scope: 'both', verify_status: 'unverified', source_updated_at: '2026-08-01T00:00:00Z' }], total: 1 }
+    return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }))
+  shell(<Channels />)
+  expect(await screen.findByText('示例制造公司')).toBeVisible()
+  expect(screen.getByText('公司招聘页 · 校招与社招')).toBeVisible()
+  expect(screen.getByRole('link', { name: '打开投递入口' })).toHaveAttribute('href', 'https://careers.example.com/jobs')
+  expect(screen.getByRole('button', { name: '读取公开岗位' })).toBeDisabled()
+})
+
+test('邮件渠道投递记录可以生成只读草稿', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.endsWith('/api/applications') && !init?.method) {
+      return new Response(JSON.stringify({ items: [{ id: 'a1', status: 'ready_to_apply', channel_id: 'c1' }], total: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    if (url.endsWith('/api/channels')) {
+      return new Response(JSON.stringify({ items: [{ id: 'c1', company_name: '示例公司', channel_type: 'email', email: 'jobs@example.com', url: '' }], total: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ to: 'jobs@example.com', subject: '应聘设备工程师 - 小陈', body: '您好。\n\n• 完成机械设计。\n\n感谢审阅。', attachment_hint: '请手动附加简历', mailto_url: 'mailto:jobs@example.com', warnings: ['系统不会代发邮件。'] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }))
+  shell(<Applications />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: '生成邮件草稿' }))
+  expect(await screen.findByRole('dialog', { name: '邮件草稿' })).toBeVisible()
+  expect(screen.getByDisplayValue('应聘设备工程师 - 小陈')).toBeVisible()
+    expect(screen.getByText(/系统不会代发邮件/)).toBeVisible()
+  expect(screen.getByRole('link', { name: '在邮件客户端打开' })).toHaveAttribute('href', 'mailto:jobs@example.com')
 })
 
 test('顾问九队列同时展示空状态和任务状态', async () => {

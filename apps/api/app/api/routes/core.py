@@ -30,6 +30,7 @@ from app.providers.llm.schemas import (
     ResumeExtractionOutput,
 )
 from app.providers.storage.local import LocalStorage
+from app.services.channel_sources import allowed_job_source_hosts
 from app.services.job_normalizer import normalize_job
 from app.services.matcher import score_match
 from app.services.provider_status import provider_status
@@ -629,6 +630,7 @@ async def discover_public_jobs(
         keywords=keywords,
         cities=cities,
         limit=data.limit,
+        allowed_hosts=allowed_job_source_hosts(db) if data.provider == "public_jsonld" else None,
     )
     saved = []
     for item in discovered:

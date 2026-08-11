@@ -16,19 +16,64 @@ const next: Record<string, string> = {
 
 export function Applications() {
   const client = useQueryClient()
+  const [draft, setDraft] = useState<any | null>(null)
   const query = useQuery({ queryKey: ['applications'], queryFn: () => api<any>('/api/applications') })
+  const channels = useQuery({ queryKey: ['channels'], queryFn: () => api<any>('/api/channels') })
   const update = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => api(`/api/applications/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, note: '用户在看板更新' }) }),
     onSuccess: () => client.invalidateQueries({ queryKey: ['applications'] }),
   })
-  if (query.isLoading) return <Loading />
-  if (query.error) return <ErrorState error={query.error} />
+  const emailDraft = useMutation({
+    mutationFn: (id: string) => api<any>(`/api/applications/${id}/email-draft`, { method: 'POST' }),
+    onSuccess: setDraft,
+  })
+  if (query.isLoading || channels.isLoading) return <Loading />
+  if (query.error || channels.error) return <ErrorState error={query.error || channels.error} />
+  const channelById = new Map((channels.data?.items || []).map((channel: any) => [channel.id, channel]))
   return <><span className="badge">合法状态机</span><h1 className="mt-3 text-4xl font-black">投递看板</h1>
-    {update.error && <div className="mt-4"><ErrorState error={update.error} /></div>}
+    {(update.error || emailDraft.error) && <div className="mt-4"><ErrorState error={update.error || emailDraft.error} /></div>}
     <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{query.data?.items?.length ? query.data.items.map((item: any) =>
       <article className="card" key={item.id}><p className="badge">{statusNames[item.status] || item.status}</p><p className="mt-3 break-all text-sm text-black/60">记录 {item.id.slice(0, 8)}</p>
+        <ApplicationChannelInfo channel={channelById.get(item.channel_id)} onDraft={() => emailDraft.mutate(item.id)} />
         {next[item.status] && <button className="btn-secondary mt-5" onClick={() => update.mutate({ id: item.id, status: next[item.status] })}>推进到：{statusNames[next[item.status]]}</button>}
-      </article>) : <Empty title="还没有投递记录。请先在匹配后加入队列。" />}</div></>
+      </article>) : <Empty title="还没有投递记录。请先在匹配后加入队列。" />}</div>
+    {draft && <EmailDraftModal draft={draft} onClose={() => setDraft(null)} />}
+  </>
+}
+
+function ApplicationChannelInfo({ channel, onDraft }: { channel: any; onDraft: () => void }) {
+  if (!channel) return <p className="mt-3 text-xs text-black/45">未关联具体投递入口</p>
+  return (
+    <section className="mt-3 rounded-xl bg-cream p-3 text-sm">
+      <b>{channel.company_name}投递入口</b>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {channel.url && <a className="text-sage underline" href={channel.url} target="_blank" rel="noreferrer">打开入口</a>}
+        {channel.email && <button className="text-sage underline" onClick={() => navigator.clipboard.writeText(channel.email)}>复制邮箱</button>}
+        {channel.channel_type === 'email' && <button className="text-sage underline" onClick={onDraft}>生成邮件草稿</button>}
+      </div>
+    </section>
+  )
+}
+
+function EmailDraftModal({ draft, onClose }: { draft: any; onClose: () => void }) {
+  const copyDraft = () => navigator.clipboard.writeText(`收件人：${draft.to}\n主题：${draft.subject}\n\n${draft.body}`)
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-5" role="dialog" aria-modal="true" aria-label="邮件草稿">
+      <section className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+        <h2 className="text-xl font-bold">邮件草稿（系统不会发送）</h2>
+        <label className="mt-4 block"><span className="label">收件人</span><input className="field" readOnly value={draft.to} /></label>
+        <label className="mt-3 block"><span className="label">主题</span><input className="field" readOnly value={draft.subject} /></label>
+        <label className="mt-3 block"><span className="label">正文</span><textarea className="field min-h-64" readOnly value={draft.body} /></label>
+        <p className="mt-3 text-sm text-black/60">{draft.attachment_hint}</p>
+        {draft.warnings?.length > 0 && <ul className="mt-3 space-y-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{draft.warnings.map((warning: string) => <li key={warning}>△ {warning}</li>)}</ul>}
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button className="btn-secondary" onClick={onClose}>关闭</button>
+          <button className="btn-secondary" onClick={copyDraft}>复制草稿</button>
+          {draft.mailto_url ? <a className="btn" href={draft.mailto_url}>在邮件客户端打开</a> : <span className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">正文较长，请复制使用</span>}
+        </div>
+      </section>
+    </div>
+  )
 }
 
 export function Interviews() {

@@ -9,7 +9,13 @@ from .sample import SampleJobProvider
 
 
 async def discover_jobs(
-    *, provider: str, source_key: str, keywords: list[str], cities: list[str], limit: int
+    *,
+    provider: str,
+    source_key: str,
+    keywords: list[str],
+    cities: list[str],
+    limit: int,
+    allowed_hosts: set[str] | None = None,
 ):
     fallback_used = False
     error = None
@@ -23,7 +29,11 @@ async def discover_jobs(
         elif provider == "public_jsonld":
             selected = PublicJsonLdJobProvider(
                 source_key,
-                allowed_hosts=get_settings().allowed_job_source_hosts(),
+                allowed_hosts=(
+                    allowed_hosts
+                    if allowed_hosts is not None
+                    else get_settings().allowed_job_source_hosts()
+                ),
             )
         elif provider == "sample":
             selected = SampleJobProvider()

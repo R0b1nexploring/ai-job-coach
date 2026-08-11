@@ -203,6 +203,44 @@ class ResumeVersion(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class ApplicationChannel(Base):
+    """A company-level application entry point, not a job posting source."""
+
+    __tablename__ = "application_channels"
+    __table_args__ = (
+        UniqueConstraint(
+            "company_name_normalized",
+            "channel_type",
+            "url",
+            "email",
+            name="uq_application_channel_identity",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    owner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    company_name: Mapped[str] = mapped_column(String(200))
+    company_name_normalized: Mapped[str] = mapped_column(String(200))
+    company_aliases_json: Mapped[list] = mapped_column(JSON, default=list)
+    channel_type: Mapped[str] = mapped_column(String(20))
+    url: Mapped[str] = mapped_column(String(1000), default="")
+    email: Mapped[str] = mapped_column(String(320), default="")
+    scope: Mapped[str] = mapped_column(String(20), default="both")
+    regions_json: Mapped[list] = mapped_column(JSON, default=list)
+    industries_json: Mapped[list] = mapped_column(JSON, default=list)
+    source: Mapped[str] = mapped_column(String(200), default="")
+    source_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    verify_status: Mapped[str] = mapped_column(String(20), default="unverified")
+    dead_reports: Mapped[int] = mapped_column(Integer, default=0)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class Application(Base):
     __tablename__ = "applications"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -210,6 +248,9 @@ class Application(Base):
     job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"))
     resume_version_id: Mapped[str | None] = mapped_column(
         ForeignKey("resume_versions.id"), nullable=True
+    )
+    channel_id: Mapped[str | None] = mapped_column(
+        ForeignKey("application_channels.id"), nullable=True, index=True
     )
     status: Mapped[str] = mapped_column(String(40), default="pending_confirmation")
     source_url: Mapped[str] = mapped_column(String(1000), default="")

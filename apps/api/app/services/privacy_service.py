@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models.entities import (
     AdvisorAssignment,
     Application,
+    ApplicationChannel,
     ApplicationEvent,
     CapabilityTarget,
     Interview,
@@ -110,9 +111,20 @@ def purge_user_data(db: Session, user: User, storage: LocalStorage) -> dict[str,
         ):
             event.note = ""
     for application in applications:
+        application.channel_id = None
         application.source_url = ""
         application.notes = ""
         application.status = "withdrawn"
+
+    # Global channels are company data and intentionally stay outside retention cleanup.
+    # Only user-owned channel rows are removed when that owner deletes the account.
+    private_channels = list(
+        db.scalars(
+            select(ApplicationChannel).where(ApplicationChannel.owner_user_id == user.id)
+        )
+    )
+    for channel in private_channels:
+        db.delete(channel)
 
     interviews = list(db.scalars(select(Interview).where(Interview.user_id == user.id)))
     for interview in interviews:
@@ -148,4 +160,5 @@ def purge_user_data(db: Session, user: User, storage: LocalStorage) -> dict[str,
         "capability_targets_removed": len(targets),
         "facts_removed": len(facts),
         "notifications_removed": len(notifications),
+        "private_channels_removed": len(private_channels),
     }

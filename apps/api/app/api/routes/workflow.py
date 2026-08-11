@@ -5,7 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Header, Query, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -13,6 +13,7 @@ from app.dependencies import current_user
 from app.errors import AppError
 from app.models.entities import (
     Application,
+    ApplicationChannel,
     ApplicationEvent,
     AuditLog,
     CapabilityTarget,
@@ -609,6 +610,7 @@ async def download_version(
 class ApplicationIn(BaseModel):
     job_id: str
     resume_version_id: str | None = None
+    channel_id: str | None = None
     notes: str = ""
 
 
@@ -629,6 +631,20 @@ async def create_application(
         raise AppError(
             "RESUME_NOT_APPROVED", "定制简历通过事实检查和顾问审核后才能进入投递队列。", 409
         )
+    channel = None
+    if data.channel_id:
+        channel = db.scalar(
+            select(ApplicationChannel).where(
+                ApplicationChannel.id == data.channel_id,
+                or_(
+                    ApplicationChannel.owner_user_id.is_(None),
+                    ApplicationChannel.owner_user_id == user.id,
+                ),
+                ApplicationChannel.verify_status != "dead",
+            )
+        )
+        if not channel:
+            raise AppError("CHANNEL_NOT_FOUND", "投递渠道不存在或已失效。", 404)
     key = idempotency_key or f"application:{user.id}:{uuid.uuid4()}"
     existing_ledger = db.scalar(
         select(QuotaLedger).where(
@@ -656,7 +672,8 @@ async def create_application(
         user_id=user.id,
         job_id=job.id,
         resume_version_id=data.resume_version_id,
-        source_url=job.source_url,
+        channel_id=data.channel_id,
+        source_url=(channel.url if channel and channel.url else job.source_url),
         notes=data.notes,
     )
     db.add(app)

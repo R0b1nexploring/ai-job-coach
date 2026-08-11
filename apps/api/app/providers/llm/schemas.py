@@ -196,3 +196,14 @@ class InterviewStructuredOutput(BaseModel):
     common_answers: list[InterviewAnswerOutput] = Field(default_factory=list)
     preparation_plan: list[str] = Field(default_factory=list)
     risk_reminders: list[str] = Field(default_factory=list)
+
+
+class EmailMatchPointOutput(BaseModel):
+    text: str
+    source_fact_ids: list[str] = Field(default_factory=list)
+
+
+class EmailDraftStructuredOutput(BaseModel):
+    introduction: str
+    match_points: list[EmailMatchPointOutput] = Field(default_factory=list, max_length=3)
+    closing: str
