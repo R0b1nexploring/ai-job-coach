@@ -5,6 +5,7 @@ from conftest import docx_file, pdf_file, register
 from docx import Document
 
 from app.models.entities import Job, UserProfile
+from app.providers.llm.schemas import ResumeExtractionOutput
 from app.services.job_normalizer import normalize_job
 from app.services.matcher import score_match
 from app.services.resume_parser import sanitize_extraction
@@ -74,6 +75,21 @@ def test_complete_timeline_is_extracted_into_structured_fact_fields(client):
     assert employment["end_date"] == "2024-09"
     detail = client.get(f"/api/resumes/{resume['id']}").json()
     assert detail["contact_json"]["email"] == "zhangsan@example.test"
+
+
+def test_resume_upload_marks_semantic_empty_model_result_as_fallback(client, monkeypatch):
+    async def empty_extraction(**_kwargs):
+        return ResumeExtractionOutput(), "compatible"
+
+    monkeypatch.setattr("app.api.routes.core.generate_structured", empty_extraction)
+    register(client)
+
+    response = client.post("/api/resumes", files=docx_file())
+
+    assert response.status_code == 201, response.text
+    assert response.json()["parser_version"] == "2.0:mock_fallback"
+    facts = client.get(f"/api/resumes/{response.json()['id']}/facts").json()
+    assert facts["total"] > 0
 
 
 def test_bulk_confirmation_blocks_missing_critical_fields_then_accepts_answers(client):

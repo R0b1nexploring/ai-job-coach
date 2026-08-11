@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     llm_model_strong: str = ""
     llm_timeout_seconds: int = 45
     llm_max_retries: int = 2
+    llm_max_output_tokens: int = 4096
     payment_provider: str = "disabled"
     payment_webhook_secret: str = "demo-secret"
     storage_provider: str = "local"

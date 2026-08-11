@@ -139,6 +139,8 @@ async def upload_resume(
     fallback_extraction = sanitize_extraction(fallback, text_value)
     if not extraction["facts"]:
         extraction = fallback_extraction
+        if provider_name == "compatible":
+            provider_name = "mock_fallback"
     else:
         for field, value in fallback_extraction["contact"].items():
             extraction["contact"][field] = extraction["contact"].get(field) or value

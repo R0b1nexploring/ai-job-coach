@@ -6,7 +6,12 @@ from app.models.entities import ResumeFact, ResumeVersion
 from app.providers.llm.schemas import ResumeStructuredV2Output
 from app.services.html_resume_renderer import render_resume_html
 from app.services.quota_service import change
-from app.services.resume_generator import ACTION_PREFIXES, MAX_BULLET_CHARS, estimate_resume_lines
+from app.services.resume_generator import (
+    ACTION_PREFIXES,
+    MAX_BULLET_CHARS,
+    enforce_page_budget,
+    estimate_resume_lines,
+)
 
 
 def setup_resume_match(client, db):
@@ -44,6 +49,44 @@ def bullets(content: dict):
         for item in section.get("items", [])
         for bullet in item.get("bullets", [])
     ]
+
+
+def test_page_budget_preserves_at_least_one_blueprint_target():
+    content = {
+        "content_version": 2,
+        "kind": "target",
+        "sections": [
+            {
+                "name": "项目经历",
+                "items": [
+                    {
+                        "bullets": [
+                            {
+                                "text": "完成" + "机械设计记录" * 7,
+                                "source_fact_ids": [f"fact-{index}"],
+                                "source_target_ids": [],
+                                "achieved": True,
+                            }
+                            for index in range(30)
+                        ]
+                        + [
+                            {
+                                "text": "完成 PLC 调试练习",
+                                "source_fact_ids": [],
+                                "source_target_ids": ["target-1"],
+                                "achieved": False,
+                            }
+                        ]
+                    }
+                ],
+            }
+        ],
+    }
+
+    result = enforce_page_budget(content)
+
+    assert estimate_resume_lines(result) <= 48
+    assert any(bullet["source_target_ids"] for bullet in bullets(result))
 
 
 def test_target_and_submittable_versions_use_distinct_sources_and_learned_facts(client, db):
@@ -99,7 +142,9 @@ def test_target_and_submittable_versions_use_distinct_sources_and_learned_facts(
         },
     ).json()
     grown_fact_ids = {
-        fact_id for bullet in bullets(grown["content_json"]) for fact_id in bullet["source_fact_ids"]
+        fact_id
+        for bullet in bullets(grown["content_json"])
+        for fact_id in bullet["source_fact_ids"]
     }
     assert learned_fact_id in grown_fact_ids
     learned = db.scalar(select(ResumeFact).where(ResumeFact.id == learned_fact_id))
@@ -164,6 +209,61 @@ def test_invalid_llm_resume_falls_back_to_deterministic_content(client, db, monk
     assert version["traceability_json"]["fallback_reason"] == "model_output_failed_validation"
     assert version["guard_status"] == "passed"
     assert all("30%" not in bullet["text"] for bullet in bullets(version["content_json"]))
+
+
+def test_target_resume_falls_back_when_model_omits_all_learning_targets(client, db, monkeypatch):
+    _user, resume, job, match, targets = setup_resume_match(client, db)
+    assert targets
+    fact_id = client.get(f"/api/resumes/{resume['id']}/facts").json()["items"][0]["id"]
+
+    async def fake_generate_structured(**_kwargs):
+        return (
+            ResumeStructuredV2Output.model_validate(
+                {
+                    "content_version": 2,
+                    "kind": "target",
+                    "headline": "机械设计工程师",
+                    "contact": {},
+                    "sections": [
+                        {
+                            "name": "项目经历",
+                            "items": [
+                                {
+                                    "bullets": [
+                                        {
+                                            "text": "完成 CAD 机械机构设计",
+                                            "source_fact_ids": [fact_id],
+                                            "source_target_ids": [],
+                                            "achieved": True,
+                                        }
+                                    ]
+                                }
+                            ],
+                        }
+                    ],
+                    "excluded_gaps": [],
+                }
+            ),
+            "compatible",
+        )
+
+    monkeypatch.setattr(workflow, "generate_structured", fake_generate_structured)
+    response = client.post(
+        "/api/resume-versions",
+        headers={"Idempotency-Key": "target-without-target-source"},
+        json={
+            "base_resume_id": resume["id"],
+            "job_id": job["id"],
+            "match_id": match["id"],
+            "kind": "target",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    version = response.json()
+    assert version["fallback_used"] is True
+    assert version["unachieved_count"] >= 1
+    assert any(bullet["source_target_ids"] for bullet in bullets(version["content_json"]))
 
 
 def test_v1_resume_content_remains_patchable_and_renderable(client, db):

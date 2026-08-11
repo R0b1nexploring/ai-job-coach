@@ -101,3 +101,20 @@ def test_guard_rejects_wrong_exposure_count_and_missing_follow_up():
     assert status == "blocked"
     assert any("条目数" in issue for issue in issues)
     assert any("缺少追问" in issue for issue in issues)
+
+
+def test_guard_rejects_semantically_empty_guide_when_project_facts_exist():
+    learned = fact()
+    guide = generate_questions(job(), facts=[learned], unachieved_count=0)
+    guide["questions"] = []
+    guide["project_answers"] = []
+
+    status, issues = guard_interview_guide(
+        guide,
+        [learned],
+        expected_unachieved_count=0,
+    )
+
+    assert status == "blocked"
+    assert "面试指南缺少岗位问题" in issues
+    assert "面试指南缺少已确认项目事实的回答" in issues

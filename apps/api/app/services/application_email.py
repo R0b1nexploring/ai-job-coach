@@ -76,7 +76,8 @@ async def build_email_draft(
     content["closing"] = fallback["closing"]
     guard_status, issues = guard_email_match_points(content["match_points"], confirmed)
     fallback_used = provider_name != "compatible"
-    if guard_status == "blocked":
+    minimum_points = min(2, len(selected))
+    if guard_status == "blocked" or len(content["match_points"]) < minimum_points:
         content = fallback
         fallback_used = True
         guard_status, issues = guard_email_match_points(content["match_points"], confirmed)

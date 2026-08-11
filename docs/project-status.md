@@ -1,11 +1,11 @@
 # AI Job Coach 项目最终状态清单
 
-> 更新时间：2026-08-11
+> 更新时间：2026-08-12
 > 当前定位：本地可运行、可演示、可测试的 MVP-1。核心求职闭环和规格内管理功能已经完成；真实外部凭据、生产基础设施、经营资质及规格明确排除的后续功能仍需外部条件。
 
 ## 验收摘要
 
-- 后端自动化测试：88 项通过
+- 后端自动化测试：95 项通过
 - 前端组件测试：18 项通过
 - 浏览器端到端流程：2 项通过
 - Alembic：`0006_add_application_channels`（head），已验证空库升级与 `0006` 降级/再升级
@@ -181,8 +181,9 @@
 - [x] Compatible Chat Completions Provider
 - [x] cheap/strong 任务分档与 `LLM_MODEL` 兼容兜底
 - [x] 结构化输出校验、宽容 JSON 修复与确定性 Mock 回退
+- [x] JSON Schema、形状示例和可配置输出预算
 - [x] LLM 超时、重试、无效结构处理
-- [x] 真实 LLM 失败时安全回退 Mock
+- [x] 真实 LLM 失败或关键内容语义为空时安全回退 Mock
 - [x] Job Base Provider 和本地 Sample fallback
 - [x] Payment Base Provider 和 Disabled Provider
 - [x] 系统状态只显示配置项名称，不返回密钥值
@@ -191,10 +192,12 @@
 
 ### 真实 AI
 
-- [ ] 在本地安全配置实际 `LLM_API_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL_CHEAP` 和 `LLM_MODEL_STRONG`
-- [ ] 针对所选模型完成中文质量、成本、超时和稳定性验收
+- [x] 在本地安全配置并连通兼容 DeepSeek 的 Chat Completions Provider
+- [x] 使用完全虚构数据验证事实提取、学习目标、双版本简历、面试指南和邮件草稿
+- [ ] 使用经授权的真实中文简历完成人工质量验收
+- [ ] 完成长时间成本、超时和稳定性验收
 
-代码接口、分档和安全回退已完成，Mock 下的功能与安全测试已通过；当前仓库 `.env` 仍为 `LLM_PROVIDER=mock` 且密钥为空，因此尚未完成 DeepSeek 中文简历真实质量验收。密钥不得写入文档、Git 或测试日志。
+2026-08-12 的虚构数据技术回归中，六类任务均直接通过 Compatible Provider 的结构校验与本地安全检查，未触发 Mock 回退。该结果证明调用链可用，但不等同于真实用户材料的生产质量验收。完整自动化测试始终强制 Mock，避免消耗真实额度和引入外部波动；本地密钥不得写入文档、Git 或测试日志。
 
 ### 国内岗位来源（岗位级，仍未完成）
 

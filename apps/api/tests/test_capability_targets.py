@@ -51,7 +51,7 @@ def test_experience_months_are_calculated_from_structured_dates_without_overlap(
     assert calculate_experience_months(facts, today=date(2026, 8, 11)) == 9
 
 
-def test_capability_service_discards_non_verbatim_jd_evidence(monkeypatch):
+def test_capability_service_falls_back_when_model_evidence_is_not_verbatim(monkeypatch):
     async def fake_generate_structured(**_kwargs):
         return (
             CapabilityPlanOutput.model_validate(
@@ -76,8 +76,24 @@ def test_capability_service_discards_non_verbatim_jd_evidence(monkeypatch):
     match = SimpleNamespace(gaps_json=[{"requirement": "SolidWorks"}])
     job = SimpleNamespace(title="机械工程师", raw_jd="要求熟悉 SolidWorks")
     targets, provider = asyncio.run(capability_service.build_targets(match, job, []))
-    assert targets == []
-    assert provider == "compatible"
+    assert len(targets) == 1
+    assert targets[0]["jd_evidence"] == "要求熟悉 SolidWorks"
+    assert provider == "mock_fallback"
+
+
+def test_capability_service_falls_back_when_model_returns_empty_targets(monkeypatch):
+    async def fake_generate_structured(**_kwargs):
+        return CapabilityPlanOutput(targets=[]), "compatible"
+
+    monkeypatch.setattr(capability_service, "generate_structured", fake_generate_structured)
+    match = SimpleNamespace(gaps_json=[{"requirement": "SolidWorks"}])
+    job = SimpleNamespace(title="机械工程师", raw_jd="要求熟悉 SolidWorks")
+
+    targets, provider = asyncio.run(capability_service.build_targets(match, job, []))
+
+    assert len(targets) == 1
+    assert targets[0]["requirement"] == "SolidWorks"
+    assert provider == "mock_fallback"
 
 
 def test_capability_target_achievement_creates_confirmed_learned_fact_atomically(client, db):

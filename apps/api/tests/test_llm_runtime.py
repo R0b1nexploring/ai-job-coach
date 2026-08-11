@@ -10,8 +10,9 @@ from pydantic import BaseModel
 from app.config import Settings
 from app.providers.llm import runtime
 from app.providers.llm.base import ProviderError
-from app.providers.llm.compatible import CompatibleLLMProvider
+from app.providers.llm.compatible import CompatibleLLMProvider, _format_instructions
 from app.providers.llm.mock import MockLLMProvider
+from app.providers.llm.schemas import ResumeStructuredV2Output
 
 
 class ExampleOutput(BaseModel):
@@ -79,6 +80,7 @@ def test_compatible_provider_uses_task_model_retries_and_logs_no_sensitive_text(
         llm_model_cheap="cheap-model",
         llm_model_strong="strong-model",
         llm_max_retries=2,
+        llm_max_output_tokens=3072,
     )
     monkeypatch.setattr("app.providers.llm.compatible.get_settings", lambda: settings)
     requests = []
@@ -90,9 +92,7 @@ def test_compatible_provider_uses_task_model_retries_and_logs_no_sensitive_text(
         return httpx.Response(
             200,
             json={
-                "choices": [
-                    {"message": {"content": '```json\n{"value": "安全结果"}\n```'}}
-                ],
+                "choices": [{"message": {"content": '```json\n{"value": "安全结果"}\n```'}}],
                 "usage": {"prompt_tokens": 12, "completion_tokens": 5},
             },
         )
@@ -113,7 +113,14 @@ def test_compatible_provider_uses_task_model_retries_and_logs_no_sensitive_text(
     assert result.value == "安全结果"
     assert len(requests) == 2
     assert requests[-1]["model"] == "strong-model"
+    assert requests[-1]["max_tokens"] == 3072
+    assert requests[-1]["response_format"] == {"type": "json_object"}
+    assert "JSON Schema" in requests[-1]["messages"][0]["content"]
+    assert "结构示例" in requests[-1]["messages"][0]["content"]
+    assert '"value"' in requests[-1]["messages"][0]["content"]
+    assert "上一次响应未通过" in requests[-1]["messages"][-1]["content"]
     assert "mock_response" not in requests[-1]["messages"][1]["content"]
+    assert "不得外发的回退内容" not in json.dumps(requests[-1], ensure_ascii=False)
     assert "task=resume_rewrite" in caplog.text
     assert "tier=strong" in caplog.text
     assert "prompt_tokens=12" in caplog.text
@@ -122,3 +129,9 @@ def test_compatible_provider_uses_task_model_retries_and_logs_no_sensitive_text(
     assert "error_type=HTTPStatusError" in caplog.text
     for secret in ("secret-api-key", "敏感系统提示", "完整敏感简历内容", "安全结果"):
         assert secret not in caplog.text
+
+
+def test_resume_schema_example_keeps_new_claims_empty():
+    instructions = _format_instructions(ResumeStructuredV2Output)
+
+    assert '"new_claims":[]' in instructions

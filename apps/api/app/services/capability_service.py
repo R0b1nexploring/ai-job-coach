@@ -33,11 +33,22 @@ async def build_targets(match, job, facts: list) -> tuple[list[dict], str]:
         },
         response_model=CapabilityPlanOutput,
     )
+    targets = _validated_targets(structured.model_dump()["targets"], job)
+    if not targets and fallback["targets"]:
+        targets = _validated_targets(fallback["targets"], job)
+        if provider_name == "compatible":
+            provider_name = "mock_fallback"
+    return targets, provider_name
+
+
+def _validated_targets(raw_targets: list[dict], job) -> list[dict]:
     targets = []
-    for index, raw in enumerate(structured.model_dump()["targets"][:20]):
+    for index, raw in enumerate(raw_targets[:20]):
         evidence = str(raw.get("jd_evidence") or "").strip()
         if not evidence or evidence not in job.raw_jd:
-            logger.warning("capability_target_discarded index=%d reason=jd_evidence_mismatch", index)
+            logger.warning(
+                "capability_target_discarded index=%d reason=jd_evidence_mismatch", index
+            )
             continue
         requirement = str(raw.get("requirement") or "").strip()
         deliverable = str(raw.get("deliverable") or "").strip()
@@ -45,14 +56,14 @@ async def build_targets(match, job, facts: list) -> tuple[list[dict], str]:
             logger.warning("capability_target_discarded index=%d reason=incomplete", index)
             continue
         criteria = [
-            str(item).strip()
-            for item in raw.get("acceptance_criteria") or []
-            if str(item).strip()
+            str(item).strip() for item in raw.get("acceptance_criteria") or [] if str(item).strip()
         ][:8]
         targets.append(
             {
                 "requirement": requirement[:300],
-                "category": _choice(raw.get("category"), {"skills", "experience", "education", "projects"}, "skills"),
+                "category": _choice(
+                    raw.get("category"), {"skills", "experience", "education", "projects"}, "skills"
+                ),
                 "severity": _choice(raw.get("severity"), {"low", "medium", "high"}, "medium"),
                 "jd_evidence": evidence[:5000],
                 "deliverable": deliverable[:5000],
@@ -60,7 +71,7 @@ async def build_targets(match, job, facts: list) -> tuple[list[dict], str]:
                 "estimated_hours": max(1, min(int(raw.get("estimated_hours") or 1), 500)),
             }
         )
-    return targets, provider_name
+    return targets
 
 
 def _fallback_target(gap: dict, raw_jd: str) -> dict:

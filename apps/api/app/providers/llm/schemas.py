@@ -102,11 +102,20 @@ class ResumeStructuredOutput(BaseModel):
 
 
 class ResumeBulletV2Output(BaseModel):
-    text: str
-    source_fact_ids: list[str] = Field(default_factory=list)
-    source_target_ids: list[str] = Field(default_factory=list)
-    achieved: bool
-    new_claims: list[str] = Field(default_factory=list)
+    text: str = Field(description="不超过 45 个中文字符，并以输入允许的动作词开头")
+    source_fact_ids: list[str] = Field(
+        default_factory=list,
+        description="已达成条目引用的 confirmed_facts id；不得编造 id",
+    )
+    source_target_ids: list[str] = Field(
+        default_factory=list,
+        description="未达成蓝图条目引用的 capability_targets id；不得编造 id",
+    )
+    achieved: bool = Field(description="引用 fact 时为 true；引用 capability target 时必须为 false")
+    new_claims: list[str] = Field(
+        default_factory=list,
+        description="合规输出必须为空数组；如果无法避免新增主张，应省略该 bullet",
+    )
 
 
 class ResumeEntryV2Output(BaseModel):

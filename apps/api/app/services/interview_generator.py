@@ -138,6 +138,20 @@ def guard_interview_guide(
             targets_by_fact.setdefault(str(target.achieved_fact_id), []).append(target)
     issues: list[str] = []
 
+    if not guide.get("questions"):
+        issues.append("面试指南缺少岗位问题")
+    project_fact_ids = {
+        str(fact.id)
+        for fact in confirmed_facts
+        if getattr(fact, "category", "") in PROJECT_CATEGORIES
+        or getattr(fact, "provenance", "") == "learned"
+    }
+    answered_fact_ids = {
+        str(entry.get("fact_id") or "") for entry in guide.get("project_answers") or []
+    }
+    if project_fact_ids and not project_fact_ids.intersection(answered_fact_ids):
+        issues.append("面试指南缺少已确认项目事实的回答")
+
     warning = guide.get("exposure_warning") or {}
     if (
         expected_unachieved_count is not None

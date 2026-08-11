@@ -251,6 +251,51 @@ def test_email_draft_ignores_unguarded_llm_framing(monkeypatch):
     assert "高级工程师" not in result["body"]
 
 
+def test_email_draft_falls_back_when_model_omits_available_match_point(monkeypatch):
+    async def generated(**_kwargs):
+        return (
+            EmailDraftStructuredOutput(
+                introduction="您好。",
+                match_points=[],
+                closing="感谢审阅。",
+            ),
+            "compatible",
+        )
+
+    monkeypatch.setattr("app.services.application_email.generate_structured", generated)
+    confirmed = SimpleNamespace(
+        id="confirmed",
+        verification_status="user_confirmed",
+        category="projects",
+        label="设备巡检",
+        value_json={"text": "完成设备巡检记录"},
+        source_text="完成设备巡检记录",
+        organization="",
+        role_title="",
+    )
+
+    result = asyncio.run(
+        build_email_draft(
+            SimpleNamespace(school="", major=""),
+            SimpleNamespace(title="可投递简历", kind="submittable", unachieved_count=0),
+            SimpleNamespace(
+                title="设备工程师",
+                company_name="示例公司",
+                must_have_json=[],
+                keywords_json=[],
+            ),
+            SimpleNamespace(company_name="示例公司", email="jobs@example.test"),
+            facts=[confirmed],
+            contact={"name": "小陈"},
+        )
+    )
+
+    assert result["fallback_used"] is True
+    assert result["match_points"] == [
+        {"text": "完成设备巡检记录", "source_fact_ids": ["confirmed"]}
+    ]
+
+
 def test_email_guard_rejects_unconfirmed_fact_and_invented_number():
     confirmed = SimpleNamespace(
         id="confirmed",

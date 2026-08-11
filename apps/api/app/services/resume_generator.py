@@ -144,6 +144,7 @@ def content_quality_issues(
         issues.append("简历 kind 与请求模式不一致")
     facts_by_id = {str(fact.id): fact for fact in facts}
     targets_by_id = {str(target.id): target for target in targets or []}
+    referenced_target_ids: set[str] = set()
     for section_index, section in enumerate(content.get("sections") or []):
         verbs = set()
         for item_index, item in enumerate(section.get("items") or []):
@@ -177,6 +178,7 @@ def content_quality_issues(
                     verbs.add(verb)
                 source_fact_ids = bullet.get("source_fact_ids") or []
                 source_target_ids = bullet.get("source_target_ids") or []
+                referenced_target_ids.update(str(value) for value in source_target_ids)
                 if not source_fact_ids and not source_target_ids:
                     issues.append(f"{location}缺少来源")
                 if source_target_ids and bullet.get("achieved") is not False:
@@ -187,6 +189,8 @@ def content_quality_issues(
                     str(value) in targets_by_id for value in source_target_ids
                 ):
                     issues.append(f"{location}引用的学习目标不存在")
+    if kind == "target" and targets_by_id and not referenced_target_ids.intersection(targets_by_id):
+        issues.append("蓝图简历未包含任何未达成学习目标")
     return list(dict.fromkeys(issues))
 
 
@@ -200,9 +204,17 @@ def enforce_page_budget(
     target_severity = target_severity or {}
     while estimate_resume_lines(result) > MAX_RESUME_LINES:
         candidates = []
+        target_bullet_count = sum(
+            bool(bullet.get("source_target_ids"))
+            for section in result.get("sections") or []
+            for item in section.get("items") or []
+            for bullet in item.get("bullets") or []
+        )
         for section_index, section in enumerate(result.get("sections") or []):
             for item_index, item in enumerate(section.get("items") or []):
                 for bullet_index, bullet in enumerate(item.get("bullets") or []):
+                    if bullet.get("source_target_ids") and target_bullet_count <= 1:
+                        continue
                     candidates.append(
                         (
                             _removal_priority(bullet, fact_relevance, target_severity),
@@ -218,9 +230,7 @@ def enforce_page_budget(
         result["sections"][section_index]["items"] = [
             item for item in result["sections"][section_index]["items"] if item.get("bullets")
         ]
-        result["sections"] = [
-            section for section in result["sections"] if section.get("items")
-        ]
+        result["sections"] = [section for section in result["sections"] if section.get("items")]
     return result
 
 
@@ -324,9 +334,7 @@ def _dedupe_section_verbs(content: dict) -> dict:
                     seen.add(verb)
                 kept.append(bullet)
             item["bullets"] = kept
-        section["items"] = [
-            item for item in section.get("items") or [] if item.get("bullets")
-        ]
+        section["items"] = [item for item in section.get("items") or [] if item.get("bullets")]
     result["sections"] = [
         section for section in result.get("sections") or [] if section.get("items")
     ]
@@ -342,9 +350,7 @@ def _removal_priority(
     if target_ids:
         severity = min(
             (
-                {"low": 0, "medium": 2, "high": 4}.get(
-                    target_severity.get(value, "medium"), 2
-                )
+                {"low": 0, "medium": 2, "high": 4}.get(target_severity.get(value, "medium"), 2)
                 for value in target_ids
             ),
             default=2,

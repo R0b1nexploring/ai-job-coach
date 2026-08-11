@@ -4,7 +4,7 @@
 
 MVP-1 不暴露订单创建、支付回调或退款接口。`GET /api/packages` 用于展示说明，`GET /api/quotas` 与 `GET /api/quotas/ledger` 用于查询演示额度；管理员通过 `POST /api/admin/quotas/grant` 发放额度。Payment Provider 固定为 Disabled，并返回 `PAYMENT_NOT_AVAILABLE`。
 
-JD 结构化、匹配解释、事实提取、学习目标、双版本简历、面试指南和邮件草稿都通过统一的结构化 LLM Provider。默认使用可重复的 Mock；`LLM_PROVIDER=compatible` 时调用环境变量配置的兼容 Chat Completions 服务，并校验 Pydantic 输出模型。配置不完整、请求失败或结构无效时回退到 Mock。响应与审计数据只记录 Provider 名称或错误类别，不记录密钥、完整 Prompt 或完整简历。
+JD 结构化、匹配解释、事实提取、学习目标、双版本简历、面试指南和邮件草稿都通过统一的结构化 LLM Provider。默认使用可重复的 Mock；`LLM_PROVIDER=compatible` 时调用环境变量配置的兼容 Chat Completions 服务，把 Pydantic JSON Schema 和形状示例加入提示，并用 `LLM_MAX_OUTPUT_TOKENS` 控制输出预算。配置不完整、请求失败、结构无效或关键内容语义为空时回退到 Mock。响应与审计数据只记录 Provider 名称或错误类别，不记录密钥、完整 Prompt 或完整简历。
 
 ## 简历事实与待补信息
 

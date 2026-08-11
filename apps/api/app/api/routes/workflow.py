@@ -44,6 +44,7 @@ from app.services.interview_generator import generate_questions, guard_interview
 from app.services.quota_service import balance, change
 from app.services.report_service import weekly_report
 from app.services.resume_generator import (
+    ACTION_PREFIXES,
     enforce_page_budget,
     evaluate_resume_content,
     generate_resume,
@@ -80,7 +81,11 @@ async def create_capability_targets(
         )
     )
     if existing:
-        return {"items": [dump(row) for row in existing], "total": len(existing), "provider": "existing"}
+        return {
+            "items": [dump(row) for row in existing],
+            "total": len(existing),
+            "provider": "existing",
+        }
     generated_before = db.scalar(
         select(AuditLog.id).where(
             AuditLog.actor_user_id == user.id,
@@ -301,7 +306,9 @@ async def create_version(
             "你是中文求职简历编辑。每个 bullet 必须引用 source_fact_ids 或 "
             "source_target_ids；不得引入来源中不存在的数字、工具、公司、证书，不得把团队"
             "成果写成个人成果。日期未知必须留空。每条不超过 45 字且以动作词开头，同一章节"
-            "动作词不重复。引用学习目标时 achieved 必须为 false。请在一页预算内取舍，"
+            "动作词不重复。kind=target 且输入含 capability_targets 时，必须至少选择一条目标，"
+            "填写 source_target_ids 且 achieved 必须为 false。所有 new_claims 必须为空数组；"
+            "无法完全溯源的 bullet 直接省略。请在一页预算内取舍，"
             "不要缩小字号。输出严格 JSON。"
         ),
         user_payload={
@@ -338,6 +345,18 @@ async def create_version(
                 "keywords": job.keywords_json,
             },
             "kind": data.kind,
+            "output_requirements": {
+                "minimum_target_bullets": 1 if targets else 0,
+                "available_target_ids": [target.id for target in targets],
+                "allowed_action_prefixes": list(ACTION_PREFIXES),
+                "new_claims_must_be_empty": True,
+                "instruction": (
+                    "蓝图不能只复述已确认事实；至少一条 bullet 必须逐字使用上述 target id；"
+                    "目标条目优先以“完成”或“学习”开头。所有 new_claims 必须是空数组。"
+                    if targets
+                    else "不得引用学习目标；所有 new_claims 必须是空数组。"
+                ),
+            },
             "contact": resume.contact_json,
             "mock_response": fallback_content,
         },
