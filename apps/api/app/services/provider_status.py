@@ -7,7 +7,8 @@ def provider_status() -> dict:
     required = {
         "LLM_API_BASE_URL": bool(settings.llm_api_base_url.strip()),
         "LLM_API_KEY": bool(settings.llm_api_key.strip()),
-        "LLM_MODEL": bool(settings.llm_model.strip()),
+        "LLM_MODEL_CHEAP 或 LLM_MODEL": bool(settings.model_for("jd_normalize")),
+        "LLM_MODEL_STRONG 或 LLM_MODEL": bool(settings.model_for("resume_rewrite")),
     }
     if llm_name == "mock":
         llm = {
@@ -25,6 +26,14 @@ def provider_status() -> dict:
             "uses_fallback": bool(missing),
             "missing_configuration": missing,
             "notice": "配置完整时调用兼容 Chat Completions 的模型；失败会回退 Mock。",
+        }
+    elif llm_name == "mock_fallback":
+        llm = {
+            "provider": "mock_fallback",
+            "operational": True,
+            "uses_fallback": True,
+            "missing_configuration": [],
+            "notice": "当前显式使用本地 Mock 回退，不调用外部模型。",
         }
     else:
         llm = {

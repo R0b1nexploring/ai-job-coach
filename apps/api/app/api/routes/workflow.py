@@ -107,7 +107,7 @@ async def create_version(
     )
     confirmed_facts = [fact for fact in facts if fact.verification_status == "user_confirmed"]
     structured, provider_name = await generate_structured(
-        task="tailored_resume",
+        task="resume_rewrite",
         system_prompt=(
             "你是求职简历编辑。只能重写、压缩、排序用户已确认事实；每个要点必须引用 "
             "source_fact_ids。不得新增公司、岗位、日期、工具、证书、成果或数字。"
@@ -591,7 +591,7 @@ async def create_interview(
         job, version.content_json if version else None, confirmed_facts
     )
     structured, provider_name = await generate_structured(
-        task="interview_questions",
+        task="interview_guide",
         system_prompt=(
             "你是模拟面试题生成助手。题目只能依据输入 JD 与已审核简历，覆盖简历真实性、"
             "岗位知识、行为问题和工作条件；不得补充未提供的公司事实。输出严格 JSON。"

@@ -5,6 +5,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[3]
 
+TASK_TIERS = {
+    "jd_normalize": "cheap",
+    "match_explain": "cheap",
+    "clarify": "cheap",
+    "resume_analysis": "cheap",
+    "resume_extract": "cheap",
+    "resume_rewrite": "strong",
+    "capability_plan": "strong",
+    "interview_guide": "strong",
+    "email_draft": "cheap",
+}
+
 
 class Settings(BaseSettings):
     app_env: str = "development"
@@ -19,7 +31,10 @@ class Settings(BaseSettings):
     llm_api_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = ""
-    llm_timeout_seconds: int = 60
+    llm_model_cheap: str = ""
+    llm_model_strong: str = ""
+    llm_timeout_seconds: int = 45
+    llm_max_retries: int = 2
     payment_provider: str = "disabled"
     payment_webhook_secret: str = "demo-secret"
     storage_provider: str = "local"
@@ -46,6 +61,15 @@ class Settings(BaseSettings):
     def resolved_storage_path(self) -> Path:
         path = Path(self.local_storage_path)
         return path if path.is_absolute() else ROOT / path
+
+    def tier_for(self, task: str) -> str:
+        return TASK_TIERS.get(task, "cheap")
+
+    def model_for(self, task: str) -> str:
+        tier_model = (
+            self.llm_model_strong if self.tier_for(task) == "strong" else self.llm_model_cheap
+        )
+        return tier_model.strip() or self.llm_model.strip()
 
     def allowed_job_source_hosts(self) -> set[str]:
         return {

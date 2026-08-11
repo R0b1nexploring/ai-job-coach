@@ -1,5 +1,3 @@
-from typing import TypeVar
-
 from pydantic import BaseModel
 
 from app.config import get_settings
@@ -9,19 +7,18 @@ from .compatible import CompatibleLLMProvider
 from .mock import MockLLMProvider
 
 
-T = TypeVar("T", bound=BaseModel)
-
-
 def configured_provider():
     provider_name = get_settings().llm_provider.strip().lower()
     if provider_name == "compatible":
         return CompatibleLLMProvider(), "compatible"
     if provider_name == "mock":
         return MockLLMProvider(), "mock"
+    if provider_name == "mock_fallback":
+        return MockLLMProvider(), "mock_fallback"
     return MockLLMProvider(), "mock_fallback"
 
 
-async def generate_structured(
+async def generate_structured[T: BaseModel](
     *,
     task: str,
     system_prompt: str,
@@ -39,7 +36,7 @@ async def generate_structured(
         )
         return result, provider_name
     except ProviderError:
-        if provider_name == "mock":
+        if provider_name in {"mock", "mock_fallback"}:
             raise
         fallback = await MockLLMProvider().generate_structured(
             task=task,

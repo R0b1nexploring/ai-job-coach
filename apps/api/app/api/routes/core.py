@@ -391,7 +391,7 @@ class JobDiscoveryIn(BaseModel):
 async def create_job(data: JobIn, user: User, db: Session):
     fallback = normalize_job(data.raw_jd, data.title, data.company_name, data.city)
     structured, _provider_name = await generate_structured(
-        task="job_normalization",
+        task="jd_normalize",
         system_prompt=(
             "你是岗位信息结构化助手。只提取输入 JD 中明确存在的信息；不确定字段必须列入 "
             "uncertain_fields，不得猜测公司、城市、发布日期或岗位要求。输出严格 JSON。"
@@ -623,7 +623,7 @@ async def create_match(
     )
     result = score_match(facts_list, job, profile)
     explanation, provider_name = await generate_structured(
-        task="match_explanation",
+        task="match_explain",
         system_prompt=(
             "你是求职匹配解释助手。分数和推荐结果由本地规则给定，不得修改。"
             "只解释已确认事实证据、能力缺口和待确认项，不得把未知信息写成事实。输出严格 JSON。"
