@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -97,6 +99,40 @@ class ResumeStructuredOutput(BaseModel):
     headline: str
     sections: list[ResumeSectionOutput] = Field(default_factory=list)
     excluded_gaps: list[str] = Field(default_factory=list)
+
+
+class ResumeBulletV2Output(BaseModel):
+    text: str
+    source_fact_ids: list[str] = Field(default_factory=list)
+    source_target_ids: list[str] = Field(default_factory=list)
+    achieved: bool
+    new_claims: list[str] = Field(default_factory=list)
+
+
+class ResumeEntryV2Output(BaseModel):
+    organization: str = ""
+    role_title: str = ""
+    location: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    bullets: list[ResumeBulletV2Output] = Field(default_factory=list)
+
+
+class ResumeSectionV2Output(BaseModel):
+    name: str
+    items: list[ResumeEntryV2Output] = Field(default_factory=list)
+
+
+class ResumeStructuredV2Output(BaseModel):
+    content_version: Literal[2] = 2
+    kind: Literal["target", "submittable"]
+    headline: str
+    contact: ResumeContactOutput = Field(default_factory=ResumeContactOutput)
+    sections: list[ResumeSectionV2Output] = Field(default_factory=list)
+    excluded_gaps: list[str] = Field(default_factory=list)
+
+
+ResumeContentOutput = ResumeStructuredOutput | ResumeStructuredV2Output
 
 
 class InterviewQuestionOutput(BaseModel):

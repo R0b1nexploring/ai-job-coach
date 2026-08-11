@@ -30,16 +30,24 @@ from app.models.entities import (
     UserProfile,
 )
 from app.providers.llm.runtime import generate_structured
-from app.providers.llm.schemas import InterviewStructuredOutput, ResumeStructuredOutput
+from app.providers.llm.schemas import (
+    InterviewStructuredOutput,
+    ResumeContentOutput,
+    ResumeStructuredV2Output,
+)
 from app.providers.storage.local import LocalStorage
 from app.services.capability_service import build_targets
 from app.services.docx_resume_renderer import render_resume_docx
-from app.services.fact_guard import guard_content
 from app.services.html_resume_renderer import render_resume_html
 from app.services.interview_generator import generate_questions, guard_interview_guide
 from app.services.quota_service import balance, change
 from app.services.report_service import weekly_report
-from app.services.resume_generator import generate_resume
+from app.services.resume_generator import (
+    enforce_page_budget,
+    evaluate_resume_content,
+    generate_resume,
+    relevance,
+)
 
 from .common import dump, listed
 
@@ -211,6 +219,7 @@ class VersionIn(BaseModel):
     base_resume_id: str
     job_id: str
     match_id: str
+    kind: Literal["target", "submittable"] = "submittable"
 
 
 @router.post("/resume-versions", status_code=201)
@@ -264,14 +273,35 @@ async def create_version(
             )
         )
     )
-    fallback_content, _fallback_status, _fallback_claims = generate_resume(facts, job)
     confirmed_facts = [fact for fact in facts if fact.verification_status == "user_confirmed"]
+    targets = (
+        list(
+            db.scalars(
+                select(CapabilityTarget).where(
+                    CapabilityTarget.user_id == user.id,
+                    CapabilityTarget.job_id == job.id,
+                    CapabilityTarget.status != "achieved",
+                )
+            )
+        )
+        if data.kind == "target"
+        else []
+    )
+    fallback_content = generate_resume(
+        confirmed_facts,
+        job,
+        targets,
+        kind=data.kind,
+        contact=resume.contact_json,
+    )
     structured, provider_name = await generate_structured(
         task="resume_rewrite",
         system_prompt=(
-            "你是求职简历编辑。只能重写、压缩、排序用户已确认事实；每个要点必须引用 "
-            "source_fact_ids。不得新增公司、岗位、日期、工具、证书、成果或数字。"
-            "无证据要求放入 excluded_gaps。输出严格 JSON。"
+            "你是中文求职简历编辑。每个 bullet 必须引用 source_fact_ids 或 "
+            "source_target_ids；不得引入来源中不存在的数字、工具、公司、证书，不得把团队"
+            "成果写成个人成果。日期未知必须留空。每条不超过 45 字且以动作词开头，同一章节"
+            "动作词不重复。引用学习目标时 achieved 必须为 false。请在一页预算内取舍，"
+            "不要缩小字号。输出严格 JSON。"
         ),
         user_payload={
             "confirmed_facts": [
@@ -279,9 +309,26 @@ async def create_version(
                     "id": fact.id,
                     "category": fact.category,
                     "label": fact.label,
-                    "value": fact.value_json,
+                    "text": fact.value_json.get("text", ""),
+                    "organization": fact.organization,
+                    "role_title": fact.role_title,
+                    "location": fact.location,
+                    "start_date": fact.start_date,
+                    "end_date": fact.end_date,
+                    "provenance": fact.provenance,
                 }
                 for fact in confirmed_facts
+            ],
+            "capability_targets": [
+                {
+                    "id": target.id,
+                    "requirement": target.requirement,
+                    "category": target.category,
+                    "severity": target.severity,
+                    "deliverable": target.deliverable,
+                    "acceptance_criteria": target.acceptance_criteria_json,
+                }
+                for target in targets
             ],
             "job": {
                 "title": job.title,
@@ -289,24 +336,56 @@ async def create_version(
                 "must_have": job.must_have_json,
                 "keywords": job.keywords_json,
             },
+            "kind": data.kind,
+            "contact": resume.contact_json,
             "mock_response": fallback_content,
         },
-        response_model=ResumeStructuredOutput,
+        response_model=ResumeStructuredV2Output,
     )
     content = structured.model_dump()
-    guard = guard_content(content, confirmed_facts)
+    fact_relevance = {
+        str(fact.id): relevance(
+            fact, list(dict.fromkeys([*(job.must_have_json or []), *(job.keywords_json or [])]))
+        )
+        for fact in confirmed_facts
+    }
+    target_severity = {str(target.id): target.severity for target in targets}
+    content = enforce_page_budget(content, fact_relevance, target_severity)
+    evaluation = evaluate_resume_content(
+        content,
+        confirmed_facts,
+        targets,
+        kind=data.kind,
+    )
+    fallback_used = provider_name != "compatible"
+    fallback_reason = "configured_mock" if fallback_used else ""
+    if evaluation["status"] == "blocked":
+        content = fallback_content
+        fallback_used = True
+        fallback_reason = "model_output_failed_validation"
+        evaluation = evaluate_resume_content(
+            content,
+            confirmed_facts,
+            targets,
+            kind=data.kind,
+        )
     version = ResumeVersion(
         user_id=user.id,
         base_resume_id=resume.id,
         job_id=job.id,
         title=f"{job.company_name} - {job.title}",
+        kind=data.kind,
         content_json=content,
         traceability_json={
-            "new_claims": guard["issues"],
-            "guard_items": guard["items"],
+            "new_claims": evaluation["issues"],
+            "guard_items": evaluation["items"],
+            "quality_issues": evaluation["quality_issues"],
             "provider": provider_name,
+            "fallback_used": fallback_used,
+            "fallback_reason": fallback_reason,
         },
-        guard_status=guard["status"],
+        guard_status=evaluation["status"],
+        unachieved_count=evaluation["unachieved_count"],
     )
     db.add(version)
     db.flush()
@@ -321,7 +400,9 @@ async def create_version(
         reference_id=version.id,
     )
     db.commit()
-    return dump(version)
+    result = dump(version)
+    result["fallback_used"] = fallback_used
+    return result
 
 
 def owned_version(db, user, version_id):
@@ -359,7 +440,7 @@ async def version_detail(
 @router.patch("/resume-versions/{version_id}")
 async def update_version(
     version_id: str,
-    data: ResumeStructuredOutput,
+    data: ResumeContentOutput,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -379,13 +460,32 @@ async def update_version(
             )
         )
     )
+    targets = (
+        list(
+            db.scalars(
+                select(CapabilityTarget).where(
+                    CapabilityTarget.user_id == user.id,
+                    CapabilityTarget.job_id == row.job_id,
+                    CapabilityTarget.status != "achieved",
+                )
+            )
+        )
+        if row.kind == "target"
+        else []
+    )
     content = data.model_dump()
-    guard = guard_content(content, confirmed_facts)
+    evaluation = evaluate_resume_content(
+        content,
+        confirmed_facts,
+        targets,
+        kind=row.kind,
+    )
     traceability = dict(row.traceability_json or {})
     traceability.update(
         {
-            "new_claims": guard["issues"],
-            "guard_items": guard["items"],
+            "new_claims": evaluation["issues"],
+            "guard_items": evaluation["items"],
+            "quality_issues": evaluation["quality_issues"],
             "last_edit_source": "user",
         }
     )
@@ -394,7 +494,8 @@ async def update_version(
         row.export_file_key = ""
     row.content_json = content
     row.traceability_json = traceability
-    row.guard_status = guard["status"]
+    row.guard_status = evaluation["status"]
+    row.unachieved_count = evaluation["unachieved_count"]
     row.review_status = "draft"
     row.reviewed_by = None
     row.reviewed_at = None
@@ -404,7 +505,7 @@ async def update_version(
             action="resume_version.edited",
             entity_type="resume_version",
             entity_id=row.id,
-            metadata_json={"guard_status": guard["status"]},
+            metadata_json={"guard_status": evaluation["status"]},
         )
     )
     db.commit()
