@@ -1,8 +1,8 @@
 # AI Job Coach MVP
 
-面向机械、制造业和生物医药工程求职者的本地可运行全流程 Demo：事实受控简历、JD 匹配、投递、模拟面试、演示额度和顾问工作台。默认使用 Mock AI、Disabled Payment Provider 和本地私有文件存储，不需要外部密钥、Docker、Redis 或外部数据库。MVP-1 不提供支付、回调或退款接口。
+面向机械、制造业和生物医药工程求职者的本地可运行全流程 Demo：结构化事实、JD 匹配、学习目标、蓝图/可投递双版本简历、投递渠道、模拟面试、演示额度和顾问工作台。默认使用 Mock AI、Disabled Payment Provider 和本地私有文件存储，不需要外部密钥、Docker、Redis 或外部数据库。MVP-1 不提供支付、回调或退款接口。
 
-JD 结构化、匹配解释、定制简历和面试题统一通过结构化 LLM Provider。默认 `LLM_PROVIDER=mock`，结果稳定且可离线测试；如需使用 DeepSeek，在 `.env` 设置 `LLM_PROVIDER=compatible` 与 `LLM_API_KEY`，并按需调整 `LLM_MODEL_CHEAP`、`LLM_MODEL_STRONG`。旧的 `LLM_MODEL` 仍可作为两个档位的共同兜底。真实 Provider 配置不完整、超时或返回无效 JSON 时会安全回退到 Mock；确定性评分与 Fact Guard 始终在本地执行，AI 文本不会被直接当作已验证事实。
+JD 结构化、匹配解释、事实提取、学习目标、定制简历、面试指南和邮件草稿统一通过结构化 LLM Provider。默认 `LLM_PROVIDER=mock`，结果稳定且可离线测试；如需使用 DeepSeek，在被 Git 忽略的 `.env` 中设置 `LLM_PROVIDER=compatible` 与 `LLM_API_KEY`，并按需调整 `LLM_MODEL_CHEAP`、`LLM_MODEL_STRONG`。旧的 `LLM_MODEL` 仍可作为两个档位的共同兜底。真实 Provider 配置不完整、超时或返回无效 JSON 时会安全回退到 Mock；确定性评分与 Fact Guard 始终在本地执行，AI 文本不会被直接当作已验证事实。不要把密钥写入命令、代码、文档或日志。
 
 ## 环境
 
@@ -76,6 +76,18 @@ apps/api/.venv/bin/python scripts/maintenance.py --execute
 
 正式环境应通过 cron、systemd timer 或 Windows 任务计划程序每天调用一次 `--execute`。命令只输出汇总计数，不输出完整简历、JD 或密钥。相关阈值由 `DATA_RETENTION_DAYS`、`DELETION_GRACE_DAYS` 和 `JOB_STALE_DAYS` 配置。
 
+## 投递渠道导入
+
+渠道是公司级招聘页、表单或邮箱，不是具体岗位源。仓库不分发任何第三方渠道清单；运营者确认来源许可后，把 CSV/XLSX 放在被 Git 忽略的 `data/channel-imports/`。先预览计数：
+
+```bash
+apps/api/.venv/bin/python scripts/import_channels.py \
+  data/channel-imports/licensed-channels.xlsx \
+  --source licensed_operator_file
+```
+
+确认新增、更新和拒绝原因后追加 `--execute`。脚本支持 `--mapping` 列名映射，只输出统计，不打印完整渠道或邮箱。招聘页域名入库后可供 `public_jsonld` 读取，但 HTTPS、DNS 公网地址、端口、robots、重定向和响应大小保护仍全部生效。详见 [`docs/integrations.md`](docs/integrations.md)。
+
 ## Demo 账号
 
 以下账号仅用于本地虚构演示，密码均为 `ChangeMe123!`：
@@ -90,17 +102,15 @@ apps/api/.venv/bin/python scripts/maintenance.py --execute
 
 ## 数据与边界
 
-上传支持 DOCX（含表格文字）和文本型 PDF（扫描 PDF 不支持 OCR）。上传后可生成带“建议稿”标识的岗位方向分析；用户确认事实后，系统可按方向搜索词读取工程类公开企业职位合集、指定 Greenhouse 或 Lever 企业公开职位接口、白名单招聘页公开提供的 `JobPosting` JSON-LD，也可使用本地受控样例。公开来源读取失败时会明确提示并回退到本地样例，入库岗位仍需用户打开来源人工核对。
+上传支持 DOCX（含表格文字）和文本型 PDF（扫描 PDF 不支持 OCR）。解析会提取联系方式、组织、角色、地点和日期；关键字段缺失时先追问，不能静默批量确认。用户确认事实后，系统可按方向搜索词读取工程类公开企业职位合集、指定 Greenhouse 或 Lever 企业公开职位接口、白名单招聘页公开提供的 `JobPosting` JSON-LD，也可使用本地受控样例。公开来源读取失败时会明确提示并回退到本地样例，入库岗位仍需用户打开来源人工核对。
 
-批准后的岗位定制版本会按 JD 相关度排列已确认事实，保留逐条 `source_fact_ids`，可下载 DOCX，也可预览/下载单页 HTML 后通过浏览器打印 PDF。模拟面试包含约 90 秒自我介绍草稿、项目/经历回答、追问、常见问题框架、准备计划和真实性提醒。系统不保存招聘平台密码、不绕过登录/验证码、不执行无人值守投递，也不承诺 Offer。原始上传、SQLite 与导出文件位于被 Git 忽略的 `var/`。
+匹配缺口可生成带 JD 证据、产出物和验收标准的学习目标。蓝图简历 `target` 可以展示未达成目标，但每条都显式标记 `achieved=false`；可投递简历 `submittable` 只使用已确认事实。两者都经过逐条、mode-aware Fact Guard 和顾问审核，可下载 DOCX，也可预览/下载单页 HTML 后通过浏览器打印 PDF。模拟面试按事实来源和未达成目标生成约 90 秒自我介绍、六段式项目回答、追问、准备计划和真实性提醒。
+
+投递记录可关联公司招聘页、表单或邮箱。邮件渠道只生成经事实保护的草稿和可选 `mailto:` 链接，由用户手动附加简历并发送；系统不保存招聘平台密码、不绕过登录/验证码、不配置 SMTP、不执行无人值守或批量投递，也不承诺 Offer。原始上传、SQLite、导出文件和渠道导入原文件均位于被 Git 忽略的目录。
 
 Greenhouse 的企业标识是公开招聘页 URL 中 `boards/` 后的 token；Lever 的企业标识是 `jobs.lever.co/` 后的 site。系统只读取公开 JSON 接口，不抓取需要登录或验证码的平台页面。
 
-如需读取其他企业或 ATS 的公开招聘详情页，先在 `.env` 的
-`JOB_SOURCE_ALLOWED_HOSTS` 中加入已经确认允许访问的域名（多个域名用逗号分隔，
-支持 `*.example.com`），再在岗位库选择“白名单公开招聘页（JSON-LD）”并输入最终
-HTTPS URL。系统会检查域名、公开 IP、`robots.txt`、响应类型和大小，只解析标准
-`JobPosting` 数据；不跟随重定向，也不使用 CSS 选择器抓取任意页面。
+如需读取其他企业或 ATS 的公开招聘详情页，可在 `.env` 的 `JOB_SOURCE_ALLOWED_HOSTS` 中加入已经确认允许访问的域名（多个域名用逗号分隔，支持 `*.example.com`），或导入安全校验通过的 `career_page` 渠道，再输入最终 HTTPS URL。系统会检查域名、公开 IP、`robots.txt`、响应类型和大小，只解析标准 `JobPosting` 数据；不跟随重定向，也不使用 CSS 选择器抓取任意页面。
 
 模拟面试支持按岗位生成题目、保存真实回答、提交顾问六维评分并查看复盘任务。设置页可下载完整个人数据 JSON；账号清理会删除原始与导出文件，并擦除事实库、JD、投递备注和面试回答等派生个人内容。管理员可在账号清理页处理用户申请，并在系统状态页查看 Provider 配置完整性和维护任务预览；页面从不显示密钥值。
 
