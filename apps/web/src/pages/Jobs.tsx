@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Job, ListResponse, Match, Resume } from '../types'
 import { Empty, ErrorState, Loading } from '../components/States'
-import { dimensionLabels } from '../app/labels'
+import { dimensionLabels, reviewStatusLabels } from '../app/labels'
 
 export function Jobs() {
   const client = useQueryClient()
@@ -49,22 +49,146 @@ function Matches() {
 
 export function MatchDetail() {
   const { id } = useParams()
-  const [version, setVersion] = useState<any>()
   const [message, setMessage] = useState('')
   const query = useQuery({ queryKey: ['match', id], queryFn: () => api<Match>(`/api/matches/${id}`) })
   const versions = useQuery({ queryKey: ['resume-versions'], queryFn: () => api<ListResponse<any>>('/api/resume-versions') })
-  const currentVersion = version || versions.data?.items?.find((item: any) => item.base_resume_id === query.data?.resume_id && item.job_id === query.data?.job_id)
-  const generate = useMutation({
-    mutationFn: () => api<any>('/api/resume-versions', { method: 'POST', headers: { 'Idempotency-Key': `web-version-${id}` }, body: JSON.stringify({ base_resume_id: query.data?.resume_id, job_id: query.data?.job_id, match_id: id }) }),
-    onSuccess: (data) => { setVersion(data); setMessage(data.guard_status === 'passed' ? '定制简历已生成，事实检查通过。' : '检测到未经确认的新事实，已拦截。') },
-  })
-  const submitReview = useMutation({ mutationFn: () => api<any>(`/api/resume-versions/${currentVersion.id}/submit-review`, { method: 'POST' }), onSuccess: (data) => { setVersion(data); setMessage('已提交顾问审核，通过后才能下载或加入投递。') } })
-  const queue = useMutation({ mutationFn: () => api<any>('/api/applications', { method: 'POST', headers: { 'Idempotency-Key': `web-application-${id}` }, body: JSON.stringify({ job_id: query.data?.job_id, resume_version_id: currentVersion.id }) }), onSuccess: () => setMessage('已加入投递队列。') })
   if (query.isLoading) return <Loading text="正在加载报告…" />
   if (query.error) return <ErrorState error={query.error} />
   const data = query.data!
   return <><Link to="/app/jobs" className="text-sage">← 返回岗位</Link>{message && <p className="mt-4 rounded-xl bg-green-50 p-3 text-green-700">{message}</p>}
-    {(generate.error || submitReview.error || queue.error) && <div className="mt-4"><ErrorState error={generate.error || submitReview.error || queue.error} /></div>}
-    <div className="mt-5 grid gap-5 lg:grid-cols-[.65fr_1.35fr]"><aside className="card bg-sage text-white"><p className="opacity-70">综合匹配</p><p className="mt-4 text-7xl font-black">{data.total_score}</p><h1 className="mt-2 text-2xl font-bold">{data.recommendation}</h1><p className="mt-5 text-sm opacity-80">{data.ai_explanation_json.summary}</p></aside><main className="space-y-5"><section className="card"><h2 className="font-bold">六项评分</h2><div className="mt-4 grid grid-cols-2 gap-3">{Object.entries(data.dimension_scores_json).map(([key, value]) => <div key={key} className="rounded-xl bg-cream p-3"><p className="text-xs text-black/50">{dimensionLabels[key] || '其他维度'}</p><b className="text-2xl">{value}</b></div>)}</div></section><section className="card"><h2 className="font-bold">能力缺口</h2>{data.gaps_json.length ? <ul className="mt-3 space-y-2">{data.gaps_json.map((gap: any, index) => <li key={index}>△ {gap.requirement}：{gap.action}</li>)}</ul> : <p className="mt-2 text-black/50">未发现明确缺口。</p>}</section><section className="card"><h2 className="font-bold">待确认项</h2><p className="mt-2">{data.confirmations_json.join('；') || '暂无'}</p></section><section className="card"><h2 className="font-bold">下一步</h2><div className="mt-4 flex flex-wrap gap-3">{!currentVersion && <button className="btn" onClick={() => generate.mutate()}>生成定制简历</button>}{currentVersion?.guard_status === 'passed' && ['draft', 'user_review', 'rejected'].includes(currentVersion.review_status) && <button className="btn" onClick={() => submitReview.mutate()}>提交顾问审核</button>}{currentVersion?.review_status === 'advisor_review' && <p className="rounded-xl bg-amber-50 px-4 py-2 text-amber-800">等待顾问审核</p>}{currentVersion?.review_status === 'approved' && <><a className="btn-secondary" href={`/api/resume-versions/${currentVersion.id}/preview`} target="_blank" rel="noreferrer">预览单页版</a><a className="btn-secondary" href={`/api/resume-versions/${currentVersion.id}/download?format=html`}>下载 HTML</a><a className="btn-secondary" href={`/api/resume-versions/${currentVersion.id}/download`}>下载 DOCX</a><button className="btn" onClick={() => queue.mutate()}>加入投递队列</button></>}</div></section></main></div>
+    <div className="mt-5 grid gap-5 lg:grid-cols-[.65fr_1.35fr]"><aside className="card bg-sage text-white"><p className="opacity-70">综合匹配</p><p className="mt-4 text-7xl font-black">{data.total_score}</p><h1 className="mt-2 text-2xl font-bold">{data.recommendation}</h1><p className="mt-5 text-sm opacity-80">{data.ai_explanation_json.summary}</p></aside><main className="space-y-5"><section className="card"><h2 className="font-bold">六项评分</h2><div className="mt-4 grid grid-cols-2 gap-3">{Object.entries(data.dimension_scores_json).map(([key, value]) => <div key={key} className="rounded-xl bg-cream p-3"><p className="text-xs text-black/50">{dimensionLabels[key] || '其他维度'}</p><b className="text-2xl">{value}</b></div>)}</div></section><section className="card"><h2 className="font-bold">能力缺口</h2>{data.gaps_json.length ? <ul className="mt-3 space-y-2">{data.gaps_json.map((gap: any, index) => <li key={index}>△ {gap.requirement}：{gap.action}</li>)}</ul> : <p className="mt-2 text-black/50">未发现明确缺口。</p>}</section><section className="card"><h2 className="font-bold">待确认项</h2><p className="mt-2">{data.confirmations_json.join('；') || '暂无'}</p></section><MatchActions match={data} versions={(versions.data?.items || []).filter((item: any) => item.base_resume_id === data.resume_id && item.job_id === data.job_id)} setMessage={setMessage} /></main></div>
   </>
+}
+
+function MatchActions({ match, versions, setMessage }: {
+  match: Match
+  versions: any[]
+  setMessage: (message: string) => void
+}) {
+  const client = useQueryClient()
+  const [warningVersion, setWarningVersion] = useState<any | null>(null)
+  const createTargets = useMutation({
+    mutationFn: () => api<any>(`/api/matches/${match.id}/capability-targets`, { method: 'POST' }),
+    onSuccess: (data) => {
+      setMessage(`已生成 ${data.total} 个学习目标。`)
+      client.invalidateQueries({ queryKey: ['capability-targets'] })
+    },
+  })
+  const generate = useMutation({
+    mutationFn: (kind: 'target' | 'submittable') => api<any>('/api/resume-versions', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': `web-version-${match.id}-${kind}-${Date.now()}` },
+      body: JSON.stringify({
+        base_resume_id: match.resume_id,
+        job_id: match.job_id,
+        match_id: match.id,
+        kind,
+      }),
+    }),
+    onSuccess: (data) => {
+      setMessage(data.guard_status === 'passed' ? '简历已生成，事实检查通过。' : '检测到未经确认的新事实，已拦截。')
+      client.invalidateQueries({ queryKey: ['resume-versions'] })
+    },
+  })
+  const submitReview = useMutation({
+    mutationFn: (version: any) => api<any>(`/api/resume-versions/${version.id}/submit-review`, { method: 'POST' }),
+    onSuccess: () => {
+      setMessage('已提交顾问审核，通过后可以下载或加入投递。')
+      client.invalidateQueries({ queryKey: ['resume-versions'] })
+    },
+  })
+  const queue = useMutation({
+    mutationFn: (version: any) => api<any>('/api/applications', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': `web-application-${match.id}-${version.id}-${Date.now()}` },
+      body: JSON.stringify({ job_id: match.job_id, resume_version_id: version.id }),
+    }),
+    onSuccess: () => setMessage('已加入投递队列。'),
+  })
+  const requestQueue = (version: any) => {
+    const warningKey = `application-warning:${version.id}:${match.job_id}`
+    if (version.unachieved_count > 0 && !localStorage.getItem(warningKey)) {
+      setWarningVersion(version)
+      return
+    }
+    queue.mutate(version)
+  }
+  const continueQueue = () => {
+    if (!warningVersion) return
+    localStorage.setItem(`application-warning:${warningVersion.id}:${match.job_id}`, 'confirmed')
+    queue.mutate(warningVersion)
+    setWarningVersion(null)
+  }
+  const unachievedItems = warningVersion?.content_json?.sections?.flatMap((section: any) => (
+    section.items.flatMap((item: any) => (
+      (item.bullets || []).filter((bullet: any) => bullet.achieved === false).map((bullet: any) => bullet.text)
+    ))
+  )) || []
+  const error = createTargets.error || generate.error || submitReview.error || queue.error
+
+  return (
+    <section className="card">
+      <h2 className="font-bold">下一步</h2>
+      <div className="mt-4 flex flex-wrap gap-3">
+        {match.gaps_json.length > 0 && (
+          <button className="btn-secondary" disabled={createTargets.isPending} onClick={() => createTargets.mutate()}>
+            生成学习目标
+          </button>
+        )}
+        <Link className="btn-secondary" to={`/app/capability-targets?job_id=${match.job_id}`}>查看学习目标</Link>
+        <button className="btn-secondary" disabled={generate.isPending} onClick={() => generate.mutate('target')}>
+          生成蓝图简历
+        </button>
+        <button className="btn" disabled={generate.isPending} onClick={() => generate.mutate('submittable')}>
+          生成可投递简历
+        </button>
+      </div>
+      <div className="mt-5 space-y-3">
+        {versions.map((version) => (
+          <div className="rounded-xl border border-black/10 p-3" key={version.id}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${version.kind === 'target' ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-700'}`}>
+                  {version.kind === 'target' ? `蓝图 · ${version.unachieved_count} 条未达成` : '可投递 · 全部已确认'}
+                </span>
+                <p className="mt-2 text-sm text-black/55">审核状态：{reviewStatusLabels[version.review_status] || '未知状态'}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {version.guard_status === 'passed' && ['draft', 'user_review', 'rejected'].includes(version.review_status) && (
+                  <button className="btn-secondary" onClick={() => submitReview.mutate(version)}>提交顾问审核</button>
+                )}
+                {version.review_status === 'advisor_review' && <span className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">等待顾问审核</span>}
+                {version.review_status === 'approved' && (
+                  <>
+                    <a className="btn-secondary" href={`/api/resume-versions/${version.id}/preview`} target="_blank" rel="noreferrer">预览单页版</a>
+                    <a className="btn-secondary" href={`/api/resume-versions/${version.id}/download?format=html`}>下载 HTML</a>
+                    <a className="btn-secondary" href={`/api/resume-versions/${version.id}/download`}>下载 DOCX</a>
+                    <button className="btn" onClick={() => requestQueue(version)}>加入投递队列</button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {error && <div className="mt-4"><ErrorState error={error} /></div>}
+      {warningVersion && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-5" role="dialog" aria-modal="true" aria-label="未达成目标投递提示">
+          <section className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="text-xl font-bold">这份蓝图含未达成目标</h2>
+            <p className="mt-2 text-sm text-black/65">
+              共 {warningVersion.unachieved_count} 条。这些内容会明确标为“未达成”，也最可能在面试中被深挖。
+            </p>
+            <ul className="mt-3 space-y-1 text-sm text-amber-900">
+              {unachievedItems.map((item: string) => <li key={item}>△ {item}</li>)}
+            </ul>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Link className="btn-secondary" to="/app/interviews">查看面试指南</Link>
+              <button className="btn" onClick={continueQueue}>继续投递</button>
+            </div>
+          </section>
+        </div>
+      )}
+    </section>
+  )
 }

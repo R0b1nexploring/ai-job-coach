@@ -8,6 +8,8 @@ import { Jobs, MatchDetail } from '../pages/Jobs'
 import { Advisor } from '../pages/Advisor'
 import { Interviews } from '../pages/Workflow'
 import { AdminAccounts, AdminPackages, AdminSystem } from '../pages/Admin'
+import { CapabilityTargets } from '../pages/CapabilityTargets'
+import { Resumes } from '../pages/Resumes'
 
 function shell(node: React.ReactNode, path = '/') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -39,13 +41,83 @@ test('额度不足错误转换为清晰中文提示', async () => {
   }))
   shell(<Routes><Route path="/app/matches/:id" element={<MatchDetail />} /></Routes>, '/app/matches/m1')
   const user = userEvent.setup()
-  await user.click(await screen.findByRole('button', { name: '生成定制简历' }))
+  await user.click(await screen.findByRole('button', { name: '生成可投递简历' }))
   expect(await screen.findByText(/额度不足/)).toBeVisible()
 })
 
 test('API 错误保留后端中文消息', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: { code: 'X', message: '可理解的中文错误', details: {}, request_id: 'x' } }), { status: 400, headers: { 'Content-Type': 'application/json' } })))
   await expect(api('/api/example')).rejects.toThrow('可理解的中文错误')
+})
+
+test('学习目标达成前必须填写证据并会写入事实库', async () => {
+  let targetStatus = 'in_progress'
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.endsWith('/api/jobs')) {
+      return new Response(JSON.stringify({ items: [{ id: 'j1', company_name: '示例公司', title: '设备工程师' }], total: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    if (init?.method === 'PATCH') {
+      const payload = JSON.parse(String(init.body))
+      targetStatus = payload.status
+      return new Response(JSON.stringify({ id: 't1', job_id: 'j1', requirement: '设备数据整理', deliverable: '完成巡检记录练习', acceptance_criteria_json: ['可独立查看'], estimated_hours: 8, severity: 'high', status: targetStatus, evidence_text: payload.evidence_text }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ items: [{ id: 't1', job_id: 'j1', requirement: '设备数据整理', deliverable: '完成巡检记录练习', acceptance_criteria_json: ['可独立查看'], estimated_hours: 8, severity: 'high', status: targetStatus, evidence_text: '' }], total: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }))
+  shell(<CapabilityTargets />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: '标记达成' }))
+  await user.click(screen.getByRole('button', { name: '确认达成' }))
+  expect(screen.getByText('请填写可核对的产出物证据。')).toBeVisible()
+  await user.type(screen.getByLabelText('产出物证据'), '巡检记录.xlsx，可核对处理步骤')
+  await user.click(screen.getByRole('button', { name: '确认达成' }))
+  expect(await screen.findByText(/已加入事实库，可投递简历已更新/)).toBeVisible()
+})
+
+test('简历页明确区分蓝图和可投递版本', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    const payload = url.endsWith('/api/resumes')
+      ? { items: [], total: 0 }
+      : { items: [
+        { id: 'v1', job_id: 'j1', title: '设备工程师蓝图', kind: 'target', unachieved_count: 2, guard_status: 'passed', review_status: 'draft', content_json: { content_version: 2, kind: 'target', headline: '设备工程师', contact: {}, sections: [], excluded_gaps: [] } },
+        { id: 'v2', job_id: 'j1', title: '设备工程师投递版', kind: 'submittable', unachieved_count: 0, guard_status: 'passed', review_status: 'draft', content_json: { content_version: 2, kind: 'submittable', headline: '设备工程师', contact: {}, sections: [], excluded_gaps: [] } },
+      ], total: 2 }
+    return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }))
+  shell(<Resumes />)
+  expect(await screen.findByText('蓝图 · 含未达成目标')).toBeVisible()
+  expect(screen.getByText('可投递 · 全部已确认')).toBeVisible()
+  expect(screen.getByText('2 条未达成，前往学习目标')).toBeVisible()
+})
+
+test('蓝图投递只提示一次未达成目标', async () => {
+  let applicationRequests = 0
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.includes('/api/matches/')) {
+      return new Response(JSON.stringify(match), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    if (url.endsWith('/api/resume-versions')) {
+      return new Response(JSON.stringify({ items: [{ id: 'v-target', base_resume_id: 'r1', job_id: 'j1', kind: 'target', unachieved_count: 1, guard_status: 'passed', review_status: 'approved', content_json: { sections: [{ items: [{ bullets: [{ text: '完成设备点检练习', achieved: false }] }] }] } }], total: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    if (url.endsWith('/api/applications') && init?.method === 'POST') {
+      applicationRequests += 1
+      return new Response(JSON.stringify({ id: `a${applicationRequests}` }), { status: 201, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ items: [], total: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }))
+  shell(<Routes><Route path="/app/matches/:id" element={<MatchDetail />} /></Routes>, '/app/matches/m1')
+  const user = userEvent.setup()
+  const queueButton = await screen.findByRole('button', { name: '加入投递队列' })
+  await user.click(queueButton)
+  expect(screen.getByRole('dialog', { name: '未达成目标投递提示' })).toBeVisible()
+  expect(screen.getByText(/完成设备点检练习/)).toBeVisible()
+  await user.click(screen.getByRole('button', { name: '继续投递' }))
+  expect(await screen.findByText('已加入投递队列。')).toBeVisible()
+  await user.click(queueButton)
+  expect(screen.queryByRole('dialog', { name: '未达成目标投递提示' })).not.toBeInTheDocument()
+  expect(applicationRequests).toBe(2)
 })
 
 test('岗位库可选择白名单 JSON-LD 招聘页', async () => {

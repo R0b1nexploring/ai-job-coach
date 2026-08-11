@@ -57,7 +57,7 @@ export function Interviews() {
   return <><span className="badge">JD + 简历真实性追问</span><h1 className="mt-3 text-4xl font-black">模拟面试</h1>
     <form className="card mt-6 grid gap-3 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); create.mutate() }}>
       <label><span className="label">目标岗位</span><select aria-label="目标岗位" className="field" value={jobId} onChange={(event) => { setJobId(event.target.value); setVersionId('') }} required><option value="">请选择岗位</option>{jobs.data?.items?.map((job: any) => <option key={job.id} value={job.id}>{job.company_name} · {job.title}</option>)}</select></label>
-      <label><span className="label">已批准定制简历（可选）</span><select aria-label="已批准定制简历" className="field" value={versionId} onChange={(event) => setVersionId(event.target.value)}><option value="">不关联定制版本</option>{approvedVersions.map((version: any) => <option key={version.id} value={version.id}>{version.title}</option>)}</select></label>
+      <label><span className="label">已批准定制简历（可选）</span><select aria-label="已批准定制简历" className="field" value={versionId} onChange={(event) => setVersionId(event.target.value)}><option value="">不关联定制版本</option>{approvedVersions.map((version: any) => <option key={version.id} value={version.id}>{version.kind === 'target' ? '蓝图' : '可投递'} · {version.title}</option>)}</select></label>
       <button className="btn md:col-span-2" disabled={!jobId || create.isPending}>{create.isPending ? '正在生成题目…' : '生成模拟面试题'}</button>
       {create.error && <div className="md:col-span-2"><ErrorState error={create.error} /></div>}
       {create.isSuccess && <p className="text-green-700 md:col-span-2">题目已生成，请填写回答后提交顾问评分。</p>}
@@ -85,8 +85,9 @@ function InterviewCard({ item }: { item: any }) {
   })
   const error = save.error || submit.error
   return <article className="card"><div className="flex flex-wrap justify-between gap-3"><h2 className="font-bold">模拟题组</h2><div className="flex gap-2"><span className="badge">{interviewStatus[item.status] || item.status}</span><span className="badge">{questions.length} 题</span></div></div>
+    {item.question_set_json.exposure_warning && <section className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><h3 className="font-bold text-amber-900">重点暴露风险</h3><p className="mt-2 text-sm text-amber-900">{item.question_set_json.exposure_warning.message}</p></section>}
     {item.question_set_json.self_introduction && <details className="mt-4 rounded-xl bg-green-50 p-4" open><summary className="cursor-pointer font-bold">完整自我介绍草稿（约 {item.question_set_json.self_introduction.duration_seconds} 秒）</summary><p className="mt-3 whitespace-pre-wrap text-sm leading-7">{item.question_set_json.self_introduction.text}</p><p className="mt-2 text-xs text-black/50">练习稿必须按本人真实表达修改；事实来源 {item.question_set_json.self_introduction.source_fact_ids.length} 条。</p></details>}
-    {item.question_set_json.project_answers?.length > 0 && <details className="mt-4 rounded-xl bg-cream p-4"><summary className="cursor-pointer font-bold">项目回答与追问</summary><div className="mt-3 space-y-4">{item.question_set_json.project_answers.map((answer: any, index: number) => <div key={index}><p className="font-semibold">{answer.question}</p><p className="mt-2 whitespace-pre-wrap text-sm">{answer.answer}</p><p className="mt-2 text-xs text-sage">追问：{answer.follow_ups.join(' / ')}</p></div>)}</div></details>}
+    {item.question_set_json.project_answers?.length > 0 && <details className="mt-4 rounded-xl bg-cream p-4"><summary className="cursor-pointer font-bold">项目回答与追问</summary><div className="mt-3 space-y-5">{item.question_set_json.project_answers.map((answer: any, index: number) => <ProjectAnswer answer={answer} key={answer.fact_id || index} />)}</div></details>}
     {item.question_set_json.common_answers?.length > 0 && <details className="mt-4 rounded-xl border border-black/10 p-4"><summary className="cursor-pointer font-bold">常见问题回答框架</summary><div className="mt-3 space-y-3">{item.question_set_json.common_answers.map((answer: any, index: number) => <div key={index}><b className="text-sm">{answer.question}</b><p className="mt-1 text-sm text-black/70">{answer.answer}</p></div>)}</div></details>}
     {item.question_set_json.preparation_plan?.length > 0 && <div className="mt-4 grid gap-4 md:grid-cols-2"><section className="rounded-xl border border-sage/20 p-4"><h3 className="font-bold">面试前准备</h3><ul className="mt-2 space-y-2 text-sm">{item.question_set_json.preparation_plan.map((step: string) => <li key={step}>✓ {step}</li>)}</ul></section><section className="rounded-xl border border-amber-200 bg-amber-50 p-4"><h3 className="font-bold text-amber-900">真实性提醒</h3><ul className="mt-2 space-y-2 text-sm text-amber-900">{item.question_set_json.risk_reminders.map((step: string) => <li key={step}>△ {step}</li>)}</ul></section></div>}
     <ol className="mt-4 space-y-5">{questions.map((question: any, index: number) => <li key={question.id}><p className="font-semibold">{index + 1}. {question.question}</p><p className="mt-1 text-sm text-black/50">考察：{question.why_asked} · 评分：{question.rubric.join(' / ')}</p>{item.status === 'draft' && <textarea aria-label={`回答第 ${index + 1} 题`} className="field mt-3 min-h-24" value={answers[question.id] || ''} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })} placeholder="按真实经历填写；不知道可以明确说明。" />}</li>)}</ol>
@@ -95,6 +96,43 @@ function InterviewCard({ item }: { item: any }) {
     {item.status === 'scored' && <div className="mt-5 rounded-xl bg-green-50 p-4"><h3 className="font-bold">顾问评分</h3><div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-3">{Object.entries(item.scorecard_json || {}).map(([name, score]) => <p key={name} className="rounded-lg bg-white p-2 text-sm">{name}：<b>{String(score)}</b></p>)}</div><p className="mt-3 text-sm">{item.feedback_json?.summary || '顾问已完成评分。'}</p>{item.feedback_json?.next_task && <p className="mt-2 text-sm text-green-800">下一步：{item.feedback_json.next_task}</p>}</div>}
     {error && <div className="mt-4"><ErrorState error={error} /></div>}
   </article>
+}
+
+function ProjectAnswer({ answer }: { answer: any }) {
+  if (!answer.structure) {
+    return <div><p className="font-semibold">{answer.question}</p><p className="mt-2 whitespace-pre-wrap text-sm">{answer.answer}</p><p className="mt-2 text-xs text-sage">追问：{answer.follow_ups.join(' / ')}</p></div>
+  }
+  const structure = answer.structure
+  const sections = [
+    ['背景与目标', structure.background],
+    ['我的职责与边界', structure.my_role],
+    ['关键行动', (structure.actions || []).join('；')],
+    ['困难与取舍', structure.difficulties],
+    ['结果', structure.result],
+    ['核对方式', structure.verification],
+  ]
+  return (
+    <article className="rounded-xl bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="font-semibold">{answer.question}</p>
+        <span className={`rounded-full px-2 py-1 text-xs ${answer.provenance === 'learned' ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-700'}`}>
+          {answer.provenance === 'learned' ? '自主学习项目' : '原简历事实'}
+        </span>
+      </div>
+      {answer.honesty_script && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">诚实说明：{answer.honesty_script}</p>}
+      <dl className="mt-3 space-y-2 text-sm">
+        {sections.map(([label, value]) => <div key={label}><dt className="font-semibold">{label}</dt><dd className="mt-0.5 text-black/65">{value}</dd></div>)}
+      </dl>
+      <div className="mt-3 space-y-2">
+        {answer.follow_ups.map((followUp: any, index: number) => (
+          <div className="rounded-lg border border-black/10 p-3 text-sm" key={`${followUp.question}-${index}`}>
+            <div className="flex items-center justify-between gap-2"><b>{followUp.question}</b><span className={followUp.risk === 'high' ? 'text-red-700' : 'text-black/45'}>{followUp.risk === 'high' ? '高风险' : '追问'}</span></div>
+            <p className="mt-1 text-black/60">应对：{followUp.how_to_answer}</p>
+          </div>
+        ))}
+      </div>
+    </article>
+  )
 }
 
 export function Orders() {
