@@ -211,7 +211,6 @@ class VersionIn(BaseModel):
     base_resume_id: str
     job_id: str
     match_id: str
-    inject_unverified: bool = False
 
 
 @router.post("/resume-versions", status_code=201)
@@ -265,9 +264,7 @@ async def create_version(
             )
         )
     )
-    fallback_content, _fallback_status, _fallback_claims = generate_resume(
-        facts, job, data.inject_unverified
-    )
+    fallback_content, _fallback_status, _fallback_claims = generate_resume(facts, job)
     confirmed_facts = [fact for fact in facts if fact.verification_status == "user_confirmed"]
     structured, provider_name = await generate_structured(
         task="resume_rewrite",
@@ -297,15 +294,19 @@ async def create_version(
         response_model=ResumeStructuredOutput,
     )
     content = structured.model_dump()
-    guard_status, new_claims = guard_content(content, confirmed_facts)
+    guard = guard_content(content, confirmed_facts)
     version = ResumeVersion(
         user_id=user.id,
         base_resume_id=resume.id,
         job_id=job.id,
         title=f"{job.company_name} - {job.title}",
         content_json=content,
-        traceability_json={"new_claims": new_claims, "provider": provider_name},
-        guard_status=guard_status,
+        traceability_json={
+            "new_claims": guard["issues"],
+            "guard_items": guard["items"],
+            "provider": provider_name,
+        },
+        guard_status=guard["status"],
     )
     db.add(version)
     db.flush()
@@ -379,15 +380,21 @@ async def update_version(
         )
     )
     content = data.model_dump()
-    guard_status, new_claims = guard_content(content, confirmed_facts)
+    guard = guard_content(content, confirmed_facts)
     traceability = dict(row.traceability_json or {})
-    traceability.update({"new_claims": new_claims, "last_edit_source": "user"})
+    traceability.update(
+        {
+            "new_claims": guard["issues"],
+            "guard_items": guard["items"],
+            "last_edit_source": "user",
+        }
+    )
     if row.export_file_key:
         LocalStorage().delete(row.export_file_key)
         row.export_file_key = ""
     row.content_json = content
     row.traceability_json = traceability
-    row.guard_status = guard_status
+    row.guard_status = guard["status"]
     row.review_status = "draft"
     row.reviewed_by = None
     row.reviewed_at = None
@@ -397,7 +404,7 @@ async def update_version(
             action="resume_version.edited",
             entity_type="resume_version",
             entity_id=row.id,
-            metadata_json={"guard_status": guard_status},
+            metadata_json={"guard_status": guard["status"]},
         )
     )
     db.commit()

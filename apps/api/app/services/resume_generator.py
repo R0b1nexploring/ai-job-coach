@@ -65,5 +65,5 @@ def generate_resume(facts: list, job, inject_unverified: bool = False):
             if not any(k.lower() in str(f.value_json).lower() for f in confirmed)
         ],
     }
-    status, new_claims = guard_content(content, confirmed)
-    return content, status, new_claims
+    guard = guard_content(content, confirmed)
+    return content, guard["status"], guard["issues"]

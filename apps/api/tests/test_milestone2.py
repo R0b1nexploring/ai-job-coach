@@ -1,28 +1,155 @@
+from types import SimpleNamespace
 
+from conftest import register
 
 from app.models.entities import Application, Job
 from app.services.fact_guard import guard_content
 from app.services.quota_service import balance, change
-from conftest import register
+
+
+def fact(fact_id: str, text: str, *, user_id: str = "user", status: str = "user_confirmed"):
+    return SimpleNamespace(
+        id=fact_id,
+        user_id=user_id,
+        verification_status=status,
+        value_json={"text": text},
+        organization="",
+        role_title="",
+        start_date="",
+        end_date="",
+        source_text=text,
+    )
+
+
+def target(target_id: str, deliverable: str, *, user_id: str = "user"):
+    return SimpleNamespace(
+        id=target_id,
+        user_id=user_id,
+        status="pending",
+        deliverable=deliverable,
+        acceptance_criteria_json=["产出物可以打开"],
+    )
 
 
 def test_fact_guard_blocks_new_metric():
-    fact = type("Fact", (), {"value_json": {"text": "完成机构设计"}})()
     content = {
         "sections": [
             {"items": [{"text": "提升效率 30%", "source_fact_ids": ["f1"], "new_claims": []}]}
         ]
     }
-    status, claims = guard_content(content, [fact])
-    assert status == "blocked" and "30%" in claims
+    result = guard_content(content, [fact("f1", "完成机构设计")])
+    assert result["status"] == "blocked"
+    assert any("30%" in issue for issue in result["issues"])
 
 
 def test_fact_guard_requires_traceability():
-    status, claims = guard_content(
-        {"sections": [{"items": [{"text": "真实描述", "source_fact_ids": [], "new_claims": []}]}]},
+    result = guard_content(
+        {"sections": [{"items": [{"text": "真实描述", "source_fact_ids": []}]}]},
         [],
     )
-    assert status == "blocked" and "缺少事实来源" in claims
+    assert result["status"] == "blocked"
+    assert "缺少事实来源" in result["issues"]
+
+
+def test_fact_guard_rejects_cross_item_claim_splicing():
+    result = guard_content(
+        {
+            "sections": [
+                {
+                    "items": [
+                        {
+                            "text": "完成流程改造并提升效率 30%",
+                            "source_fact_ids": ["fact-a"],
+                        }
+                    ]
+                }
+            ]
+        },
+        [fact("fact-a", "完成流程改造"), fact("fact-b", "提升效率 30%")],
+    )
+    assert result["status"] == "blocked"
+    assert any("30%" in issue for issue in result["issues"])
+
+
+def test_fact_guard_rejects_untraced_english_tool():
+    result = guard_content(
+        {
+            "sections": [
+                {"items": [{"text": "使用 Python 编写脚本", "source_fact_ids": ["fact-a"]}]}
+            ]
+        },
+        [fact("fact-a", "完成自动化练习")],
+    )
+    assert result["status"] == "blocked"
+    assert any("Python" in issue for issue in result["issues"])
+
+
+def test_fact_guard_modes_handle_unachieved_targets_explicitly():
+    learning_target = target("target-1", "使用 Python 完成自动化脚本")
+    content = {
+        "content_version": 2,
+        "sections": [
+            {
+                "items": [
+                    {
+                        "bullets": [
+                            {
+                                "text": "使用 Python 完成自动化脚本",
+                                "source_fact_ids": [],
+                                "source_target_ids": ["target-1"],
+                                "achieved": False,
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+    }
+    submittable = guard_content(content, [], [learning_target], mode="submittable")
+    assert submittable["status"] == "blocked"
+    assert "可投递简历不得引用未达成目标" in submittable["issues"]
+
+    blueprint = guard_content(content, [], [learning_target], mode="target")
+    assert blueprint["status"] == "passed"
+    assert blueprint["unachieved_count"] == 1
+
+    del content["sections"][0]["items"][0]["bullets"][0]["achieved"]
+    missing_marker = guard_content(content, [], [learning_target], mode="target")
+    assert missing_marker["status"] == "blocked"
+    assert "未达成条目缺少 achieved 标记" in missing_marker["issues"]
+
+
+def test_fact_guard_rejects_cross_user_fact_and_target_references():
+    current_fact = fact("current-fact", "完成 CAD 设计")
+    current_target = target("current-target", "完成 PLC 练习")
+    result = guard_content(
+        {
+            "sections": [
+                {
+                    "items": [
+                        {
+                            "text": "使用 CAD 和 PLC 完成练习",
+                            "source_fact_ids": ["foreign-fact"],
+                            "source_target_ids": ["foreign-target"],
+                            "achieved": False,
+                        }
+                    ]
+                }
+            ]
+        },
+        [current_fact],
+        [current_target],
+        mode="target",
+    )
+    assert result["status"] == "blocked"
+    assert "引用了未确认或不属于当前用户的事实" in result["issues"]
+    assert "引用了不属于当前用户或已经失效的学习目标" in result["issues"]
+
+
+def test_resume_generation_request_does_not_expose_test_injection_switch(client):
+    schema = client.get("/openapi.json").json()
+    properties = schema["components"]["schemas"]["VersionIn"]["properties"]
+    assert "inject_unverified" not in properties
 
 
 def test_quota_deduction_and_idempotency(db):

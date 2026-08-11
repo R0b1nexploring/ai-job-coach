@@ -1,22 +1,136 @@
-import re
+from app.services.claim_entities import corpus_contains, extract_claim_entities
 
 
-ENTITY_PATTERN = re.compile(r"\b\d+(?:\.\d+)?%?|CAD|SolidWorks|PLC|六西格玛|证书", re.I)
+def guard_content(
+    content: dict,
+    confirmed_facts: list,
+    targets: list | None = None,
+    mode: str = "submittable",
+) -> dict:
+    """Validate every resume bullet against only the sources explicitly cited by that bullet."""
+    if mode not in {"submittable", "target"}:
+        raise ValueError("mode 必须是 submittable 或 target")
+    facts_by_id = {
+        str(fact.id): fact
+        for fact in confirmed_facts
+        if getattr(fact, "id", None)
+        and getattr(fact, "verification_status", "user_confirmed") == "user_confirmed"
+    }
+    targets_by_id = {
+        str(target.id): target
+        for target in targets or []
+        if getattr(target, "id", None) and getattr(target, "status", "pending") != "achieved"
+    }
+    all_issues: list[str] = []
+    item_results = []
+    unachieved_count = 0
+
+    for location, bullet in _iter_bullets(content):
+        issues = []
+        fact_ids = _source_ids(bullet, "source_fact_ids")
+        target_ids = _source_ids(bullet, "source_target_ids")
+        if not fact_ids and not target_ids:
+            issues.append("缺少事实来源")
+
+        invalid_fact_ids = [fact_id for fact_id in fact_ids if fact_id not in facts_by_id]
+        if invalid_fact_ids:
+            issues.append("引用了未确认或不属于当前用户的事实")
+
+        invalid_target_ids = [target_id for target_id in target_ids if target_id not in targets_by_id]
+        if target_ids and mode == "submittable":
+            issues.append("可投递简历不得引用未达成目标")
+        elif invalid_target_ids:
+            issues.append("引用了不属于当前用户或已经失效的学习目标")
+
+        valid_target_ids = [target_id for target_id in target_ids if target_id in targets_by_id]
+        if mode == "target" and valid_target_ids:
+            unachieved_count += 1
+            if bullet.get("achieved") is not False:
+                issues.append("未达成条目缺少 achieved 标记")
+
+        corpus = " ".join(
+            [
+                *(_fact_corpus(facts_by_id[fact_id]) for fact_id in fact_ids if fact_id in facts_by_id),
+                *(
+                    _target_corpus(targets_by_id[target_id])
+                    for target_id in valid_target_ids
+                    if mode == "target"
+                ),
+            ]
+        )
+        for entity in extract_claim_entities(str(bullet.get("text") or "")):
+            if not corpus_contains(corpus, entity):
+                issues.append(f"未经来源支持的实体：{entity}")
+        issues.extend(
+            f"显式标记的新主张：{claim}"
+            for claim in bullet.get("new_claims", [])
+            if str(claim).strip()
+        )
+        issues = list(dict.fromkeys(issues))
+        all_issues.extend(issues)
+        item_results.append(
+            {
+                **location,
+                "status": "blocked" if issues else "passed",
+                "issues": issues,
+                "source_fact_ids": fact_ids,
+                "source_target_ids": target_ids,
+                "achieved": bullet.get("achieved"),
+            }
+        )
+
+    issues = sorted(set(all_issues))
+    return {
+        "status": "blocked" if issues else "passed",
+        "issues": issues,
+        "unachieved_count": unachieved_count,
+        "items": item_results,
+    }
 
 
-def guard_content(content: dict, confirmed_facts: list) -> tuple[str, list[str]]:
-    allowed = " ".join(str(f.value_json) for f in confirmed_facts)
-    allowed_ids = {str(f.id) for f in confirmed_facts if getattr(f, "id", None)}
-    new_claims = []
-    for section in content.get("sections", []):
-        for item in section.get("items", []):
-            source_ids = {str(value) for value in item.get("source_fact_ids", [])}
-            if not source_ids:
-                new_claims.append("缺少事实来源")
-            elif not source_ids.issubset(allowed_ids):
-                new_claims.append("引用了未确认或不属于当前用户的事实")
-            for entity in ENTITY_PATTERN.findall(item.get("text", "")):
-                if entity.lower() not in allowed.lower():
-                    new_claims.append(entity)
-            new_claims.extend(item.get("new_claims", []))
-    return ("blocked" if new_claims else "passed", sorted(set(new_claims)))
+def _iter_bullets(content: dict):
+    for section_index, section in enumerate(content.get("sections") or []):
+        for item_index, item in enumerate(section.get("items") or []):
+            bullets = item.get("bullets")
+            if isinstance(bullets, list):
+                for bullet_index, bullet in enumerate(bullets):
+                    if isinstance(bullet, dict):
+                        yield {
+                            "section_index": section_index,
+                            "item_index": item_index,
+                            "bullet_index": bullet_index,
+                        }, bullet
+            elif isinstance(item, dict):
+                yield {
+                    "section_index": section_index,
+                    "item_index": item_index,
+                    "bullet_index": None,
+                }, item
+
+
+def _source_ids(item: dict, field: str) -> list[str]:
+    values = item.get(field) or []
+    return list(dict.fromkeys(str(value) for value in values if str(value)))
+
+
+def _fact_corpus(fact) -> str:
+    value_json = getattr(fact, "value_json", {}) or {}
+    values = [
+        str(value_json.get("text") or ""),
+        str(getattr(fact, "organization", "") or ""),
+        str(getattr(fact, "role_title", "") or ""),
+        str(getattr(fact, "start_date", "") or ""),
+        str(getattr(fact, "end_date", "") or ""),
+        str(getattr(fact, "source_text", "") or ""),
+    ]
+    return " ".join(value for value in values if value)
+
+
+def _target_corpus(target) -> str:
+    criteria = getattr(target, "acceptance_criteria_json", []) or []
+    return " ".join(
+        [
+            str(getattr(target, "deliverable", "") or ""),
+            *(str(value) for value in criteria),
+        ]
+    )

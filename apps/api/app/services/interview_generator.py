@@ -1,4 +1,4 @@
-from .fact_guard import ENTITY_PATTERN
+from .claim_entities import corpus_contains, extract_claim_entities
 
 
 def generate_questions(job, resume_content: dict | None = None, facts: list | None = None) -> dict:
@@ -119,7 +119,7 @@ def guard_interview_guide(guide: dict, confirmed_facts: list) -> tuple[str, list
         if ids and not ids.issubset(allowed_ids):
             issues.append("面试稿引用了未确认事实")
         text = str(entry.get("text") or entry.get("answer") or "")
-        for entity in ENTITY_PATTERN.findall(text):
-            if entity.lower() not in allowed_text:
+        for entity in extract_claim_entities(text):
+            if not corpus_contains(allowed_text, entity):
                 issues.append(entity)
     return ("blocked" if issues else "passed", sorted(set(issues)))
