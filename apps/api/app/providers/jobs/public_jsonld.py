@@ -9,7 +9,9 @@ from html.parser import HTMLParser
 from urllib.parse import urlsplit
 from urllib.robotparser import RobotFileParser
 
+import httpcore
 import httpx
+from httpcore._backends.auto import AutoBackend
 
 from .base import DiscoveredJob, JobProviderError
 from .common import plain_text, relevance
@@ -17,6 +19,62 @@ from .common import plain_text, relevance
 USER_AGENT = "AIJobCoachBot/0.1"
 MAX_PAGE_BYTES = 2 * 1024 * 1024
 MAX_ROBOTS_BYTES = 256 * 1024
+
+
+class _PinnedNetworkBackend(httpcore.AsyncNetworkBackend):
+    """Connect an allowlisted hostname only to its pre-validated IP set.
+
+    URL validation followed by a normal HTTP request has a DNS-rebinding gap:
+    the HTTP stack may resolve a different (private) address at connect time.
+    httpcore still uses the original hostname for Host/SNI, while this backend
+    replaces only the TCP destination with a previously validated public IP.
+    """
+
+    def __init__(self, host: str, addresses: Iterable[str], backend=None):
+        self.host = host.rstrip(".").casefold()
+        self.addresses = tuple(dict.fromkeys(str(value) for value in addresses))
+        self.backend = backend or AutoBackend()
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options=None,
+    ):
+        requested_host = host.decode() if isinstance(host, bytes) else str(host)
+        if requested_host.rstrip(".").casefold() != self.host:
+            raise httpcore.ConnectError("未验证的网络目标")
+        last_error = None
+        for address in self.addresses:
+            try:
+                return await self.backend.connect_tcp(
+                    address,
+                    port,
+                    timeout=timeout,
+                    local_address=local_address,
+                    socket_options=socket_options,
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+                last_error = exc
+        if last_error:
+            raise last_error
+        raise httpcore.ConnectError("没有可用的已验证地址")
+
+    async def connect_unix_socket(self, path: str, timeout=None, socket_options=None):
+        raise httpcore.ConnectError("不允许 Unix socket")
+
+    async def sleep(self, seconds: float) -> None:
+        await self.backend.sleep(seconds)
+
+
+class _PinnedAsyncHTTPTransport(httpx.AsyncHTTPTransport):
+    def __init__(self, host: str, addresses: Iterable[str]):
+        # Ignore environment proxy settings: proxy DNS/connect behavior would
+        # bypass the pinned network backend and reintroduce the TOCTOU gap.
+        super().__init__(trust_env=False, retries=0)
+        self._pool._network_backend = _PinnedNetworkBackend(host, addresses)
 
 
 class _JsonLdParser(HTMLParser):
@@ -229,15 +287,21 @@ class PublicJsonLdJobProvider:
         addresses = await asyncio.to_thread(self.resolver, self.host)
         _ensure_public_addresses(addresses)
         robots_url = f"https://{self.host}/robots.txt"
+        transport = self.transport or _PinnedAsyncHTTPTransport(self.host, addresses)
         async with httpx.AsyncClient(
             timeout=20,
-            transport=self.transport,
+            transport=transport,
             follow_redirects=False,
+            trust_env=False,
         ) as client:
             try:
                 robots_response = await _limited_get(client, robots_url, MAX_ROBOTS_BYTES)
             except JobProviderError as exc:
-                if isinstance(exc.__cause__, httpx.HTTPStatusError) and exc.__cause__.response.status_code == 404:
+                missing_robots = (
+                    isinstance(exc.__cause__, httpx.HTTPStatusError)
+                    and exc.__cause__.response.status_code == 404
+                )
+                if missing_robots:
                     robots_response = None
                 else:
                     raise JobProviderError("无法确认公开招聘页的 robots.txt 访问规则。") from exc

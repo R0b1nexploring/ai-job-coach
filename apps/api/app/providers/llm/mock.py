@@ -27,7 +27,10 @@ class MockLLMProvider:
                 duration_ms=int((perf_counter() - started_at) * 1000),
                 error_type=type(exc).__name__,
             )
-            raise ProviderError("Mock Provider 返回无效结构化结果") from exc
+            raise ProviderError(
+                "Mock Provider 返回无效结构化结果",
+                code="MOCK_MALFORMED_RESPONSE",
+            ) from exc
         log_call(
             task=task,
             tier=tier,

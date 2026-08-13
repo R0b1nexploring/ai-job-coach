@@ -1,3 +1,4 @@
+import os
 import uuid
 
 from fastapi import FastAPI, Request
@@ -14,6 +15,11 @@ from .errors import (
     http_error_handler,
     validation_error_handler,
 )
+
+# Resume and database files contain PII. Restrict newly created runtime files even
+# when the service is launched outside the bundled development script.
+if os.name == "posix":
+    os.umask(0o077)
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.1.0")

@@ -2,17 +2,17 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.dependencies import current_user
+from app.dependencies import authenticated_user, current_user
 from app.errors import AppError
 from app.models.entities import AuditLog, User, UserProfile
 from app.security import create_token, hash_password, verify_password
-from .common import dump
 
+from .common import dump
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -32,7 +32,7 @@ def set_session(response: Response, user: User):
     settings = get_settings()
     response.set_cookie(
         settings.auth_cookie_name,
-        create_token(user.id),
+        create_token(user.id, user.password_hash),
         httponly=True,
         secure=settings.auth_cookie_secure,
         samesite="lax",
@@ -70,14 +70,13 @@ async def login(data: LoginIn, response: Response, db: Session = Depends(get_db)
     user = db.scalar(select(User).where(User.email == data.email.lower()))
     if not user or not verify_password(data.password, user.password_hash):
         raise AppError("INVALID_CREDENTIALS", "邮箱或密码错误。", 401)
-    if user.status not in {"active", "deletion_requested"}:
+    if user.status != "active":
         raise AppError("ACCOUNT_NOT_ACTIVE", "账号当前不可登录。", 403)
-    if user.status == "active":
-        now = datetime.now(timezone.utc)
-        user.last_active_at = now
-        if user.role == "user":
-            user.retention_expires_at = now + timedelta(days=get_settings().data_retention_days)
-        db.commit()
+    now = datetime.now(timezone.utc)
+    user.last_active_at = now
+    if user.role == "user":
+        user.retention_expires_at = now + timedelta(days=get_settings().data_retention_days)
+    db.commit()
     set_session(response, user)
     return dump(user, {"password_hash"})
 
@@ -88,7 +87,7 @@ async def logout(response: Response):
 
 
 @router.get("/me")
-async def me(user: User = Depends(current_user)):
+async def me(user: User = Depends(authenticated_user)):
     return dump(user, {"password_hash"})
 
 
@@ -99,7 +98,10 @@ class PasswordIn(BaseModel):
 
 @router.post("/change-password", status_code=204)
 async def change_password(
-    data: PasswordIn, user: User = Depends(current_user), db: Session = Depends(get_db)
+    data: PasswordIn,
+    response: Response,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
 ):
     if not verify_password(data.current_password, user.password_hash):
         raise AppError("INVALID_CREDENTIALS", "当前密码错误。", 400)
@@ -113,16 +115,47 @@ async def change_password(
         )
     )
     db.commit()
+    set_session(response, user)
 
 
 account_router = APIRouter(prefix="/api", tags=["account"])
 
 
+def deletion_requested_at_iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
+
+
 @account_router.delete("/account", status_code=202)
-async def request_deletion(user: User = Depends(current_user), db: Session = Depends(get_db)):
+async def request_deletion(
+    user: User = Depends(authenticated_user), db: Session = Depends(get_db)
+):
+    if user.role != "user":
+        raise AppError("FORBIDDEN", "仅普通用户账号可发起自助删除。", 403)
+    if user.status == "deletion_requested":
+        return {
+            "status": "deletion_requested",
+            "deletion_requested_at": deletion_requested_at_iso(user.deletion_requested_at),
+        }
     now = datetime.now(timezone.utc)
-    user.status = "deletion_requested"
-    user.deletion_requested_at = now
+    transition = db.execute(
+        update(User)
+        .where(User.id == user.id, User.status == "active")
+        .values(status="deletion_requested", deletion_requested_at=now)
+    )
+    if transition.rowcount != 1:
+        db.refresh(user)
+        if user.status == "deletion_requested":
+            return {
+                "status": "deletion_requested",
+                "deletion_requested_at": deletion_requested_at_iso(
+                    user.deletion_requested_at
+                ),
+            }
+        raise AppError("ACCOUNT_NOT_ACTIVE", "账号当前不可申请删除。", 409)
     db.add(
         AuditLog(
             actor_user_id=user.id,
@@ -132,4 +165,4 @@ async def request_deletion(user: User = Depends(current_user), db: Session = Dep
         )
     )
     db.commit()
-    return {"status": "deletion_requested"}
+    return {"status": "deletion_requested", "deletion_requested_at": now.isoformat()}

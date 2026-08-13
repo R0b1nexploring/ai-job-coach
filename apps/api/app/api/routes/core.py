@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import date, datetime, timezone
 from typing import Literal
@@ -5,6 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, File, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -15,13 +17,13 @@ from app.models.entities import (
     AuditLog,
     Job,
     Match,
-    QuotaLedger,
     Resume,
     ResumeFact,
     User,
     UserProfile,
 )
 from app.providers.jobs import discover_jobs
+from app.providers.jobs.base import MAX_RAW_JD_CHARS
 from app.providers.llm.runtime import generate_structured
 from app.providers.llm.schemas import (
     JobStructuredOutput,
@@ -29,12 +31,12 @@ from app.providers.llm.schemas import (
     ResumeAnalysisOutput,
     ResumeExtractionOutput,
 )
-from app.providers.storage.local import LocalStorage
+from app.providers.storage.runtime import get_storage
 from app.services.channel_sources import allowed_job_source_hosts
-from app.services.job_normalizer import normalize_job
+from app.services.job_normalizer import ground_job_output, normalize_job
 from app.services.matcher import score_match
 from app.services.provider_status import provider_status
-from app.services.quota_service import change
+from app.services.quota_service import change, request_fingerprint
 from app.services.resume_analyzer import analyze_resume
 from app.services.resume_parser import (
     ALLOWED,
@@ -43,10 +45,31 @@ from app.services.resume_parser import (
     parse_resume,
     sanitize_extraction,
 )
+from app.services.storage_cleanup import (
+    enqueue_file_deletions,
+    process_storage_deletions,
+    schedule_and_process_file_deletions,
+)
 
 from .common import dump, listed
 
 router = APIRouter(prefix="/api", tags=["core"])
+logger = logging.getLogger("app.core")
+UPLOAD_READ_CHUNK_BYTES = 64 * 1024
+
+
+async def _read_upload_limited(file: UploadFile, max_bytes: int) -> bytes:
+    """Read incrementally and stop as soon as the configured limit is crossed."""
+    content = bytearray()
+    while chunk := await file.read(UPLOAD_READ_CHUNK_BYTES):
+        content.extend(chunk)
+        if len(content) > max_bytes:
+            raise AppError(
+                "FILE_TOO_LARGE",
+                f"文件不能超过 {max_bytes // (1024 * 1024)}MB。",
+                413,
+            )
+    return bytes(content)
 
 
 @router.get("/health")
@@ -118,10 +141,9 @@ async def save_profile(
 async def upload_resume(
     file: UploadFile = File(...), user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
-    content = await file.read()
     settings = get_settings()
-    if len(content) > settings.max_upload_mb * 1024 * 1024:
-        raise AppError("FILE_TOO_LARGE", f"文件不能超过 {settings.max_upload_mb}MB。", 413)
+    max_bytes = max(0, settings.max_upload_mb) * 1024 * 1024
+    content = await _read_upload_limited(file, max_bytes)
     text_value, _preliminary_facts = parse_resume(
         content, file.content_type or "", file.filename or "resume"
     )
@@ -145,27 +167,43 @@ async def upload_resume(
         for field, value in fallback_extraction["contact"].items():
             extraction["contact"][field] = extraction["contact"].get(field) or value
     suffix = ALLOWED[file.content_type]
-    key = LocalStorage().save(content, suffix)
-    resume = Resume(
-        user_id=user.id,
-        original_file_key=key,
-        original_media_type=file.content_type or "",
-        display_name=(file.filename or "简历")[:200],
-        parse_status="parsed",
-        parsed_text=text_value,
-        parser_version=f"2.0:{provider_name}",
-        contact_json=extraction["contact"],
-    )
-    db.add(resume)
-    db.flush()
-    created_facts = []
-    for fact in extraction["facts"]:
-        row = ResumeFact(resume_id=resume.id, user_id=user.id, created_by=user.id, **fact)
-        db.add(row)
+    storage = get_storage()
+    key = storage.save(content, suffix)
+    try:
+        resume = Resume(
+            user_id=user.id,
+            original_file_key=key,
+            original_media_type=file.content_type or "",
+            display_name=(file.filename or "简历")[:200],
+            parse_status="parsed",
+            parsed_text=text_value,
+            parser_version=f"2.0:{provider_name}",
+            contact_json=extraction["contact"],
+        )
+        db.add(resume)
         db.flush()
-        created_facts.append(row)
-    resume.missing_information_json = build_missing_information(created_facts)
-    db.commit()
+        created_facts = []
+        for fact in extraction["facts"]:
+            row = ResumeFact(resume_id=resume.id, user_id=user.id, created_by=user.id, **fact)
+            db.add(row)
+            db.flush()
+            created_facts.append(row)
+        resume.missing_information_json = build_missing_information(created_facts)
+        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            schedule_and_process_file_deletions(
+                db.get_bind(),
+                storage,
+                file_keys=[key],
+            )
+        except Exception as cleanup_error:
+            logger.error(
+                "resume_upload_cleanup_schedule_failed error_type=%s",
+                type(cleanup_error).__name__,
+            )
+        raise
     return dump(resume, {"original_file_key", "parsed_text"})
 
 
@@ -202,9 +240,25 @@ async def delete_resume(
     resume_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
     row = owned_resume(db, user, resume_id)
+    file_key = row.original_file_key
     row.deleted_at = datetime.now(timezone.utc)
-    LocalStorage().delete(row.original_file_key)
+    scheduled = enqueue_file_deletions(db, [file_key])
     db.commit()
+    try:
+        process_storage_deletions(
+            db,
+            get_storage(),
+            file_keys=scheduled,
+            limit=max(1, len(scheduled)),
+        )
+    except Exception as cleanup_error:
+        # The database and durable locator are already committed. A later
+        # maintenance pass can retry without resurrecting the deleted resume.
+        db.rollback()
+        logger.error(
+            "resume_delete_storage_cleanup_processing_failed error_type=%s",
+            type(cleanup_error).__name__,
+        )
 
 
 @router.get("/resumes/{resume_id}/facts")
@@ -251,10 +305,20 @@ def refresh_resume_confirmation(db: Session, resume_id: str) -> None:
     has_pending = db.scalar(
         select(ResumeFact.id).where(
             ResumeFact.resume_id == resume_id,
+            ResumeFact.user_id == resume.user_id,
             ResumeFact.verification_status.in_(["extracted", "proposed"]),
         )
     )
-    resume.facts_confirmed_at = None if has_pending else datetime.now(timezone.utc)
+    has_confirmed = db.scalar(
+        select(ResumeFact.id).where(
+            ResumeFact.resume_id == resume_id,
+            ResumeFact.user_id == resume.user_id,
+            ResumeFact.verification_status == "user_confirmed",
+        )
+    )
+    resume.facts_confirmed_at = (
+        datetime.now(timezone.utc) if has_confirmed and not has_pending else None
+    )
 
 
 @router.post("/resumes/{resume_id}/facts", status_code=201)
@@ -351,6 +415,19 @@ async def confirm_all_facts(
             )
         )
     )
+    has_confirmed = db.scalar(
+        select(ResumeFact.id).where(
+            ResumeFact.resume_id == row.id,
+            ResumeFact.user_id == user.id,
+            ResumeFact.verification_status == "user_confirmed",
+        )
+    )
+    if not pending_facts and not has_confirmed:
+        raise AppError(
+            "RESUME_FACTS_EMPTY",
+            "请至少保留并确认一条真实事实后再继续。",
+            409,
+        )
     missing = build_missing_information(pending_facts)
     if missing:
         raise AppError(
@@ -512,11 +589,11 @@ async def resume_analysis(
 
 
 class JobIn(BaseModel):
-    raw_jd: str = Field(min_length=10)
-    title: str = ""
-    company_name: str = ""
-    city: str = ""
-    source_url: str = ""
+    raw_jd: str = Field(min_length=10, max_length=MAX_RAW_JD_CHARS)
+    title: str = Field(default="", max_length=200)
+    company_name: str = Field(default="", max_length=200)
+    city: str = Field(default="", max_length=100)
+    source_url: str = Field(default="", max_length=2048)
     published_at: datetime | None = None
 
 
@@ -551,8 +628,14 @@ async def create_job(data: JobIn, user: User, db: Session):
         },
         response_model=JobStructuredOutput,
     )
-    value = structured.model_dump()
-    value["content_hash"] = fallback["content_hash"]
+    value = ground_job_output(
+        structured.model_dump(),
+        raw_jd=data.raw_jd,
+        title=data.title,
+        company_name=data.company_name,
+        city=data.city,
+        fallback=fallback,
+    )
     existing = db.scalar(
         select(Job).where(
             Job.created_by == user.id,
@@ -632,7 +715,11 @@ async def discover_public_jobs(
         keywords=keywords,
         cities=cities,
         limit=data.limit,
-        allowed_hosts=allowed_job_source_hosts(db) if data.provider == "public_jsonld" else None,
+        allowed_hosts=(
+            allowed_job_source_hosts(db, user.id)
+            if data.provider == "public_jsonld"
+            else None
+        ),
     )
     saved = []
     for item in discovered:
@@ -732,6 +819,15 @@ async def create_match(
 ):
     resume = owned_resume(db, user, data.resume_id)
     job = owned_job(db, user, data.job_id)
+    existing_match = db.scalar(
+        select(Match).where(
+            Match.user_id == user.id,
+            Match.resume_id == resume.id,
+            Match.job_id == job.id,
+        )
+    )
+    if existing_match:
+        return dump(existing_match)
     profile = db.get(UserProfile, user.id)
     facts_list = list(
         db.scalars(
@@ -739,30 +835,6 @@ async def create_match(
                 ResumeFact.resume_id == resume.id, ResumeFact.user_id == user.id
             )
         )
-    )
-    free_key = f"free-match:{user.id}"
-    if not db.scalar(
-        select(QuotaLedger).where(
-            QuotaLedger.user_id == user.id,
-            QuotaLedger.quota_type == "match",
-            QuotaLedger.idempotency_key == free_key,
-        )
-    ):
-        change(
-            db,
-            user_id=user.id,
-            quota_type="match",
-            delta=1,
-            reason="免费诊断",
-            idempotency_key=free_key,
-        )
-    change(
-        db,
-        user_id=user.id,
-        quota_type="match",
-        delta=-1,
-        reason="生成匹配报告",
-        idempotency_key=f"match:{resume.id}:{job.id}",
     )
     result = score_match(facts_list, job, profile)
     explanation, provider_name = await generate_structured(
@@ -818,6 +890,50 @@ async def create_match(
         ai_explanation_json=explanation_payload,
     )
     db.add(match)
+    try:
+        # The database unique constraint is the concurrency backstop. Flush the
+        # match before quota mutations so a losing concurrent request can roll
+        # back cleanly without a second debit.
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        existing_match = db.scalar(
+            select(Match).where(
+                Match.user_id == user.id,
+                Match.resume_id == resume.id,
+                Match.job_id == job.id,
+            )
+        )
+        if existing_match:
+            return dump(existing_match)
+        raise
+    free_key = f"free-match:{user.id}"
+    change(
+        db,
+        user_id=user.id,
+        quota_type="match",
+        delta=1,
+        reason="免费诊断",
+        idempotency_key=free_key,
+        request_hash=request_fingerprint(
+            {"operation": "match.free_grant", "user_id": user.id}
+        ),
+    )
+    change(
+        db,
+        user_id=user.id,
+        quota_type="match",
+        delta=-1,
+        reason="生成匹配报告",
+        idempotency_key=f"match:{resume.id}:{job.id}",
+        request_hash=request_fingerprint(
+            {
+                "operation": "match.create",
+                "resume_id": resume.id,
+                "job_id": job.id,
+            }
+        ),
+    )
     db.commit()
     return dump(match)
 

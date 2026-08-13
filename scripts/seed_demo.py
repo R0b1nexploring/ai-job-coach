@@ -7,6 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from sqlalchemy import select  # noqa: E402
+
+from app.config import get_settings  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
 from app.models.entities import (  # noqa: E402
     AdvisorAssignment,
@@ -24,13 +26,15 @@ from app.models.entities import (  # noqa: E402
     User,
     UserProfile,
 )
-from app.security import hash_password  # noqa: E402
-from app.config import get_settings  # noqa: E402
 from app.providers.storage.local import LocalStorage  # noqa: E402
+from app.security import hash_password  # noqa: E402
+from app.services.quota_service import change  # noqa: E402
 
 
 def seed():
     settings = get_settings()
+    if settings.app_env in {"production", "prod"}:
+        raise RuntimeError("生产环境禁止写入演示账号和演示数据。")
     with SessionLocal() as db:
         existing_user = db.scalar(
             select(User).where(User.email == settings.demo_user_email)
@@ -44,16 +48,15 @@ def seed():
                     QuotaLedger.idempotency_key == match_key,
                 )
             ):
-                db.add(
-                    QuotaLedger(
-                        user_id=existing_user.id,
-                        quota_type="match",
-                        delta=20,
-                        reason="MVP-1 种子演示额度",
-                        reference_type="seed",
-                        reference_id="demo-user",
-                        idempotency_key=match_key,
-                    )
+                change(
+                    db,
+                    user_id=existing_user.id,
+                    quota_type="match",
+                    delta=20,
+                    reason="MVP-1 种子演示额度",
+                    reference_type="seed",
+                    reference_id="demo-user",
+                    idempotency_key=match_key,
                 )
                 db.commit()
                 print("Added missing Demo match quota; existing data preserved.")
@@ -62,19 +65,19 @@ def seed():
             return
         admin = User(
             email=settings.demo_admin_email,
-            password_hash=hash_password(settings.demo_admin_password),
+            password_hash=hash_password(settings.demo_admin_password.get_secret_value()),
             display_name="Demo 管理员",
             role="admin",
         )
         advisor = User(
             email=settings.demo_advisor_email,
-            password_hash=hash_password(settings.demo_advisor_password),
+            password_hash=hash_password(settings.demo_advisor_password.get_secret_value()),
             display_name="王顾问",
             role="advisor",
         )
         user = User(
             email=settings.demo_user_email,
-            password_hash=hash_password(settings.demo_user_password),
+            password_hash=hash_password(settings.demo_user_password.get_secret_value()),
             display_name="小陈",
             role="user",
         )
@@ -278,16 +281,15 @@ def seed():
             ("application", 40),
             ("interview", 2),
         ]:
-            db.add(
-                QuotaLedger(
-                    user_id=user.id,
-                    quota_type=quota,
-                    delta=amount,
-                    reason="MVP-1 种子演示额度",
-                    reference_type="seed",
-                    reference_id="demo-user",
-                    idempotency_key=f"seed:{user.id}:{quota}",
-                )
+            change(
+                db,
+                user_id=user.id,
+                quota_type=quota,
+                delta=amount,
+                reason="MVP-1 种子演示额度",
+                reference_type="seed",
+                reference_id="demo-user",
+                idempotency_key=f"seed:{user.id}:{quota}",
             )
         db.add(
             Notification(

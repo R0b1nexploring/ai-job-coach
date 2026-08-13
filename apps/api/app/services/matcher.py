@@ -13,7 +13,18 @@ WEIGHTS = {
 ASCII_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9+#.\-]{1,}")
 NUMBER_TOKEN = re.compile(r"\d+(?:\.\d+)?")
 NON_ALNUM = re.compile(r"[^0-9a-z\u4e00-\u9fff]+")
-REQUIREMENT_FILLER = ("要求", "必须", "熟悉", "掌握", "具备", "能够", "相关", "优先", "接受", "以上")
+REQUIREMENT_FILLER = (
+    "要求",
+    "必须",
+    "熟悉",
+    "掌握",
+    "具备",
+    "能够",
+    "相关",
+    "优先",
+    "接受",
+    "以上",
+)
 
 
 def score_match(facts: list, job, profile=None) -> dict:
@@ -166,13 +177,18 @@ def requirement_matches(requirement: str, corpus: str) -> bool:
 
 def calculate_experience_months(facts: list, *, today: date | None = None) -> int:
     current = today or datetime.now(UTC).date()
+    current_month = current.year * 12 + current.month
     intervals = []
     for fact in facts:
         if getattr(fact, "category", "") not in {"employment", "projects"}:
             continue
         start = _month_index(getattr(fact, "start_date", ""))
         end_value = getattr(fact, "end_date", "")
-        end = current.year * 12 + current.month if end_value == "至今" else _month_index(end_value)
+        end = current_month if end_value == "至今" else _month_index(end_value)
+        if start is not None and start > current_month:
+            continue
+        if end is not None:
+            end = min(end, current_month)
         if start is None or end is None or end < start:
             continue
         intervals.append((start, end + 1))

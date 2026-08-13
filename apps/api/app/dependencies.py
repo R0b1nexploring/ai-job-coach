@@ -1,3 +1,4 @@
+import hmac
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Cookie, Depends
@@ -8,27 +9,41 @@ from .config import get_settings
 from .database import get_db
 from .errors import AppError
 from .models.entities import AdvisorAssignment, User
-from .security import decode_token
+from .security import decode_token, session_version
 
 
-async def current_user(
+async def authenticated_user(
     db: Session = Depends(get_db),
     token: str | None = Cookie(default=None, alias=get_settings().auth_cookie_name),
 ) -> User:
-    user_id = decode_token(token) if token else None
-    user = db.get(User, user_id) if user_id else None
+    claims = decode_token(token) if token else None
+    user = db.get(User, claims[0]) if claims else None
     if not user or user.status not in {"active", "deletion_requested"}:
         raise AppError("UNAUTHORIZED", "请先登录。", 401)
-    if user.status == "active":
-        now = datetime.now(timezone.utc)
-        last_active = user.last_active_at
-        if last_active and last_active.tzinfo is None:
-            last_active = last_active.replace(tzinfo=timezone.utc)
-        if last_active is None or last_active <= now - timedelta(days=1):
-            user.last_active_at = now
-            if user.role == "user":
-                user.retention_expires_at = now + timedelta(days=get_settings().data_retention_days)
-            db.commit()
+    expected_version = session_version(user.id, user.password_hash)
+    if not hmac.compare_digest(claims[1], expected_version):
+        raise AppError("UNAUTHORIZED", "登录状态已失效，请重新登录。", 401)
+    return user
+
+
+async def current_user(
+    user: User = Depends(authenticated_user), db: Session = Depends(get_db)
+) -> User:
+    if user.status != "active":
+        raise AppError(
+            "ACCOUNT_DELETION_PENDING",
+            "账号已申请删除，当前仅可查看账号状态或再次确认删除请求。",
+            403,
+        )
+    now = datetime.now(timezone.utc)
+    last_active = user.last_active_at
+    if last_active and last_active.tzinfo is None:
+        last_active = last_active.replace(tzinfo=timezone.utc)
+    if last_active is None or last_active <= now - timedelta(days=1):
+        user.last_active_at = now
+        if user.role == "user":
+            user.retention_expires_at = now + timedelta(days=get_settings().data_retention_days)
+        db.commit()
     return user
 
 

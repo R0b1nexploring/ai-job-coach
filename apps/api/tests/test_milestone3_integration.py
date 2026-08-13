@@ -1,10 +1,11 @@
-from sqlalchemy import select
-
-from app.models.entities import AdvisorAssignment, AuditLog, Package, QuotaLedger, User
-from app.security import hash_password
-from app.providers.payment.disabled import DisabledPaymentProvider
-from app.errors import AppError
 from conftest import docx_file, register
+from sqlalchemy import func, select
+
+from app.errors import AppError
+from app.models.entities import AdvisorAssignment, AuditLog, Package, User
+from app.providers.payment.disabled import DisabledPaymentProvider
+from app.security import hash_password
+from app.services.quota_service import change
 
 
 def add_packages(db):
@@ -68,10 +69,19 @@ def test_admin_grant_permission_audit_and_idempotency(client, db):
     }
     assert client.post("/api/admin/quotas/grant", json=body).status_code == 201
     assert client.post("/api/admin/quotas/grant", json=body).status_code == 201
+    changed_payload = {**body, "amount": 6}
+    reused = client.post("/api/admin/quotas/grant", json=changed_payload)
+    assert reused.status_code == 409
+    assert reused.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
     client.post("/api/auth/logout")
     client.post("/api/auth/login", json={"email": "a@example.test", "password": "Password123!"})
     assert client.get("/api/quotas").json()["resume"] == 5
-    assert db.scalar(select(AuditLog).where(AuditLog.action == "quota.grant")) is not None
+    assert (
+        db.scalar(
+            select(func.count(AuditLog.id)).where(AuditLog.action == "quota.grant")
+        )
+        == 1
+    )
 
 
 def test_admin_package_crud_has_validation_and_audit(client, db):
@@ -256,7 +266,9 @@ def test_complete_registration_to_weekly_report_flow(client, db):
     app = client.post(
         "/api/applications", json={"job_id": job["id"], "resume_version_id": version["id"]}
     ).json()
-    for status in ["preparing_resume", "ready_to_apply", "applied"]:
+    confirmed = client.post(f"/api/applications/{app['id']}/confirm")
+    assert confirmed.status_code == 200
+    for status in ["ready_to_apply", "applied"]:
         assert (
             client.patch(
                 f"/api/applications/{app['id']}/status", json={"status": status}
@@ -355,14 +367,13 @@ def test_interview_is_idempotent_and_answers_lock_after_submit(client, db):
             "raw_jd": "负责设备点检、维护记录和跨部门协作，要求机械相关本科。",
         },
     ).json()
-    db.add(
-        QuotaLedger(
-            user_id=user["id"],
-            quota_type="interview",
-            delta=1,
-            reason="测试额度",
-            idempotency_key="interview-test-grant",
-        )
+    change(
+        db,
+        user_id=user["id"],
+        quota_type="interview",
+        delta=1,
+        reason="测试额度",
+        idempotency_key="interview-test-grant",
     )
     db.commit()
 
@@ -378,6 +389,22 @@ def test_interview_is_idempotent_and_answers_lock_after_submit(client, db):
     empty_submit = client.post(f"/api/interviews/{interview_id}/submit")
     assert empty_submit.status_code == 409
     assert empty_submit.json()["error"]["code"] == "INTERVIEW_ANSWERS_REQUIRED"
+    unknown = client.patch(
+        f"/api/interviews/{interview_id}/answers",
+        json={"answers": {"unknown-question": "任意回答"}},
+    )
+    assert unknown.status_code == 422
+    assert unknown.json()["error"]["code"] == "INTERVIEW_QUESTION_NOT_FOUND"
+    non_string = client.patch(
+        f"/api/interviews/{interview_id}/answers",
+        json={"answers": {"q1": {"nested": "not allowed"}}},
+    )
+    assert non_string.status_code == 422
+    too_long = client.patch(
+        f"/api/interviews/{interview_id}/answers",
+        json={"answers": {"q1": "答" * 5001}},
+    )
+    assert too_long.status_code == 422
     assert (
         client.patch(
             f"/api/interviews/{interview_id}/answers",

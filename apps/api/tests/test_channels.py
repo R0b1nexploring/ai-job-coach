@@ -165,14 +165,78 @@ def test_channel_host_enters_allowlist_and_dead_feedback_removes_it(client, db):
     )
     assert asyncio.run(provider.discover(keywords=[], cities=[], limit=5))
 
-    for expected in (1, 2, 3):
-        response = client.post(f"/api/channels/{channel.id}/report-dead")
-        assert response.status_code == 200
-        assert response.json()["dead_reports"] == expected
+    first = client.post(f"/api/channels/{channel.id}/report-dead")
+    duplicate = client.post(f"/api/channels/{channel.id}/report-dead")
+    assert first.status_code == duplicate.status_code == 200
+    assert first.json()["dead_reports"] == duplicate.json()["dead_reports"] == 1
+    assert duplicate.json()["verify_status"] != "dead"
+
+    client.post("/api/auth/logout")
+    register(client, "reporter-two@example.test", "报告用户二")
+    second = client.post(f"/api/channels/{channel.id}/report-dead")
+    assert second.status_code == 200
+    assert second.json()["dead_reports"] == 2
+
+    client.post("/api/auth/logout")
+    register(client, "reporter-three@example.test", "报告用户三")
+    response = client.post(f"/api/channels/{channel.id}/report-dead")
+    assert response.status_code == 200
+    assert response.json()["dead_reports"] == 3
     assert response.json()["verify_status"] == "dead"
     assert "careers.example.test" not in allowed_job_source_hosts(db)
     with pytest.raises(JobProviderError, match="允许列表"):
         PublicJsonLdJobProvider(channel.url, allowed_job_source_hosts(db))
+
+
+def test_private_channel_allowlist_is_scoped_to_its_owner(client, db):
+    owner = register(client)
+    client.post("/api/auth/logout")
+    other = register(client, "other@example.test", "其他用户")
+    private = ApplicationChannel(
+        owner_user_id=owner["id"],
+        company_name="私有公司",
+        company_name_normalized="私有公司",
+        channel_type="career_page",
+        url="https://private-careers.example.test/jobs",
+        scope="both",
+        source="test",
+        content_hash=hashlib.sha256(b"private-channel-owner-a").hexdigest(),
+    )
+    db.add(private)
+    db.commit()
+    invalidate_channel_host_cache(db)
+
+    assert "private-careers.example.test" in allowed_job_source_hosts(db, owner["id"])
+    assert "private-careers.example.test" not in allowed_job_source_hosts(db, other["id"])
+
+
+def test_same_channel_identity_can_be_private_to_different_owners(client, db):
+    owner = register(client)
+    client.post("/api/auth/logout")
+    other = register(client, "other@example.test", "其他用户")
+    row = channel_row(url="https://shared-entry.example.test/jobs")
+
+    first = import_channels(
+        db,
+        [row],
+        source="owner-import",
+        owner_user_id=owner["id"],
+        execute=True,
+        resolver=lambda _host: ["93.184.216.34"],
+    )
+    second = import_channels(
+        db,
+        [row],
+        source="owner-import",
+        owner_user_id=other["id"],
+        execute=True,
+        resolver=lambda _host: ["93.184.216.34"],
+    )
+
+    assert first["new"] == second["new"] == 1
+    rows = list(db.scalars(select(ApplicationChannel)))
+    assert {item.owner_user_id for item in rows} == {owner["id"], other["id"]}
+    assert len({item.content_hash for item in rows}) == 2
 
 
 def test_email_draft_uses_confirmed_facts_and_warns_for_blueprint():
@@ -344,6 +408,98 @@ def test_email_guard_rejects_more_than_three_match_points():
 
     assert status == "blocked"
     assert "邮件匹配点不能超过 3 条" in issues
+
+
+def test_email_guard_rejects_empty_or_unsupported_chinese_match_points():
+    status, issues = guard_email_match_points([], [])
+    assert status == "blocked"
+    assert "邮件至少需要一条可溯源的匹配点" in issues
+
+    fact = SimpleNamespace(
+        id="confirmed",
+        verification_status="user_confirmed",
+        value_json={"text": "参与机械机构设计"},
+        source_text="参与机械机构设计",
+        organization="",
+        role_title="",
+    )
+    status, issues = guard_email_match_points(
+        [{"text": "主导供应链优化", "source_fact_ids": ["confirmed"]}],
+        [fact],
+    )
+    assert status == "blocked"
+    assert any("主导" in issue for issue in issues)
+
+    status, issues = guard_email_match_points(
+        [{"text": "   ", "source_fact_ids": ["confirmed"]}],
+        [fact],
+    )
+    assert status == "blocked"
+    assert "第 1 条匹配点内容不能为空" in issues
+
+
+@pytest.mark.parametrize(
+    "claim",
+    ["参与机械机构设计量产", "参与机械机构设计并获奖", "掌握机械机构设计"],
+)
+def test_email_guard_rejects_short_unsupported_claim_additions(claim):
+    fact = SimpleNamespace(
+        id="confirmed",
+        verification_status="user_confirmed",
+        value_json={"text": "参与机械机构设计"},
+        source_text="参与机械机构设计",
+        organization="",
+        role_title="",
+    )
+
+    status, issues = guard_email_match_points(
+        [{"text": claim, "source_fact_ids": ["confirmed"]}],
+        [fact],
+    )
+
+    assert status == "blocked"
+    assert any("无来源中文主张" in issue for issue in issues)
+
+
+def test_email_guard_allows_neutral_rephrasing_without_new_claims():
+    fact = SimpleNamespace(
+        id="confirmed",
+        verification_status="user_confirmed",
+        value_json={"text": "参与机械机构设计"},
+        source_text="参与机械机构设计",
+        organization="",
+        role_title="",
+    )
+
+    status, issues = guard_email_match_points(
+        [{"text": "协助机械机构设计", "source_fact_ids": ["confirmed"]}],
+        [fact],
+    )
+
+    assert status == "passed"
+    assert issues == []
+
+
+def test_email_draft_without_confirmed_match_point_is_not_actionable():
+    result = asyncio.run(
+        build_email_draft(
+            SimpleNamespace(school="", major=""),
+            SimpleNamespace(title="简历", kind="submittable", unachieved_count=0),
+            SimpleNamespace(
+                title="设备工程师",
+                company_name="示例公司",
+                must_have_json=[],
+                keywords_json=[],
+            ),
+            SimpleNamespace(company_name="示例公司", email="jobs@example.test"),
+            facts=[],
+            contact={"name": "小陈"},
+        )
+    )
+
+    assert result["guard_status"] == "blocked"
+    assert result["mailto_url"] == ""
+    assert any("至少一条相关事实" in warning for warning in result["warnings"])
 
 
 def test_email_draft_omits_mailto_when_encoded_body_is_too_long():

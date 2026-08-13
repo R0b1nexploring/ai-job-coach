@@ -26,13 +26,13 @@ from app.models.entities import (
     UserProfile,
 )
 from app.providers.storage.local import LocalStorage
-from app.services.privacy_service import purge_user_data
 from app.services.maintenance_service import run_maintenance
+from app.services.privacy_service import purge_user_data
 from app.services.provider_status import provider_status
-from app.services.quota_service import change
+from app.services.quota_service import change, request_fingerprint, was_created
 from app.services.report_service import weekly_report
-from .common import dump, listed
 
+from .common import dump, listed
 
 router = APIRouter(prefix="/api/advisor", tags=["advisor"])
 
@@ -436,6 +436,7 @@ async def grant_quota(
         raise AppError("INVALID_QUOTA_GRANT", "数量、原因和幂等键不能为空。", 422)
     if not db.get(User, data.user_id):
         raise AppError("USER_NOT_FOUND", "用户不存在。", 404)
+    db.commit()
     row = change(
         db,
         user_id=data.user_id,
@@ -445,23 +446,34 @@ async def grant_quota(
         idempotency_key=data.idempotency_key,
         reference_type="admin_grant",
         reference_id=actor.id,
-    )
-    db.add(
-        AuditLog(
-            actor_user_id=actor.id,
-            action="quota.grant",
-            entity_type="quota_ledger",
-            entity_id=row.id,
-            metadata_json={
+        request_hash=request_fingerprint(
+            {
+                "operation": "admin.quota_grant",
+                "actor_user_id": actor.id,
                 "user_id": data.user_id,
                 "quota_type": data.quota_type,
                 "amount": data.amount,
                 "reason": data.reason.strip(),
-                "idempotent": row.idempotency_key == data.idempotency_key,
-            },
-        )
+            }
+        ),
     )
-    db.commit()
+    if was_created(row):
+        db.add(
+            AuditLog(
+                actor_user_id=actor.id,
+                action="quota.grant",
+                entity_type="quota_ledger",
+                entity_id=row.id,
+                metadata_json={
+                    "user_id": data.user_id,
+                    "quota_type": data.quota_type,
+                    "amount": data.amount,
+                    "reason": data.reason.strip(),
+                    "replayed": False,
+                },
+            )
+        )
+        db.commit()
     return dump(row)
 
 
@@ -502,15 +514,11 @@ async def purge_account(
     user = db.get(User, user_id)
     if not user or user.status != "deletion_requested":
         raise AppError("ACCOUNT_NOT_READY_FOR_DELETION", "账号未申请删除。", 409)
-    summary = purge_user_data(db, user, LocalStorage())
-    db.add(
-        AuditLog(
-            actor_user_id=actor.id,
-            action="account.purged",
-            entity_type="user",
-            entity_id=user.id,
-            metadata_json=summary,
-        )
+    purge_user_data(
+        db,
+        user,
+        LocalStorage(),
+        audit_action="account.purged",
+        actor_user_id=actor.id,
     )
-    db.commit()
     return {"status": "deleted"}

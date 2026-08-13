@@ -2,7 +2,7 @@ import json
 from time import perf_counter
 
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from app.config import get_settings
 
@@ -11,6 +11,25 @@ from .json_repair import loads_lenient
 
 MIN_OUTPUT_TOKENS = 256
 MAX_OUTPUT_TOKENS = 8192
+TRANSIENT_STATUS_CODES = {408, 425, 429}
+
+
+class _CompletionMessage(BaseModel):
+    content: str = Field(min_length=1)
+
+
+class _CompletionChoice(BaseModel):
+    message: _CompletionMessage
+
+
+class _CompletionUsage(BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+
+class _CompletionEnvelope(BaseModel):
+    choices: list[_CompletionChoice] = Field(min_length=1)
+    usage: _CompletionUsage = Field(default_factory=_CompletionUsage)
 
 
 class CompatibleLLMProvider:
@@ -21,10 +40,11 @@ class CompatibleLLMProvider:
         self, *, task: str, system_prompt: str, user_payload: dict, response_model: type[BaseModel]
     ):
         settings = get_settings()
+        api_key = settings.llm_api_key.get_secret_value()
         tier = settings.tier_for(task)
         model = settings.model_for(task)
         started_at = perf_counter()
-        if not all([settings.llm_api_base_url, settings.llm_api_key, model]):
+        if not all([settings.llm_api_base_url, api_key, model]):
             log_call(
                 task=task,
                 tier=tier,
@@ -32,7 +52,10 @@ class CompatibleLLMProvider:
                 duration_ms=int((perf_counter() - started_at) * 1000),
                 error_type="ConfigurationError",
             )
-            raise ProviderError("真实 LLM Provider 配置不完整")
+            raise ProviderError(
+                "真实 LLM Provider 配置不完整",
+                code="LLM_CONFIGURATION_ERROR",
+            )
         safe_payload = {key: value for key, value in user_payload.items() if key != "mock_response"}
         format_instructions = _format_instructions(response_model)
         body = {
@@ -59,8 +82,11 @@ class CompatibleLLMProvider:
         async with httpx.AsyncClient(
             timeout=settings.llm_timeout_seconds,
             transport=self.transport,
+            follow_redirects=False,
         ) as client:
             for attempt in range(max_retries + 1):
+                provider_error: ProviderError | None = None
+                cause: Exception | None = None
                 try:
                     request_body = body
                     if attempt:
@@ -71,7 +97,8 @@ class CompatibleLLMProvider:
                                 {
                                     "role": "system",
                                     "content": (
-                                        "上一次响应未通过 JSON 解析或结构校验。请重新生成完整 JSON，"
+                                        "上一次响应未通过 JSON 解析或结构校验。"
+                                        "请重新生成完整 JSON，"
                                         "严格使用规定字段和类型，不要输出解释、Markdown 或空对象。"
                                     ),
                                 },
@@ -79,45 +106,77 @@ class CompatibleLLMProvider:
                         }
                     response = await client.post(
                         settings.llm_api_base_url.rstrip("/") + "/chat/completions",
-                        headers={"Authorization": f"Bearer {settings.llm_api_key}"},
+                        headers={"Authorization": f"Bearer {api_key}"},
                         json=request_body,
                     )
                     response.raise_for_status()
-                    payload = response.json()
-                    raw = payload["choices"][0]["message"]["content"]
+                    envelope = _CompletionEnvelope.model_validate(response.json())
+                    raw = envelope.choices[0].message.content
                     result = response_model.model_validate(loads_lenient(raw))
-                    usage = payload.get("usage") if isinstance(payload, dict) else None
-                    usage = usage if isinstance(usage, dict) else {}
                     log_call(
                         task=task,
                         tier=tier,
                         model=model,
                         duration_ms=int((perf_counter() - started_at) * 1000),
-                        prompt_tokens=_token_count(usage.get("prompt_tokens")),
-                        completion_tokens=_token_count(usage.get("completion_tokens")),
+                        prompt_tokens=_token_count(envelope.usage.prompt_tokens),
+                        completion_tokens=_token_count(envelope.usage.completion_tokens),
                         retried=attempt > 0,
                         error_type=last_error_type,
                     )
                     return result
-                except (
-                    httpx.HTTPError,
-                    AttributeError,
-                    KeyError,
-                    TypeError,
-                    ValidationError,
-                    ValueError,
-                ) as exc:
+                except httpx.HTTPStatusError as exc:
                     last_error_type = type(exc).__name__
-                    if attempt == max_retries:
-                        log_call(
-                            task=task,
-                            tier=tier,
-                            model=model,
-                            duration_ms=int((perf_counter() - started_at) * 1000),
-                            retried=attempt > 0,
-                            error_type=last_error_type,
-                        )
-                        raise ProviderError("LLM Provider 返回无效结构化结果") from exc
+                    status_code = exc.response.status_code
+                    provider_error = ProviderError(
+                        "LLM Provider 请求失败",
+                        code="LLM_UPSTREAM_HTTP_ERROR",
+                        retryable=status_code in TRANSIENT_STATUS_CODES or status_code >= 500,
+                    )
+                    cause = exc
+                except (httpx.DecodingError, httpx.UnsupportedProtocol) as exc:
+                    # A broken content encoding or unsupported URL cannot be
+                    # repaired by repeating the paid request unchanged.
+                    last_error_type = type(exc).__name__
+                    provider_error = ProviderError(
+                        "LLM Provider 配置或响应编码无效",
+                        code="LLM_UPSTREAM_INVALID_RESPONSE",
+                        retryable=False,
+                    )
+                    cause = exc
+                except httpx.RequestError as exc:
+                    # Covers timeouts and connection/proxy/protocol failures.
+                    # Keep the public error deliberately generic: exception
+                    # text can contain a request URL or proxy credentials.
+                    last_error_type = type(exc).__name__
+                    provider_error = ProviderError(
+                        "LLM Provider 暂时不可达",
+                        code="LLM_UPSTREAM_UNAVAILABLE",
+                        retryable=True,
+                    )
+                    cause = exc
+                except (ValidationError, TypeError, ValueError) as exc:
+                    # A syntactically successful response with the wrong shape
+                    # is not a transient transport failure. Retrying it hides a
+                    # broken provider contract and can multiply paid calls.
+                    last_error_type = type(exc).__name__
+                    provider_error = ProviderError(
+                        "LLM Provider 返回无效结构化结果",
+                        code="LLM_MALFORMED_RESPONSE",
+                        retryable=False,
+                    )
+                    cause = exc
+
+                if provider_error.retryable and attempt < max_retries:
+                    continue
+                log_call(
+                    task=task,
+                    tier=tier,
+                    model=model,
+                    duration_ms=int((perf_counter() - started_at) * 1000),
+                    retried=attempt > 0,
+                    error_type=last_error_type,
+                )
+                raise provider_error from cause
 
 
 def _format_instructions(response_model: type[BaseModel]) -> str:

@@ -5,6 +5,7 @@ from app.models.entities import (
     Application,
     ApplicationChannel,
     ApplicationEvent,
+    AuditLog,
     CapabilityTarget,
     Interview,
     Job,
@@ -13,11 +14,13 @@ from app.models.entities import (
     Resume,
     ResumeFact,
     ResumeVersion,
+    StorageDeletionTask,
     User,
     UserProfile,
 )
 from app.providers.storage.local import LocalStorage
 from app.security import hash_password
+from app.services.privacy_service import purge_user_data
 
 
 def test_admin_purge_removes_files_and_personal_content(client, db):
@@ -37,6 +40,8 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
         display_name="private.docx",
         parse_status="parsed",
         parsed_text="个人简历全文",
+        contact_json={"phone": "13800000000", "email": "private@example.test"},
+        missing_information_json=[{"question": "请补充私人信息"}],
     )
     db.add(resume)
     db.flush()
@@ -131,6 +136,23 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
     notification = Notification(user_id=user.id, title="私人通知", body="通知正文")
     db.add_all([application, interview, notification, global_channel, private_channel])
     db.flush()
+    related_audit = AuditLog(
+        actor_user_id=None,
+        action="resume_version.reviewed",
+        entity_type="resume_version",
+        entity_id=version.id,
+        metadata_json={"note": "包含个人手机号 13800000000"},
+        ip_hash="private-ip-hash",
+    )
+    unrelated_audit = AuditLog(
+        actor_user_id=None,
+        action="channel.verified",
+        entity_type="application_channel",
+        entity_id=global_channel.id,
+        metadata_json={"source": "公开公司渠道"},
+        ip_hash="public-ip-hash",
+    )
+    db.add_all([related_audit, unrelated_audit])
     db.add(
         ApplicationEvent(
             application_id=application.id,
@@ -193,6 +215,7 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
     assert user.status == "deleted" and user.password_hash == "account-deleted"
     assert profile.school == "" and profile.notes == ""
     assert resume.parsed_text == "" and resume.original_file_key == ""
+    assert resume.contact_json == {} and resume.missing_information_json == []
     assert job.raw_jd == "" and job.source_url == ""
     assert match.evidence_json == [] and match.ai_explanation_json == {}
     assert version.content_json == {} and version.export_file_key == ""
@@ -207,6 +230,11 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
         select(ApplicationEvent).where(ApplicationEvent.application_id == application.id)
     )
     assert event.note == ""
+    db.refresh(related_audit)
+    db.refresh(unrelated_audit)
+    assert related_audit.metadata_json == {} and related_audit.ip_hash == ""
+    assert unrelated_audit.metadata_json == {"source": "公开公司渠道"}
+    assert unrelated_audit.ip_hash == "public-ip-hash"
     assert not storage.path(original_key).exists()
     assert not storage.path(export_key).exists()
 
@@ -215,3 +243,112 @@ def test_regular_user_cannot_list_deletion_requests(client):
     register(client)
     response = client.get("/api/admin/accounts/deletion-requests")
     assert response.status_code == 403
+
+
+def test_file_delete_failure_does_not_restore_anonymized_database_content(client, db):
+    user_data = register(client, email="orphaned-file@example.test")
+    user = db.get(User, user_data["id"])
+    resume = Resume(
+        user_id=user.id,
+        original_file_key="orphaned-private-file.docx",
+        original_media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        display_name="private.docx",
+        parse_status="parsed",
+        parsed_text="不应恢复的简历正文",
+        contact_json={"phone": "13800000000"},
+        missing_information_json=[{"question": "私人澄清问题"}],
+    )
+    db.add(resume)
+    db.commit()
+
+    class FailingStorage:
+        def delete(self, key: str) -> None:
+            raise OSError(f"cannot delete {key}")
+
+    summary = purge_user_data(db, user, FailingStorage())
+    assert summary["files_removed"] == 0
+    assert summary["files_delete_failed"] == 1
+    deletion_task = db.scalar(
+        select(StorageDeletionTask).where(
+            StorageDeletionTask.file_key == "orphaned-private-file.docx"
+        )
+    )
+    assert deletion_task is not None
+    assert deletion_task.attempts == 1
+    assert deletion_task.last_error == "OSError"
+
+    # A later rollback cannot resurrect PII: anonymization was committed first.
+    db.rollback()
+    db.expire_all()
+    stored_user = db.get(User, user.id)
+    stored_resume = db.get(Resume, resume.id)
+    assert stored_user.status == "deleted"
+    assert stored_resume.parsed_text == ""
+    assert stored_resume.contact_json == {}
+    assert stored_resume.missing_information_json == []
+
+
+def test_purge_audit_and_anonymization_roll_back_together(db, monkeypatch):
+    user = User(
+        email="atomic-purge@example.test",
+        password_hash=hash_password("Password123!"),
+        display_name="原始姓名",
+    )
+    db.add(user)
+    db.commit()
+
+    original_commit = db.commit
+
+    def failing_commit():
+        raise RuntimeError("simulated audit transaction failure")
+
+    monkeypatch.setattr(db, "commit", failing_commit)
+    try:
+        try:
+            purge_user_data(db, user, LocalStorage())
+        except RuntimeError:
+            pass
+    finally:
+        monkeypatch.setattr(db, "commit", original_commit)
+    db.rollback()
+    db.expire_all()
+
+    stored = db.get(User, user.id)
+    assert stored.status == "active"
+    assert stored.display_name == "原始姓名"
+    assert db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "account.purged", AuditLog.entity_id == user.id
+        )
+    ) is None
+
+
+def test_post_commit_cleanup_failure_keeps_successful_purge_and_locator(db, monkeypatch):
+    user = User(
+        email="cleanup-retry@example.test",
+        password_hash=hash_password("Password123!"),
+        display_name="等待清理",
+    )
+    db.add(user)
+    db.flush()
+    resume = Resume(
+        user_id=user.id,
+        original_file_key="cleanup-retry.docx",
+        original_media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        display_name="private.docx",
+    )
+    db.add(resume)
+    db.commit()
+
+    def failing_cleanup(*args, **kwargs):
+        raise RuntimeError("cleanup database unavailable")
+
+    monkeypatch.setattr("app.services.privacy_service.process_storage_deletions", failing_cleanup)
+    summary = purge_user_data(db, user, LocalStorage())
+
+    db.expire_all()
+    assert summary["files_delete_failed"] == 1
+    assert db.get(User, user.id).status == "deleted"
+    assert db.scalar(
+        select(StorageDeletionTask).where(StorageDeletionTask.file_key == "cleanup-retry.docx")
+    ) is not None

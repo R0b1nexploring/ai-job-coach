@@ -51,6 +51,14 @@ def test_experience_months_are_calculated_from_structured_dates_without_overlap(
     assert calculate_experience_months(facts, today=date(2026, 8, 11)) == 9
 
 
+def test_experience_months_ignore_future_starts_and_clamp_future_ends():
+    facts = [
+        SimpleNamespace(category="employment", start_date="2027-01", end_date="至今"),
+        SimpleNamespace(category="employment", start_date="2026-06", end_date="2028-12"),
+    ]
+    assert calculate_experience_months(facts, today=date(2026, 8, 11)) == 3
+
+
 def test_capability_service_falls_back_when_model_evidence_is_not_verbatim(monkeypatch):
     async def fake_generate_structured(**_kwargs):
         return (

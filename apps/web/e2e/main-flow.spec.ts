@@ -121,7 +121,7 @@ test('Demo 用户从登录查看简历、岗位、匹配、额度、投递与周
   await expect(page.getByText('生成定制简历').first()).toBeVisible()
   await page.getByRole('link',{name:'投递'}).click()
   await expect(page.getByRole('heading',{name:'投递看板'})).toBeVisible()
-  await page.getByRole('button',{name:'推进到：待生成简历'}).first().click()
+  await page.getByRole('button',{name:'确认加入投递准备'}).first().click()
   await page.getByRole('button',{name:'推进到：待投递'}).first().click()
   await page.getByRole('button',{name:'推进到：已投递'}).first().click()
   await expect(page.getByText('已投递').first()).toBeVisible()

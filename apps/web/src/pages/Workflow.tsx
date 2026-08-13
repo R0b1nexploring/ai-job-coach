@@ -20,7 +20,9 @@ export function Applications() {
   const query = useQuery({ queryKey: ['applications'], queryFn: () => api<any>('/api/applications') })
   const channels = useQuery({ queryKey: ['channels'], queryFn: () => api<any>('/api/channels') })
   const update = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) => api(`/api/applications/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, note: '用户在看板更新' }) }),
+    mutationFn: ({ id, status, currentStatus }: { id: string; status: string; currentStatus: string }) => currentStatus === 'pending_confirmation'
+      ? api(`/api/applications/${id}/confirm`, { method: 'POST' })
+      : api(`/api/applications/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, note: '用户在看板更新' }) }),
     onSuccess: () => client.invalidateQueries({ queryKey: ['applications'] }),
   })
   const emailDraft = useMutation({
@@ -35,7 +37,7 @@ export function Applications() {
     <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{query.data?.items?.length ? query.data.items.map((item: any) =>
       <article className="card" key={item.id}><p className="badge">{statusNames[item.status] || item.status}</p><p className="mt-3 break-all text-sm text-black/60">记录 {item.id.slice(0, 8)}</p>
         <ApplicationChannelInfo channel={channelById.get(item.channel_id)} onDraft={() => emailDraft.mutate(item.id)} />
-        {next[item.status] && <button className="btn-secondary mt-5" onClick={() => update.mutate({ id: item.id, status: next[item.status] })}>推进到：{statusNames[next[item.status]]}</button>}
+        {next[item.status] && <button className="btn-secondary mt-5" onClick={() => update.mutate({ id: item.id, status: next[item.status], currentStatus: item.status })}>{item.status === 'pending_confirmation' ? '确认加入投递准备' : `推进到：${statusNames[next[item.status]]}`}</button>}
       </article>) : <Empty title="还没有投递记录。请先在匹配后加入队列。" />}</div>
     {draft && <EmailDraftModal draft={draft} onClose={() => setDraft(null)} />}
   </>

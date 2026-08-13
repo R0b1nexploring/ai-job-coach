@@ -10,7 +10,10 @@ from app.models import entities  # noqa: F401
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().resolved_database_url())
 if config.config_file_name:
-    fileConfig(config.config_file_name)
+    # Alembic runs in-process in migration tests and maintenance commands.
+    # Keep application loggers alive instead of globally disabling every logger
+    # omitted from alembic.ini.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 target_metadata = Base.metadata
 
 

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -9,6 +10,7 @@ from app.errors import AppError
 from app.models.entities import (
     Application,
     ApplicationChannel,
+    ApplicationChannelReport,
     Job,
     Resume,
     ResumeFact,
@@ -98,7 +100,26 @@ async def report_channel_dead(
     db: Session = Depends(get_db),
 ):
     channel = owned_or_global_channel(db, user, channel_id)
-    channel.dead_reports += 1
+    try:
+        with db.begin_nested():
+            db.add(ApplicationChannelReport(channel_id=channel.id, user_id=user.id))
+            db.flush()
+    except IntegrityError:
+        # A user can report a shared channel only once.  The database constraint
+        # also protects this rule when duplicate requests arrive concurrently.
+        pass
+    distinct_reports = int(
+        db.scalar(
+            select(func.count(ApplicationChannelReport.id)).where(
+                ApplicationChannelReport.channel_id == channel.id
+            )
+        )
+        or 0
+    )
+    # Preserve any pre-migration aggregate while all new reports are backed by
+    # one row per user.  Fresh channels therefore always expose the exact
+    # distinct-user count.
+    channel.dead_reports = max(channel.dead_reports, distinct_reports)
     if channel.dead_reports >= 3:
         channel.verify_status = "dead"
     db.commit()
@@ -152,7 +173,7 @@ async def application_email_draft(
         )
     )
     profile = db.get(UserProfile, user.id)
-    return await build_email_draft(
+    draft = await build_email_draft(
         profile,
         version,
         job,
@@ -160,3 +181,11 @@ async def application_email_draft(
         facts=facts,
         contact=resume.contact_json if resume else {},
     )
+    if draft["guard_status"] != "passed":
+        raise AppError(
+            "EMAIL_DRAFT_FACTS_REQUIRED",
+            "没有可溯源的岗位匹配事实，暂不能生成邮件草稿。",
+            409,
+            {"guard_issues": draft["guard_issues"][:10]},
+        )
+    return draft

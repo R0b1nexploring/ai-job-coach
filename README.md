@@ -32,11 +32,11 @@ source .venv/bin/activate
 pip install -e '.[dev]'
 python -m alembic upgrade head
 python ../../scripts/seed_demo.py
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 cd apps/web
 npm install
-npm run dev -- --host 0.0.0.0
+npm run dev -- --host 127.0.0.1
 ```
 
 ## PowerShell 备用方式

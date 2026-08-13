@@ -2,24 +2,37 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
+import { useAuth } from '../app/AuthContext'
 import { ErrorState } from '../components/States'
+import { clearOnboardingDraft, loadOnboardingDraft, saveOnboardingDraft } from '../utils/onboardingDraft'
 
 type Form = {
   school: string; major: string; graduation_year: number; education_level: string;
   target_cities: string; target_roles: string; target_industries: string;
   accepts_shift: string; accepts_travel: string; accepts_factory: string; consent: boolean;
 }
-const key = 'ai-job-coach-onboarding-draft'
 const defaults: Form = { school: '', major: '', graduation_year: 2026, education_level: '本科', target_cities: '杭州', target_roles: '设备工程师,机械助理工程师', target_industries: '制造业', accepts_shift: 'unknown', accepts_travel: 'yes', accepts_factory: 'yes', consent: false }
+const stringFields: Array<keyof Form> = ['school', 'major', 'education_level', 'target_cities', 'target_roles', 'target_industries', 'accepts_shift', 'accepts_travel', 'accepts_factory']
+
+function isValidDraft(value: Record<string, unknown>): boolean {
+  return stringFields.every((field) => value[field] === undefined || typeof value[field] === 'string')
+    && (value.graduation_year === undefined || (typeof value.graduation_year === 'number' && Number.isFinite(value.graduation_year)))
+    && (value.consent === undefined || typeof value.consent === 'boolean')
+}
 
 export function Onboarding() {
   const [step, setStep] = useState(1)
   const [file, setFile] = useState<File>()
   const [error, setError] = useState<unknown>()
   const navigate = useNavigate()
-  const stored = localStorage.getItem(key)
-  const form = useForm<Form>({ defaultValues: stored ? { ...defaults, ...JSON.parse(stored) } : defaults })
-  useEffect(() => { const subscription = form.watch((value) => localStorage.setItem(key, JSON.stringify(value))); return () => subscription.unsubscribe() }, [form])
+  const { user } = useAuth()
+  const stored = user ? loadOnboardingDraft<Form>(user.id, isValidDraft) : undefined
+  const form = useForm<Form>({ defaultValues: { ...defaults, ...stored } })
+  useEffect(() => {
+    if (!user) return
+    const subscription = form.watch((value) => saveOnboardingDraft(user.id, value))
+    return () => subscription.unsubscribe()
+  }, [form, user])
 
   const save = async (value: Form) => {
     setError(undefined)
@@ -33,7 +46,7 @@ export function Onboarding() {
         accepts_travel: value.accepts_travel === 'yes', accepts_factory: value.accepts_factory === 'yes',
       }) })
       if (file) { const body = new FormData(); body.append('file', file); await api('/api/resumes', { method: 'POST', body }) }
-      localStorage.removeItem(key)
+      clearOnboardingDraft(user?.id)
       navigate('/app/resumes')
     } catch (reason) { setError(reason) }
   }

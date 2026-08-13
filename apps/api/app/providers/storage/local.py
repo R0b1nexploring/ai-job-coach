@@ -1,17 +1,33 @@
+import os
 import secrets
 from pathlib import Path
 
 from app.config import get_settings
 
+from .base import StorageProvider
 
-class LocalStorage:
+
+class LocalStorage(StorageProvider):
     def __init__(self):
         self.root = get_settings().resolved_storage_path()
-        self.root.mkdir(parents=True, exist_ok=True)
+        if self.root.is_symlink():
+            raise RuntimeError("本地存储根目录不得是符号链接。")
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if os.name == "posix" and not self.root.is_symlink():
+            self.root.chmod(0o700)
 
     def save(self, content: bytes, suffix: str) -> str:
         key = f"{secrets.token_hex(16)}{suffix.lower()}"
-        (self.root / key).write_bytes(content)
+        path = self.root / key
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(descriptor, "wb") as file_handle:
+                file_handle.write(content)
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        if os.name == "posix":
+            path.chmod(0o600)
         return key
 
     def path(self, key: str) -> Path:

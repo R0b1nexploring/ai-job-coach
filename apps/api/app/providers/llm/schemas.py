@@ -1,6 +1,8 @@
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
+
+GroundedJobText = Annotated[str, Field(min_length=1, max_length=5000)]
 
 
 class ResumeContactOutput(BaseModel):
@@ -50,15 +52,15 @@ class CapabilityPlanOutput(BaseModel):
 
 
 class JobStructuredOutput(BaseModel):
-    title: str
-    company_name: str
-    city: str = ""
-    responsibilities: list[str] = Field(default_factory=list)
-    must_have: list[str] = Field(default_factory=list)
-    nice_to_have: list[str] = Field(default_factory=list)
-    keywords: list[str] = Field(default_factory=list)
-    work_conditions: list[str] = Field(default_factory=list)
-    uncertain_fields: list[str] = Field(default_factory=list)
+    title: str = Field(min_length=1, max_length=200)
+    company_name: str = Field(min_length=1, max_length=200)
+    city: str = Field(default="", max_length=100)
+    responsibilities: list[GroundedJobText] = Field(default_factory=list, max_length=30)
+    must_have: list[GroundedJobText] = Field(default_factory=list, max_length=30)
+    nice_to_have: list[GroundedJobText] = Field(default_factory=list, max_length=30)
+    keywords: list[GroundedJobText] = Field(default_factory=list, max_length=50)
+    work_conditions: list[GroundedJobText] = Field(default_factory=list, max_length=30)
+    uncertain_fields: list[str] = Field(default_factory=list, max_length=20)
 
 
 class MatchExplanationOutput(BaseModel):

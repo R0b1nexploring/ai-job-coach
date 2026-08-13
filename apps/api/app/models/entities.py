@@ -1,8 +1,18 @@
 import enum
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -13,7 +23,7 @@ def uid() -> str:
 
 
 def now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Role(str, enum.Enum):
@@ -143,6 +153,14 @@ class Job(Base):
 
 class Match(Base):
     __tablename__ = "matches"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "resume_id",
+            "job_id",
+            name="uq_matches_user_resume_job",
+        ),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     resume_id: Mapped[str] = mapped_column(ForeignKey("resumes.id"))
@@ -183,12 +201,32 @@ class CapabilityTarget(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class CapabilityTargetRun(Base):
+    """Atomic generation claim for one match's capability-target set."""
+
+    __tablename__ = "capability_target_runs"
+    match_id: Mapped[str] = mapped_column(
+        ForeignKey("matches.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    claim_token: Mapped[str] = mapped_column(String(36), default=uid)
+    request_hash: Mapped[str] = mapped_column(String(64), default="")
+    provider: Mapped[str] = mapped_column(String(50), default="")
+    last_error: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class ResumeVersion(Base):
     __tablename__ = "resume_versions"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     base_resume_id: Mapped[str] = mapped_column(ForeignKey("resumes.id"))
     job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"))
+    match_id: Mapped[str | None] = mapped_column(
+        ForeignKey("matches.id"), nullable=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(200))
     kind: Mapped[str] = mapped_column(String(20), default="submittable")
     content_json: Mapped[dict] = mapped_column(JSON)
@@ -209,11 +247,8 @@ class ApplicationChannel(Base):
     __tablename__ = "application_channels"
     __table_args__ = (
         UniqueConstraint(
-            "company_name_normalized",
-            "channel_type",
-            "url",
-            "email",
-            name="uq_application_channel_identity",
+            "content_hash",
+            name="uq_application_channels_content_hash",
         ),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -235,10 +270,31 @@ class ApplicationChannel(Base):
     )
     verify_status: Mapped[str] = mapped_column(String(20), default="unverified")
     dead_reports: Mapped[int] = mapped_column(Integer, default=0)
-    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64))
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ApplicationChannelReport(Base):
+    """One user's dead-link report for one shared application channel."""
+
+    __tablename__ = "application_channel_reports"
+    __table_args__ = (
+        UniqueConstraint(
+            "channel_id",
+            "user_id",
+            name="uq_application_channel_reports_channel_user",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    channel_id: Mapped[str] = mapped_column(
+        ForeignKey("application_channels.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class Application(Base):
@@ -351,7 +407,38 @@ class QuotaLedger(Base):
     reference_id: Mapped[str] = mapped_column(String(100), default="")
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String(200))
+    request_hash: Mapped[str] = mapped_column(String(64), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class QuotaBalance(Base):
+    """Atomically updated quota total; the ledger remains the immutable audit trail."""
+
+    __tablename__ = "quota_balances"
+    __table_args__ = (
+        CheckConstraint("balance >= 0", name="ck_quota_balances_nonnegative"),
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    quota_type: Mapped[str] = mapped_column(String(30), primary_key=True)
+    balance: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class QuotaReservation(Base):
+    """Lifecycle marker for quota debited before an external generation call."""
+
+    __tablename__ = "quota_reservations"
+    ledger_id: Mapped[str] = mapped_column(
+        ForeignKey("quota_ledger.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    quota_type: Mapped[str] = mapped_column(String(30))
+    amount: Mapped[int] = mapped_column(Integer)
+    resource_type: Mapped[str] = mapped_column(String(50))
+    resource_id: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
 class AuditLog(Base):
@@ -374,3 +461,20 @@ class Notification(Base):
     body: Mapped[str] = mapped_column(Text)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class StorageDeletionTask(Base):
+    """Durable locator for a private file that still needs physical deletion."""
+
+    __tablename__ = "storage_deletion_tasks"
+    __table_args__ = (
+        UniqueConstraint("file_key", name="uq_storage_deletion_tasks_file_key"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    file_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

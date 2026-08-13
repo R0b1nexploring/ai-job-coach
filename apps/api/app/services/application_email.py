@@ -3,7 +3,7 @@ from urllib.parse import quote, urlencode
 from app.providers.llm.runtime import generate_structured
 from app.providers.llm.schemas import EmailDraftStructuredOutput
 
-from .claim_entities import corpus_contains, extract_claim_entities
+from .claim_entities import corpus_contains, extract_claim_entities, unsupported_chinese_claims
 
 MAILTO_MAX_LENGTH = 2000
 
@@ -94,8 +94,10 @@ async def build_email_draft(
             f"附件含 {resume_version.unachieved_count} 条未达成内容；邮件正文只引用已达成事实。"
         )
     attachment_hint = f"请手动附加经审核的 DOCX 简历：{resume_version.title}"
-    mailto_url = _mailto(channel.email, subject, body)
-    if not mailto_url:
+    mailto_url = _mailto(channel.email, subject, body) if guard_status == "passed" else ""
+    if guard_status != "passed":
+        warnings.append("邮件匹配点未通过事实校验，请先确认至少一条相关事实。")
+    elif not mailto_url:
         warnings.append("正文较长，未生成 mailto 链接；请复制主题和正文到邮件客户端。")
     return {
         "to": channel.email,
@@ -116,8 +118,16 @@ def guard_email_match_points(points: list[dict], facts: list) -> tuple[str, list
     facts_by_id = {
         str(fact.id): fact for fact in facts if fact.verification_status == "user_confirmed"
     }
-    issues = ["邮件匹配点不能超过 3 条"] if len(points) > 3 else []
+    issues = []
+    if not points:
+        issues.append("邮件至少需要一条可溯源的匹配点")
+    if len(points) > 3:
+        issues.append("邮件匹配点不能超过 3 条")
     for index, point in enumerate(points):
+        text = str(point.get("text") or "")
+        if not text.strip():
+            issues.append(f"第 {index + 1} 条匹配点内容不能为空")
+            continue
         ids = [str(value) for value in point.get("source_fact_ids") or []]
         if not ids or any(value not in facts_by_id for value in ids):
             issues.append(f"第 {index + 1} 条匹配点引用了未确认事实")
@@ -133,9 +143,13 @@ def guard_email_match_points(points: list[dict], facts: list) -> tuple[str, list
             )
             for value in ids
         )
-        for entity in extract_claim_entities(str(point.get("text") or "")):
+        for entity in extract_claim_entities(text):
             if not corpus_contains(corpus, entity):
                 issues.append(f"第 {index + 1} 条匹配点包含无来源实体：{entity}")
+        issues.extend(
+            f"第 {index + 1} 条匹配点包含无来源中文主张：{claim}"
+            for claim in unsupported_chinese_claims(text, corpus)
+        )
     return ("blocked" if issues else "passed", sorted(set(issues)))
 
 

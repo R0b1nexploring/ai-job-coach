@@ -517,7 +517,7 @@ def main() -> int:
     if settings.llm_provider.strip().lower() != "compatible":
         print("拒绝执行：LLM_PROVIDER 必须为 compatible。", file=sys.stderr)
         return 2
-    if not settings.llm_api_key or not settings.model_for("resume_rewrite"):
+    if not settings.llm_api_key.get_secret_value() or not settings.model_for("resume_rewrite"):
         print("拒绝执行：真实 Provider 配置不完整。", file=sys.stderr)
         return 2
     if args.verbose_metadata:

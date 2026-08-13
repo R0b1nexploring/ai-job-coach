@@ -6,7 +6,7 @@ def provider_status() -> dict:
     llm_name = settings.llm_provider.strip().lower()
     required = {
         "LLM_API_BASE_URL": bool(settings.llm_api_base_url.strip()),
-        "LLM_API_KEY": bool(settings.llm_api_key.strip()),
+        "LLM_API_KEY": bool(settings.llm_api_key.get_secret_value().strip()),
         "LLM_MODEL_CHEAP 或 LLM_MODEL": bool(settings.model_for("jd_normalize")),
         "LLM_MODEL_STRONG 或 LLM_MODEL": bool(settings.model_for("resume_rewrite")),
     }
@@ -60,7 +60,10 @@ def provider_status() -> dict:
         "storage": {
             "provider": settings.storage_provider,
             "operational": settings.storage_provider == "local",
-            "notice": "当前为本地私有存储；正式运营需切换私有对象存储。",
+            "production_ready": False,
+            "notice": (
+                "当前仅实现本地私有存储；生产模式会拒绝启动，直至接入真正的私有对象存储。"
+            ),
         },
         "payment": {
             "provider": settings.payment_provider,

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -184,6 +184,27 @@ test('邮件渠道投递记录可以生成只读草稿', async () => {
   expect(screen.getByDisplayValue('应聘设备工程师 - 小陈')).toBeVisible()
     expect(screen.getByText(/系统不会代发邮件/)).toBeVisible()
   expect(screen.getByRole('link', { name: '在邮件客户端打开' })).toHaveAttribute('href', 'mailto:jobs@example.com')
+})
+
+test('待确认投递必须调用专用确认接口', async () => {
+  const requests: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    requests.push(`${init?.method || 'GET'} ${url}`)
+    if (url.endsWith('/api/channels')) {
+      return new Response(JSON.stringify({ items: [], total: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    if (url.endsWith('/api/applications') && !init?.method) {
+      return new Response(JSON.stringify({ items: [{ id: 'a1', status: 'pending_confirmation', channel_id: null }], total: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ id: 'a1', status: 'preparing_resume' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }))
+
+  shell(<Applications />)
+  await userEvent.setup().click(await screen.findByRole('button', { name: '确认加入投递准备' }))
+
+  await waitFor(() => expect(requests).toContain('POST /api/applications/a1/confirm'))
+  expect(requests).not.toContain('PATCH /api/applications/a1/status')
 })
 
 test('顾问九队列同时展示空状态和任务状态', async () => {

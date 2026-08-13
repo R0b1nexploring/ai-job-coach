@@ -129,9 +129,18 @@ def evaluate_resume_content(
     targets: list | None,
     *,
     kind: str,
+    expected_headline: str | None = None,
+    expected_contact: dict | None = None,
 ) -> dict:
     guard = guard_content(content, facts, targets, mode=kind)
-    quality_issues = content_quality_issues(content, facts, targets, kind=kind)
+    quality_issues = content_quality_issues(
+        content,
+        facts,
+        targets,
+        kind=kind,
+        expected_headline=expected_headline,
+        expected_contact=expected_contact,
+    )
     issues = sorted({*guard["issues"], *quality_issues})
     return {
         **guard,
@@ -161,7 +170,7 @@ async def generate_guarded_resume(
         response_model=ResumeStructuredV2Output,
     )
     content, evaluation = _prepare_and_evaluate_resume(
-        structured.model_dump(), confirmed, job, active_targets, kind
+        structured.model_dump(), confirmed, job, active_targets, kind, contact
     )
     semantic_retry_used = False
     semantic_retry_issues: list[str] = []
@@ -184,7 +193,7 @@ async def generate_guarded_resume(
             response_model=ResumeStructuredV2Output,
         )
         content, evaluation = _prepare_and_evaluate_resume(
-            structured.model_dump(), confirmed, job, active_targets, kind
+            structured.model_dump(), confirmed, job, active_targets, kind, contact
         )
 
     fallback_used = provider_name != "compatible"
@@ -200,7 +209,14 @@ async def generate_guarded_resume(
         content = fallback
         fallback_used = True
         fallback_reason = "model_output_failed_validation"
-        evaluation = evaluate_resume_content(content, confirmed, active_targets, kind=kind)
+        evaluation = evaluate_resume_content(
+            content,
+            confirmed,
+            active_targets,
+            kind=kind,
+            expected_headline=job.title,
+            expected_contact=contact,
+        )
     return {
         "content": content,
         "provider": provider_name,
@@ -278,12 +294,20 @@ def _prepare_and_evaluate_resume(
     job,
     targets: list,
     kind: str,
+    contact: dict | None,
 ) -> tuple[dict, dict]:
     requirements = list(dict.fromkeys([*(job.must_have_json or []), *(job.keywords_json or [])]))
     fact_relevance = {str(fact.id): relevance(fact, requirements) for fact in facts}
     target_severity = {str(target.id): target.severity for target in targets}
     prepared = enforce_page_budget(content, fact_relevance, target_severity)
-    evaluation = evaluate_resume_content(prepared, facts, targets, kind=kind)
+    evaluation = evaluate_resume_content(
+        prepared,
+        facts,
+        targets,
+        kind=kind,
+        expected_headline=job.title,
+        expected_contact=contact,
+    )
     return prepared, evaluation
 
 
@@ -293,12 +317,22 @@ def content_quality_issues(
     targets: list | None,
     *,
     kind: str,
+    expected_headline: str | None = None,
+    expected_contact: dict | None = None,
 ) -> list[str]:
-    if content.get("content_version", 1) == 1:
-        return []
     issues = []
+    if expected_headline is not None and not _safe_headline(
+        str(content.get("headline") or ""), expected_headline
+    ):
+        issues.append("简历标题包含未经来源支持的职业主张")
+    if content.get("content_version", 1) == 1:
+        return issues
     if content.get("kind") != kind:
         issues.append("简历 kind 与请求模式不一致")
+    if expected_contact is not None and _normalized_contact(
+        content.get("contact")
+    ) != _normalized_contact(expected_contact):
+        issues.append("简历联系方式与已确认的原始简历信息不一致")
     facts_by_id = {str(fact.id): fact for fact in facts}
     targets_by_id = {str(target.id): target for target in targets or []}
     referenced_target_ids: set[str] = set()
@@ -349,6 +383,36 @@ def content_quality_issues(
     if kind == "target" and targets_by_id and not referenced_target_ids.intersection(targets_by_id):
         issues.append("蓝图简历未包含任何未达成学习目标")
     return list(dict.fromkeys(issues))
+
+
+def _safe_headline(value: str, job_title: str) -> bool:
+    """Allow presentation-only wrappers around the selected job title.
+
+    Seniority, years of experience and credentials are not presentation text;
+    they must never enter a headline merely because an LLM produced them.
+    """
+
+    def normalize(text: str) -> str:
+        return re.sub(r"[\s·|｜—–_-]+", "", str(text or "")).strip("，,。；;：:")
+
+    title = normalize(job_title)
+    headline = normalize(value)
+    return bool(title) and headline in {
+        title,
+        f"{title}简历",
+        f"{title}求职简历",
+        f"{title}岗位定制简历",
+        f"应聘{title}",
+        f"应聘{title}简历",
+    }
+
+
+def _normalized_contact(value: dict | None) -> dict[str, str]:
+    contact = value if isinstance(value, dict) else {}
+    return {
+        field: re.sub(r"\s+", "", str(contact.get(field) or ""))
+        for field in ("name", "phone", "email", "city")
+    }
 
 
 def enforce_page_budget(

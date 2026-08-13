@@ -1,4 +1,8 @@
-from app.services.claim_entities import corpus_contains, extract_claim_entities
+from app.services.claim_entities import (
+    corpus_contains,
+    extract_claim_entities,
+    unsupported_chinese_claims,
+)
 
 
 def guard_content(
@@ -36,7 +40,9 @@ def guard_content(
         if invalid_fact_ids:
             issues.append("引用了未确认或不属于当前用户的事实")
 
-        invalid_target_ids = [target_id for target_id in target_ids if target_id not in targets_by_id]
+        invalid_target_ids = [
+            target_id for target_id in target_ids if target_id not in targets_by_id
+        ]
         if target_ids and mode == "submittable":
             issues.append("可投递简历不得引用未达成目标")
         elif invalid_target_ids:
@@ -50,7 +56,11 @@ def guard_content(
 
         corpus = " ".join(
             [
-                *(_fact_corpus(facts_by_id[fact_id]) for fact_id in fact_ids if fact_id in facts_by_id),
+                *(
+                    _fact_corpus(facts_by_id[fact_id])
+                    for fact_id in fact_ids
+                    if fact_id in facts_by_id
+                ),
                 *(
                     _target_corpus(targets_by_id[target_id])
                     for target_id in valid_target_ids
@@ -61,6 +71,10 @@ def guard_content(
         for entity in extract_claim_entities(str(bullet.get("text") or "")):
             if not corpus_contains(corpus, entity):
                 issues.append(f"未经来源支持的实体：{entity}")
+        issues.extend(
+            f"未经来源支持的中文主张：{claim}"
+            for claim in unsupported_chinese_claims(str(bullet.get("text") or ""), corpus)
+        )
         issues.extend(
             f"显式标记的新主张：{claim}"
             for claim in bullet.get("new_claims", [])
@@ -79,6 +93,8 @@ def guard_content(
             }
         )
 
+    if not item_results:
+        all_issues.append("简历内容没有可校验条目")
     issues = sorted(set(all_issues))
     return {
         "status": "blocked" if issues else "passed",

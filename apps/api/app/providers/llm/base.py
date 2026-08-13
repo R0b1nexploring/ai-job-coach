@@ -7,7 +7,18 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class ProviderError(Exception):
-    pass
+    """A redacted provider failure safe to handle outside the provider layer."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "LLM_PROVIDER_ERROR",
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
 
 
 logger = logging.getLogger("app.llm")

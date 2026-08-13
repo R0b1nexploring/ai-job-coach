@@ -1,23 +1,110 @@
 import asyncio
+import atexit
 import io
+import os
+import shutil
+import tempfile
+from pathlib import Path
+
+_PYTEST_SESSION_ROOT = Path(tempfile.mkdtemp(prefix="ai-job-coach-pytest-")).resolve()
+_PYTEST_SESSION_STORAGE = _PYTEST_SESSION_ROOT / "uploads"
+_PYTEST_SESSION_STORAGE.mkdir()
+os.environ.update(
+    {
+        "AI_JOB_COACH_TEST_ROOT": str(_PYTEST_SESSION_ROOT),
+        "APP_ENV": "test",
+        "DATABASE_URL": f"sqlite:///{_PYTEST_SESSION_ROOT / 'app.db'}",
+        "LOCAL_STORAGE_PATH": str(_PYTEST_SESSION_STORAGE),
+        "STORAGE_PROVIDER": "local",
+        "LLM_PROVIDER": "mock",
+        "LLM_API_BASE_URL": "",
+        "LLM_API_KEY": "",
+        "LLM_MODEL": "",
+        "LLM_MODEL_CHEAP": "",
+        "LLM_MODEL_STRONG": "",
+        "PAYMENT_PROVIDER": "disabled",
+        "JOB_SOURCE_ALLOWED_HOSTS": "",
+    }
+)
+atexit.register(shutil.rmtree, _PYTEST_SESSION_ROOT, True)
 
 import httpx
 import pytest
 from docx import Document
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
+
+from app.config import get_settings
+
+
+def _assert_isolated_environment(test_root: Path) -> None:
+    settings = get_settings()
+    if settings.app_env != "test":
+        raise RuntimeError("测试启动已拒绝：APP_ENV 必须为 test。")
+    if settings.llm_provider != "mock" or settings.payment_provider != "disabled":
+        raise RuntimeError("测试启动已拒绝：外部服务必须使用 mock/disabled provider。")
+    if settings.storage_provider != "local":
+        raise RuntimeError("测试启动已拒绝：STORAGE_PROVIDER 必须为 local。")
+
+    database_url = make_url(settings.resolved_database_url())
+    if database_url.get_backend_name() != "sqlite" or not database_url.database:
+        raise RuntimeError("测试启动已拒绝：DATABASE_URL 必须为临时 SQLite 文件。")
+    database_path = Path(database_url.database).resolve()
+    storage_path = settings.resolved_storage_path().resolve()
+    if not database_path.is_relative_to(test_root) or database_path == test_root:
+        raise RuntimeError("测试启动已拒绝：数据库不在隔离测试目录中。")
+    if not storage_path.is_relative_to(test_root) or storage_path == test_root:
+        raise RuntimeError("测试启动已拒绝：上传目录不在隔离测试目录中。")
+
+
+_assert_isolated_environment(_PYTEST_SESSION_ROOT)
 
 from app.database import Base, get_db, make_engine
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def isolated_test_environment(tmp_path, monkeypatch):
+    test_root = (tmp_path / "isolated-runtime").resolve()
+    storage_path = test_root / "uploads"
+    storage_path.mkdir(parents=True)
+    environment = {
+        "AI_JOB_COACH_TEST_ROOT": str(test_root),
+        "APP_ENV": "test",
+        "DATABASE_URL": f"sqlite:///{test_root / 'app.db'}",
+        "LOCAL_STORAGE_PATH": str(storage_path),
+        "STORAGE_PROVIDER": "local",
+        "LLM_PROVIDER": "mock",
+        "LLM_API_BASE_URL": "",
+        "LLM_API_KEY": "",
+        "LLM_MODEL": "",
+        "LLM_MODEL_CHEAP": "",
+        "LLM_MODEL_STRONG": "",
+        "PAYMENT_PROVIDER": "disabled",
+        "JOB_SOURCE_ALLOWED_HOSTS": "",
+    }
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+    _assert_isolated_environment(test_root)
+    try:
+        yield test_root
+    finally:
+        get_settings.cache_clear()
+        shutil.rmtree(test_root, ignore_errors=True)
+
+
 @pytest.fixture()
-def db(tmp_path):
-    engine = make_engine(f"sqlite:///{tmp_path / 'test.db'}")
+def db(isolated_test_environment):
+    engine = make_engine()
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, expire_on_commit=False)
-    with Session() as session:
-        yield session
-    Base.metadata.drop_all(engine)
+    try:
+        with Session() as session:
+            yield session
+    finally:
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 @pytest.fixture()
