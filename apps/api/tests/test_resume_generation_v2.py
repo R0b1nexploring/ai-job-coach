@@ -1,4 +1,5 @@
 import asyncio
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -12,11 +13,13 @@ from app.services.html_resume_renderer import render_resume_html
 from app.services.quota_service import change
 from app.services.resume_generator import (
     ACTION_PREFIXES,
+    JD_GAP_SECTION,
     MAX_BULLET_CHARS,
     enforce_page_budget,
     estimate_resume_lines,
     evaluate_resume_content,
     generate_guarded_resume,
+    generate_resume,
 )
 
 
@@ -321,10 +324,21 @@ def test_target_and_submittable_versions_use_distinct_sources_and_learned_facts(
     learned = db.scalar(select(ResumeFact).where(ResumeFact.id == learned_fact_id))
     assert learned.provenance == "learned"
 
-    for bullet in bullets(grown["content_json"]):
-        assert len(bullet["text"]) <= MAX_BULLET_CHARS
-        assert bullet["text"].startswith(ACTION_PREFIXES)
-        assert bullet["source_fact_ids"] or bullet["source_target_ids"]
+    skill_names = {
+        section["name"]
+        for section in grown["content_json"].get("sections", [])
+        if section.get("presentation") == "tags" or section.get("name") in {"技能", "技能证书"}
+    }
+    for section in grown["content_json"].get("sections", []):
+        tag_section = section.get("presentation") == "tags" or section.get("name") in {"技能", "技能证书"}
+        for bullet in bullets({"sections": [section]}):
+            assert len(bullet["text"]) <= MAX_BULLET_CHARS
+            assert bullet["source_fact_ids"] or bullet["source_target_ids"]
+            if tag_section:
+                assert not bullet["text"].startswith(("掌握", "熟悉", "了解", "精通"))
+            else:
+                assert bullet["text"].startswith(ACTION_PREFIXES)
+    assert skill_names <= {"技能", "技能证书"}
     assert estimate_resume_lines(grown["content_json"]) <= 48
 
 
@@ -647,7 +661,8 @@ def test_target_and_interview_sources_are_isolated_by_match(client, db):
     assert version_b.status_code == 201, version_b.text
     version_b = version_b.json()
     assert version_b["match_id"] == match_b["id"]
-    assert version_b["unachieved_count"] == 0
+    assert version_b["unachieved_count"] >= 1
+    assert version_b["content_json"]["sections"][0]["name"] == JD_GAP_SECTION
     assert not {
         target_id
         for bullet in bullets(version_b["content_json"])
@@ -804,3 +819,219 @@ def test_missing_docx_cache_is_regenerated(client, db):
     db.refresh(row)
     assert row.export_file_key != "missing-cache.docx"
     assert LocalStorage().path(row.export_file_key).exists()
+
+
+def test_owner_can_preview_and_download_after_guard_without_advisor(client, db):
+    _user, resume, job, match, _targets = setup_resume_match(client, db)
+    version = client.post(
+        "/api/resume-versions",
+        headers={"Idempotency-Key": "owner-download-draft"},
+        json={
+            "base_resume_id": resume["id"],
+            "job_id": job["id"],
+            "match_id": match["id"],
+            "kind": "submittable",
+        },
+    )
+    assert version.status_code == 201, version.text
+    version_id = version.json()["id"]
+    assert version.json()["review_status"] == "draft"
+    preview = client.get(f"/api/resume-versions/{version_id}/preview")
+    assert preview.status_code == 200
+    download = client.get(f"/api/resume-versions/{version_id}/download")
+    assert download.status_code == 200
+    blocked = client.post(
+        "/api/applications",
+        json={"job_id": job["id"], "resume_version_id": version_id},
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "RESUME_NOT_APPROVED"
+
+
+def test_deterministic_resume_splits_star_clauses_without_ellipsis():
+    fact = SimpleNamespace(
+        id="fact-1",
+        verification_status="user_confirmed",
+        category="projects",
+        label="去核机课程设计",
+        value_json={"text": "完成红枣去核机传动与执行机构设计。负责机构方案，并输出 CAD 图纸。"},
+        source_text="完成红枣去核机传动与执行机构设计。负责机构方案，并输出 CAD 图纸。",
+        organization="示例大学",
+        role_title="项目负责人",
+        location="杭州",
+        start_date="2024-03",
+        end_date="2024-06",
+        provenance="original_resume",
+    )
+    job = SimpleNamespace(
+        title="机械设计工程师",
+        company_name="示例制造公司",
+        must_have_json=["CAD"],
+        keywords_json=["机械"],
+    )
+
+    content = generate_resume([fact], job, kind="submittable")
+    texts = [bullet["text"] for bullet in bullets(content)]
+
+    assert all("…" not in text for text in texts)
+    assert any("CAD" in text and "图纸" in text for text in texts)
+    assert any("设计" in text for text in texts)
+    assert all(len(text) <= MAX_BULLET_CHARS for text in texts)
+    assert all(text.startswith(ACTION_PREFIXES) for text in texts)
+    assert any("并输出 CAD 图纸" in text or "输出 CAD 图纸" in text for text in texts)
+    project_section = next(section for section in content["sections"] if section["name"] == "项目经历")
+    assert project_section["items"][0]["organization"] == "示例大学"
+
+
+def test_experience_library_facts_appear_in_generated_resume(client, db):
+    _user, resume, job, match, _targets = setup_resume_match(client, db)
+    created = client.post(
+        "/api/experience",
+        json={
+            "kind": "project",
+            "title": "巡检台账练习",
+            "organization": "用户自己的实习工厂",
+            "role_title": "实习生",
+            "summary": "整理设备点检记录并核对 CAD 图纸尺寸。",
+            "bullets_json": ["整理点检记录"],
+            "skills_json": ["设备点检"],
+        },
+    )
+    assert created.status_code == 201, created.text
+    version = client.post(
+        "/api/resume-versions",
+        headers={"Idempotency-Key": "library-fact-resume"},
+        json={
+            "base_resume_id": resume["id"],
+            "job_id": job["id"],
+            "match_id": match["id"],
+            "kind": "submittable",
+        },
+    )
+    assert version.status_code == 201, version.text
+    texts = " ".join(bullet["text"] for bullet in bullets(version.json()["content_json"]))
+    organizations = [
+        item.get("organization", "")
+        for section in version.json()["content_json"]["sections"]
+        for item in section.get("items", [])
+    ]
+    assert "用户自己的实习工厂" in organizations or "点检" in texts
+
+
+def _confirmed_fact(**overrides):
+    payload = {
+        "verification_status": "user_confirmed",
+        "source_text": "",
+        "organization": "",
+        "role_title": "",
+        "location": "",
+        "start_date": "",
+        "end_date": "",
+        "provenance": "original_resume",
+    }
+    payload.update(overrides)
+    payload.setdefault("label", payload.get("value_json", {}).get("text", "经历"))
+    payload.setdefault("source_text", payload.get("value_json", {}).get("text", ""))
+    return SimpleNamespace(**payload)
+
+
+def test_job_template_puts_experience_before_education_and_keeps_skills_as_tags():
+    education = _confirmed_fact(
+        id="edu-1",
+        category="education",
+        label="机械工程本科",
+        value_json={"text": "示例大学机械工程本科"},
+        organization="示例大学",
+        role_title="机械工程本科",
+        start_date="2021-09",
+        end_date="2025-06",
+    )
+    project = _confirmed_fact(
+        id="proj-1",
+        category="projects",
+        label="去核机课程设计",
+        value_json={"text": "完成红枣去核机传动与执行机构设计，并输出 CAD 图纸。"},
+        organization="示例大学",
+        role_title="项目负责人",
+        start_date="2024-03",
+        end_date="2024-06",
+    )
+    skill = _confirmed_fact(
+        id="skill-1",
+        category="skills",
+        label="机械设计软件",
+        value_json={"text": "掌握 SolidWorks、AutoCAD、GD&T"},
+    )
+    job = SimpleNamespace(
+        title="机械设计工程师",
+        company_name="示例制造公司",
+        must_have_json=["SolidWorks", "CAD"],
+        keywords_json=["机械"],
+    )
+
+    content = generate_resume([project, skill, education], job, kind="submittable")
+    names = [section["name"] for section in content["sections"]]
+
+    assert names.index("项目经历") < names.index("教育背景")
+    assert names.index("教育背景") < names.index("技能证书")
+    skill_section = next(section for section in content["sections"] if section["name"] == "技能证书")
+    assert skill_section["presentation"] == "tags"
+    skill_texts = [bullet["text"] for bullet in bullets({"sections": [skill_section]})]
+    assert skill_texts == ["SolidWorks", "AutoCAD", "GD&T"]
+    assert all("掌握" not in text for text in skill_texts)
+    assert all(not text.startswith(ACTION_PREFIXES) for text in skill_texts)
+
+    evaluation = evaluate_resume_content(
+        content,
+        [education, project, skill],
+        [],
+        kind="submittable",
+        expected_headline="机械设计工程师",
+        expected_contact={},
+    )
+    assert evaluation["status"] == "passed", evaluation["issues"]
+
+    html = render_resume_html(content, "备用")
+    assert "SolidWorks / AutoCAD / GD&amp;T" in html or "SolidWorks / AutoCAD / GD&T" in html
+    assert re.search(r'class="skill-tags">[^<]*SolidWorks / AutoCAD', html)
+    assert "掌握了建模能力" not in html
+    assert "项目负责人｜示例大学｜2024.03–2024.06" in html
+    assert "示例大学｜机械工程本科｜2021.09–2025.06" in html
+
+
+def test_blueprint_leads_with_jd_gaps_and_explains_mismatch():
+    fact = grounded_fact()
+    target = SimpleNamespace(
+        id="target-sw",
+        requirement="SolidWorks",
+        category="skills",
+        severity="high",
+        status="pending",
+        deliverable="完成一个含装配体的 SolidWorks 练习并导出工程图",
+        jd_evidence="要求熟悉 SolidWorks 并能输出装配体。",
+    )
+    job = SimpleNamespace(
+        title="机械设计工程师",
+        company_name="示例制造公司",
+        must_have_json=["SolidWorks"],
+        keywords_json=["机械"],
+        raw_jd="负责机械结构设计。\n要求熟悉 SolidWorks 并能输出装配体。",
+    )
+    match = SimpleNamespace(
+        recommendation="低优先",
+        dimension_scores_json={"hard_requirements": 0},
+        gaps_json=[{"requirement": "SolidWorks", "action": "完成练习"}],
+        ai_explanation_json={"summary": "硬性工具要求未覆盖。"},
+    )
+
+    content = generate_resume([fact], job, [target], kind="target", match=match)
+
+    assert content["sections"][0]["name"] == JD_GAP_SECTION
+    gap_bullets = bullets({"sections": [content["sections"][0]]})
+    assert gap_bullets
+    assert all(bullet["achieved"] is False for bullet in gap_bullets)
+    assert all(bullet["source_target_ids"] for bullet in gap_bullets)
+    assert content["gap_summary"]["reasons"]
+    assert any("SolidWorks" in reason for reason in content["gap_summary"]["reasons"])
+    evaluation = evaluate_resume_content(content, [fact], [target], kind="target")
+    assert evaluation["status"] == "passed"

@@ -43,7 +43,14 @@ async def discover_jobs(
             await selected.discover(keywords=keywords, cities=cities, limit=limit),
             limit=limit,
         )
-    except (AttributeError, KeyError, OverflowError, TypeError, ValueError) as exc:
+    except (
+        AttributeError,
+        KeyError,
+        OverflowError,
+        RecursionError,
+        TypeError,
+        ValueError,
+    ) as exc:
         # Provider adapters are an untrusted boundary.  Shape errors must not
         # escape as a 500 or expose the upstream body; use the controlled local
         # sample just like an explicit provider failure.

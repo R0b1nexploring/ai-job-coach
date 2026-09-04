@@ -1,0 +1,138 @@
+{
+  "content_version": 2,
+  "kind": "target",
+  "headline": "数据运营助理",
+  "contact": {
+    "name": "陈小雨",
+    "phone": "13800000000",
+    "email": "example@example.com",
+    "city": "杭州"
+  },
+  "sections": [
+    {
+      "name": "对照 JD 尚未具备",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "个人岗位实践",
+          "role_title": "学习目标",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "text": "完成一份包含数据清洗、指标口径和可视化结论的运营分析报告",
+              "source_fact_ids": [],
+              "source_target_ids": ["target-demo-1"],
+              "achieved": false,
+              "new_claims": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "项目经历",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "校园活动数据复盘",
+          "role_title": "项目成员",
+          "location": "杭州",
+          "start_date": "2025-03",
+          "end_date": "2025-05",
+          "bullets": [
+            {
+              "text": "整理活动报名与签到记录，统一字段格式并制作周度进展表",
+              "source_fact_ids": ["fact-demo-1"],
+              "source_target_ids": [],
+              "achieved": true,
+              "new_claims": []
+            },
+            {
+              "text": "汇总参与者反馈并按主题分类，为后续活动安排提供可核对的问题清单",
+              "source_fact_ids": ["fact-demo-2"],
+              "source_target_ids": [],
+              "achieved": true,
+              "new_claims": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "实践经历",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "示例科技有限公司",
+          "role_title": "运营助理",
+          "location": "杭州",
+          "start_date": "2025-07",
+          "end_date": "2025-08",
+          "bullets": [
+            {
+              "text": "维护日常业务台账并核对缺失字段，按约定模板提交异常记录",
+              "source_fact_ids": ["fact-demo-3"],
+              "source_target_ids": [],
+              "achieved": true,
+              "new_claims": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "教育背景",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "示例大学",
+          "role_title": "信息管理（本科）",
+          "location": "杭州",
+          "start_date": "2022-09",
+          "end_date": "2026-06",
+          "bullets": [
+            {
+              "text": "完成统计学、数据库原理和管理信息系统等课程学习",
+              "source_fact_ids": ["fact-demo-4"],
+              "source_target_ids": [],
+              "achieved": true,
+              "new_claims": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "技能证书",
+      "presentation": "tags",
+      "items": [
+        {
+          "organization": "",
+          "role_title": "",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "text": "Excel",
+              "source_fact_ids": ["fact-demo-5"],
+              "source_target_ids": [],
+              "achieved": true,
+              "new_claims": []
+            },
+            {
+              "text": "SQL 基础",
+              "source_fact_ids": ["fact-demo-6"],
+              "source_target_ids": [],
+              "achieved": true,
+              "new_claims": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": []
+}

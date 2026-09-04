@@ -38,6 +38,7 @@ REVISION_CHAIN = (
     ("0005_add_resume_extraction_fields", "0004_add_capability_targets"),
     ("0006_add_application_channels", "0005_add_resume_extraction_fields"),
     ("0007_harden_integrity", "0006_add_application_channels"),
+    ("0008_add_experience_and_campus_catalog", "0007_harden_integrity"),
 )
 
 
@@ -154,6 +155,15 @@ def _assert_revision_effect(revision: str, database_path: Path) -> None:
         assert "request_hash" in _column_names(database_path, "quota_ledger")
         assert "match_id" in _column_names(database_path, "resume_versions")
         assert ("user_id", "resume_id", "job_id") in _unique_column_sets(database_path, "matches")
+    elif revision == "0008_add_experience_and_campus_catalog":
+        assert "campus_announcements" in snapshot
+        assert "experience_entries" in snapshot
+        assert {
+            "owner_user_id",
+            "channel_id",
+            "announcement_id",
+            "source_updated_at",
+        } <= _column_names(database_path, "jobs")
 
 
 @pytest.mark.parametrize(("revision", "parent"), REVISION_CHAIN)

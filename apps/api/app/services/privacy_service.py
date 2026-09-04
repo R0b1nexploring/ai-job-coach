@@ -10,8 +10,10 @@ from app.models.entities import (
     ApplicationChannelReport,
     ApplicationEvent,
     AuditLog,
+    CampusAnnouncement,
     CapabilityTarget,
     CapabilityTargetRun,
+    ExperienceEntry,
     Interview,
     Job,
     Match,
@@ -26,6 +28,7 @@ from app.models.entities import (
     UserProfile,
 )
 from app.providers.storage.local import LocalStorage
+from app.services.job_access import owned_job_clause
 from app.services.storage_cleanup import enqueue_file_deletions, process_storage_deletions
 
 
@@ -109,6 +112,14 @@ def _purge_user_data(
         db.delete(target)
     db.flush()
 
+    private_experience = list(
+        db.scalars(select(ExperienceEntry).where(ExperienceEntry.owner_user_id == user.id))
+    )
+    owned_entity_ids.update(entry.id for entry in private_experience)
+    for entry in private_experience:
+        db.delete(entry)
+    db.flush()
+
     facts = list(db.scalars(select(ResumeFact).where(ResumeFact.user_id == user.id)))
     owned_entity_ids.update(fact.id for fact in facts)
     for fact in facts:
@@ -129,7 +140,7 @@ def _purge_user_data(
         version.reviewed_by = None
         version.reviewed_at = None
 
-    jobs = list(db.scalars(select(Job).where(Job.created_by == user.id)))
+    jobs = list(db.scalars(select(Job).where(owned_job_clause(user.id))))
     owned_entity_ids.update(job.id for job in jobs)
     for job in jobs:
         job.company_name = "已删除岗位"
@@ -145,6 +156,8 @@ def _purge_user_data(
         job.work_conditions_json = []
         job.content_hash = ""
         job.status = "closed"
+        job.channel_id = None
+        job.announcement_id = None
 
     matches = list(db.scalars(select(Match).where(Match.user_id == user.id)))
     owned_entity_ids.update(match.id for match in matches)
@@ -188,7 +201,17 @@ def _purge_user_data(
         application.last_response_at = None
         application.next_action_at = None
 
-    # Global channels are company data and intentionally stay outside retention cleanup.
+    private_announcements = list(
+        db.scalars(
+            select(CampusAnnouncement).where(CampusAnnouncement.owner_user_id == user.id)
+        )
+    )
+    owned_entity_ids.update(item.id for item in private_announcements)
+    for item in private_announcements:
+        db.delete(item)
+
+    # Global channels, shared campus announcements and experience templates are
+    # company/example data and stay outside personal retention cleanup.
     # Only user-owned channel rows are removed when that owner deletes the account.
     private_channels = list(
         db.scalars(

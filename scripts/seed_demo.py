@@ -26,6 +26,11 @@ from app.models.entities import (  # noqa: E402
     User,
     UserProfile,
 )
+from app.services.experience_service import seed_templates  # noqa: E402
+from app.services.job_importer import (  # noqa: E402
+    import_campus_announcements,
+    read_campus_rows,
+)
 from app.providers.storage.local import LocalStorage  # noqa: E402
 from app.security import hash_password  # noqa: E402
 from app.services.quota_service import change  # noqa: E402
@@ -60,8 +65,18 @@ def seed():
                 )
                 db.commit()
                 print("Added missing Demo match quota; existing data preserved.")
+                admin = db.scalar(select(User).where(User.role == "admin"))
+                if admin:
+                    seeded = _seed_shared_catalog(db, admin.id)
+                    if seeded:
+                        print("Added shared campus catalog and experience templates.")
                 return
             print("Demo data already exists; no changes made.")
+            admin = db.scalar(select(User).where(User.role == "admin"))
+            if admin:
+                seeded = _seed_shared_catalog(db, admin.id)
+                if seeded:
+                    print("Added shared campus catalog and experience templates.")
             return
         admin = User(
             email=settings.demo_admin_email,
@@ -222,6 +237,7 @@ def seed():
         ):
             job = Job(
                 created_by=user.id,
+                owner_user_id=user.id,
                 company_name=company,
                 title=title,
                 city=city,
@@ -372,8 +388,34 @@ def seed():
                 advisor_id=advisor.id,
             )
         )
+        _seed_shared_catalog(db, admin.id)
         db.commit()
         print("Created complete fictional demo data.")
+
+
+def _seed_shared_catalog(db, created_by: str) -> bool:
+    added = bool(seed_templates(db))
+    for path, source in (
+        (ROOT / "data" / "samples" / "campus_announcements.csv", "demo_sample"),
+        (
+            ROOT / "data" / "channel-imports" / "public-campus-announcements.csv",
+            "public_official_career_pages",
+        ),
+    ):
+        if not path.exists():
+            continue
+        result = import_campus_announcements(
+            db,
+            read_campus_rows(path),
+            source=source,
+            execute=True,
+            created_by=created_by,
+        )
+        if result.get("announcements_new") or result.get("jobs_new"):
+            added = True
+    if added:
+        db.commit()
+    return added
 
 
 if __name__ == "__main__":

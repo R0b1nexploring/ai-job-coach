@@ -1,0 +1,42 @@
+{
+  "id": "classic-navy-ats-v1",
+  "description": "从本地 resume_self 参考件提炼的深蓝灰单页 ATS 友好模板",
+  "page": {
+    "width_mm": 210,
+    "height_mm": 297,
+    "margin_horizontal_mm": 14.5,
+    "margin_vertical_mm": 12.5,
+    "max_pages": 1
+  },
+  "typography": {
+    "cjk_font": "Microsoft YaHei",
+    "cjk_font_candidates": [
+      "Microsoft YaHei",
+      "PingFang SC",
+      "Hiragino Sans GB",
+      "Noto Sans CJK SC",
+      "Source Han Sans SC",
+      "Arial Unicode MS"
+    ],
+    "latin_font": "Arial",
+    "name_size_pt": 20,
+    "section_size_pt": 14,
+    "body_size_pt": 10.5,
+    "meta_size_pt": 9.5,
+    "line_spacing": 1.05
+  },
+  "colors": {
+    "ink": "1F2933",
+    "accent": "344054",
+    "muted": "667085",
+    "target_background": "F8F1E3"
+  },
+  "layout": {
+    "portrait_optional": true,
+    "section_order": "education_first",
+    "entry_header_columns": ["date", "organization", "role"],
+    "bullet_symbol": "◆",
+    "section_rule": true,
+    "decorative_icons": false
+  }
+}

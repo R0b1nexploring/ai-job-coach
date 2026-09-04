@@ -26,6 +26,7 @@ from app.models.entities import (
     UserProfile,
 )
 from app.providers.storage.local import LocalStorage
+from app.services.job_access import owned_job_clause
 from app.services.maintenance_service import run_maintenance
 from app.services.privacy_service import purge_user_data
 from app.services.provider_status import provider_status
@@ -180,7 +181,7 @@ async def client(
             ],
             "jobs": [
                 dump(x, {"raw_jd"})
-                for x in db.scalars(select(Job).where(Job.created_by == user_id))
+                for x in db.scalars(select(Job).where(owned_job_clause(user_id)))
             ],
             "matches": [dump(x) for x in db.scalars(select(Match).where(Match.user_id == user_id))],
             "resume_versions": [

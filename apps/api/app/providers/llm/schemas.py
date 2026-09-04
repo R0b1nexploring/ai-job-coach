@@ -104,7 +104,12 @@ class ResumeStructuredOutput(BaseModel):
 
 
 class ResumeBulletV2Output(BaseModel):
-    text: str = Field(description="不超过 45 个中文字符，并以输入允许的动作词开头")
+    text: str = Field(
+        description=(
+            "经历条目写成不超过 80 字的动作-任务-结果短句，并以允许的动作词开头；"
+            "技能词条只写工具或技能名，不要加掌握/熟悉"
+        )
+    )
     source_fact_ids: list[str] = Field(
         default_factory=list,
         description="已达成条目引用的 confirmed_facts id；不得编造 id",
@@ -131,6 +136,7 @@ class ResumeEntryV2Output(BaseModel):
 
 class ResumeSectionV2Output(BaseModel):
     name: str
+    presentation: Literal["items", "tags"] = "items"
     items: list[ResumeEntryV2Output] = Field(default_factory=list)
 
 

@@ -155,7 +155,7 @@ async def application_email_draft(
             ResumeVersion.user_id == user.id,
         )
     )
-    job = db.scalar(select(Job).where(Job.id == application.job_id, Job.created_by == user.id))
+    job = db.scalar(select(Job).where(Job.id == application.job_id))
     if not version or not job:
         raise AppError("APPLICATION_CONTEXT_MISSING", "投递关联的岗位或简历不存在。", 409)
     resume = db.scalar(

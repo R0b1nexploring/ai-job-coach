@@ -37,7 +37,9 @@ from app.models.entities import (
 )
 from app.providers.llm.schemas import ResumeContentOutput
 from app.providers.storage.local import LocalStorage
-from app.services.capability_service import build_targets
+from app.services.capability_service import build_targets, ensure_match_targets
+from app.services.experience_service import confirmed_facts_for_generation
+from app.services.job_access import owned_job_clause, visible_job
 from app.services.docx_resume_renderer import render_resume_docx
 from app.services.html_resume_renderer import render_resume_html
 from app.services.interview_generator import generate_guarded_interview
@@ -105,7 +107,7 @@ async def create_capability_targets(
     )
     if generated_before:
         return {"items": [], "total": 0, "provider": "existing"}
-    job = db.scalar(select(Job).where(Job.id == match.job_id, Job.created_by == user.id))
+    job = visible_job(db, user, match.job_id)
     if not job:
         raise AppError("JOB_NOT_FOUND", "岗位不存在。", 404)
     facts = list(
@@ -448,7 +450,7 @@ async def create_version(
             Resume.id == data.base_resume_id, Resume.user_id == user.id, Resume.deleted_at.is_(None)
         )
     )
-    job = db.scalar(select(Job).where(Job.id == data.job_id, Job.created_by == user.id))
+    job = visible_job(db, user, data.job_id)
     match = db.scalar(
         select(Match).where(
             Match.id == data.match_id,
@@ -461,25 +463,9 @@ async def create_version(
         raise AppError("RESOURCE_NOT_FOUND", "简历、岗位或匹配报告不存在。", 404)
     if not resume.facts_confirmed_at:
         raise AppError("RESUME_FACTS_NOT_CONFIRMED", "请先确认简历事实库后再生成定制版本。", 409)
-    facts = list(
-        db.scalars(
-            select(ResumeFact).where(
-                ResumeFact.resume_id == resume.id, ResumeFact.user_id == user.id
-            )
-        )
-    )
-    confirmed_facts = [fact for fact in facts if fact.verification_status == "user_confirmed"]
+    confirmed_facts = confirmed_facts_for_generation(db, user, resume)
     targets = (
-        list(
-            db.scalars(
-                select(CapabilityTarget).where(
-                    CapabilityTarget.user_id == user.id,
-                    CapabilityTarget.job_id == job.id,
-                    CapabilityTarget.match_id == match.id,
-                    CapabilityTarget.status != "achieved",
-                )
-            )
-        )
+        ensure_match_targets(db, user, match, job)
         if data.kind == "target"
         else []
     )
@@ -529,6 +515,7 @@ async def create_version(
             targets,
             kind=data.kind,
             contact=resume.contact_json,
+            match=match,
         )
         content = generated["content"]
         provider_name = generated["provider"]
@@ -647,7 +634,7 @@ async def update_version(
             Resume.deleted_at.is_(None),
         )
     )
-    job = db.scalar(select(Job).where(Job.id == row.job_id, Job.created_by == user.id))
+    job = visible_job(db, user, row.job_id)
     if not base_resume or not job:
         raise AppError("RESUME_CONTEXT_MISSING", "定制简历关联的原始简历或岗位不存在。", 409)
     content = data.model_dump()
@@ -749,6 +736,14 @@ async def submit_review(
     return dump(row)
 
 
+def viewable_version(db, user, version_id):
+    """Owner may preview/download once Fact Guard passed; advisor approval is for queue/interview."""
+    row = owned_version(db, user, version_id)
+    if row.guard_status != "passed":
+        raise AppError("FACT_GUARD_BLOCKED", "事实检查未通过，不能预览或下载。", 409)
+    return row
+
+
 def exportable_version(db, user, version_id):
     row = owned_version(db, user, version_id)
     if row.guard_status != "passed" or row.review_status != "approved":
@@ -844,7 +839,7 @@ def _render_and_cache_docx(db: Session, row: ResumeVersion, storage: LocalStorag
 async def preview_version(
     version_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
-    row = exportable_version(db, user, version_id)
+    row = viewable_version(db, user, version_id)
     audit_export(db, user, row, "html_preview")
     return HTMLResponse(
         render_resume_html(row.content_json, row.title), headers=html_security_headers("inline")
@@ -858,7 +853,7 @@ async def download_version(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    row = exportable_version(db, user, version_id)
+    row = viewable_version(db, user, version_id)
     if format == "html":
         audit_export(db, user, row, "html_download")
         return HTMLResponse(
@@ -909,7 +904,7 @@ async def create_application(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    job = db.scalar(select(Job).where(Job.id == data.job_id, Job.created_by == user.id))
+    job = visible_job(db, user, data.job_id)
     if not job:
         raise AppError("JOB_NOT_FOUND", "岗位不存在。", 404)
     version = owned_version(db, user, data.resume_version_id) if data.resume_version_id else None
@@ -1222,7 +1217,7 @@ async def create_interview(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    job = db.scalar(select(Job).where(Job.id == data.job_id, Job.created_by == user.id))
+    job = visible_job(db, user, data.job_id)
     if not job:
         raise AppError("JOB_NOT_FOUND", "岗位不存在。", 404)
     version = owned_version(db, user, data.resume_version_id) if data.resume_version_id else None
@@ -1537,7 +1532,10 @@ async def account_export(user: User = Depends(current_user), db: Session = Depen
                 select(CapabilityTarget).where(CapabilityTarget.user_id == user.id)
             )
         ],
-        "jobs": [dump(row) for row in db.scalars(select(Job).where(Job.created_by == user.id))],
+        "jobs": [
+            dump(row)
+            for row in db.scalars(select(Job).where(owned_job_clause(user.id)))
+        ],
         "matches": [dump(row) for row in db.scalars(select(Match).where(Match.user_id == user.id))],
         "resume_versions": [
             dump(row, {"export_file_key"})

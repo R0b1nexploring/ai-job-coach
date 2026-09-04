@@ -205,7 +205,7 @@ def test_complete_registration_to_weekly_report_flow(client, db):
     assert edited.json()["review_status"] == "draft"
     assert edited.json()["traceability_json"]["last_edit_source"] == "user"
     assert client.post(f"/api/resume-versions/{version['id']}/approve").status_code == 404
-    assert client.get(f"/api/resume-versions/{version['id']}/download").status_code == 409
+    assert client.get(f"/api/resume-versions/{version['id']}/download").status_code == 200
     unapproved_application = client.post(
         "/api/applications", json={"job_id": job["id"], "resume_version_id": version["id"]}
     )

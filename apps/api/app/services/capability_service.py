@@ -1,6 +1,10 @@
 import logging
 import re
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models.entities import CapabilityTarget
 from app.providers.llm.runtime import generate_structured
 from app.providers.llm.schemas import CapabilityPlanOutput
 
@@ -39,6 +43,35 @@ async def build_targets(match, job, facts: list) -> tuple[list[dict], str]:
         if provider_name == "compatible":
             provider_name = "mock_fallback"
     return targets, provider_name
+
+
+def ensure_match_targets(db: Session, user, match, job) -> list[CapabilityTarget]:
+    """Create JD-gap targets for a match if none exist yet, so blueprint resumes can show why."""
+    existing = list(
+        db.scalars(
+            select(CapabilityTarget)
+            .where(
+                CapabilityTarget.match_id == match.id,
+                CapabilityTarget.user_id == user.id,
+            )
+            .order_by(CapabilityTarget.created_at)
+        )
+    )
+    if existing:
+        return [row for row in existing if row.status != "achieved"]
+    raw = [_fallback_target(gap, job.raw_jd) for gap in match.gaps_json or []]
+    rows = []
+    for item in _validated_targets(raw, job):
+        row = CapabilityTarget(
+            user_id=user.id,
+            job_id=job.id,
+            match_id=match.id,
+            **item,
+        )
+        db.add(row)
+        rows.append(row)
+    db.flush()
+    return rows
 
 
 def _validated_targets(raw_targets: list[dict], job) -> list[dict]:

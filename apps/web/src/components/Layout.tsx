@@ -4,7 +4,7 @@ import { useAuth } from '../app/AuthContext'
 import { useQuery } from '@tanstack/react-query'
 import { clearOnboardingDraft } from '../utils/onboardingDraft'
 
-const links = [['/app/dashboard','概览'],['/app/resumes','简历'],['/app/jobs','岗位'],['/app/capability-targets','学习'],['/app/channels','渠道'],['/app/applications','投递'],['/app/interviews','面试'],['/app/orders','额度'],['/app/settings','设置']]
+const links = [['/app/dashboard','概览'],['/app/experience','经历'],['/app/jobs','岗位'],['/app/resumes','简历'],['/app/capability-targets','学习'],['/app/channels','渠道'],['/app/applications','投递'],['/app/interviews','面试'],['/app/orders','额度'],['/app/settings','设置']]
 export function PublicHeader(){return <header className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5"><Link to="/" className="text-xl font-black">求职罗盘</Link><nav className="flex items-center gap-4"><Link to="/pricing">套餐</Link><Link to="/login" className="btn-secondary">登录</Link></nav></header>}
 export function AppLayout(){
   const {user,refresh}=useAuth(); const navigate=useNavigate()

@@ -128,6 +128,35 @@ class ResumeFact(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class ExperienceEntry(Base):
+    """A first-class internship or project in the experience library."""
+
+    __tablename__ = "experience_entries"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    owner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(20))
+    title: Mapped[str] = mapped_column(String(200))
+    organization: Mapped[str] = mapped_column(String(200), default="")
+    role_title: Mapped[str] = mapped_column(String(200), default="")
+    location: Mapped[str] = mapped_column(String(100), default="")
+    start_date: Mapped[str] = mapped_column(String(10), default="")
+    end_date: Mapped[str] = mapped_column(String(10), default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    bullets_json: Mapped[list] = mapped_column(JSON, default=list)
+    skills_json: Mapped[list] = mapped_column(JSON, default=list)
+    source: Mapped[str] = mapped_column(String(20), default="user_added")
+    linked_resume_id: Mapped[str | None] = mapped_column(
+        ForeignKey("resumes.id"), nullable=True
+    )
+    linked_fact_id: Mapped[str | None] = mapped_column(
+        ForeignKey("resume_facts.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class Job(Base):
     __tablename__ = "jobs"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -147,6 +176,18 @@ class Job(Base):
     work_conditions_json: Mapped[list] = mapped_column(JSON, default=list)
     content_hash: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(20), default="active")
+    owner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    channel_id: Mapped[str | None] = mapped_column(
+        ForeignKey("application_channels.id"), nullable=True, index=True
+    )
+    announcement_id: Mapped[str | None] = mapped_column(
+        ForeignKey("campus_announcements.id"), nullable=True, index=True
+    )
+    source_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
@@ -270,6 +311,50 @@ class ApplicationChannel(Base):
     )
     verify_status: Mapped[str] = mapped_column(String(20), default="unverified")
     dead_reports: Mapped[int] = mapped_column(Integer, default=0)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class CampusAnnouncement(Base):
+    """A campus recruiting announcement with apply links, not a third-party scrape."""
+
+    __tablename__ = "campus_announcements"
+    __table_args__ = (
+        UniqueConstraint("content_hash", name="uq_campus_announcements_content_hash"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    owner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    created_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    company_name: Mapped[str] = mapped_column(String(200))
+    company_name_normalized: Mapped[str] = mapped_column(String(200))
+    title: Mapped[str] = mapped_column(String(300), default="")
+    cities_json: Mapped[list] = mapped_column(JSON, default=list)
+    class_years_json: Mapped[list] = mapped_column(JSON, default=list)
+    industry_tags_json: Mapped[list] = mapped_column(JSON, default=list)
+    jobs_json: Mapped[list] = mapped_column(JSON, default=list)
+    majors_json: Mapped[list] = mapped_column(JSON, default=list)
+    announcement_url: Mapped[str] = mapped_column(String(1000), default="")
+    apply_url: Mapped[str] = mapped_column(String(1000), default="")
+    apply_email: Mapped[str] = mapped_column(String(320), default="")
+    scale: Mapped[str] = mapped_column(String(50), default="")
+    batch: Mapped[str] = mapped_column(String(50), default="")
+    written_test: Mapped[str] = mapped_column(String(50), default="")
+    company_description: Mapped[str] = mapped_column(Text, default="")
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    channel_id: Mapped[str | None] = mapped_column(
+        ForeignKey("application_channels.id"), nullable=True, index=True
+    )
+    source: Mapped[str] = mapped_column(String(200), default="")
+    source_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     content_hash: Mapped[str] = mapped_column(String(64))
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

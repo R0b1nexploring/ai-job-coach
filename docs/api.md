@@ -81,6 +81,31 @@ LLM 负责岗位问题和准备建议；自我介绍、项目六段式回答、�
 读取失败时接口明确返回 `fallback_used=true` 与错误原因，并使用本地虚构样例；
 不会把回退数据标成真实抓取结果。
 
+## 经历库与校招简章
+
+```text
+GET    /api/experience
+POST   /api/experience
+POST   /api/experience/from-template/{template_id}
+PATCH  /api/experience/{id}
+POST   /api/experience/{id}/confirm
+DELETE /api/experience/{id}
+GET    /api/campus-announcements?q=&city=&hide_expired=&page=
+GET    /api/campus-announcements/{id}
+```
+
+经历库中 `owner_user_id` 为空的是全站范本。按范本创建只复制结构；确认加入事实库时组织名不能仍是范本虚构单位。用户自己保存的实习/项目会写入系统简历「经历库」中 `provenance=user_added` 的已确认事实。
+
+校招简章是共享目录（除非导入时指定私有）。列表支持搜索和分页，响应含公告链接、投递链接或邮箱，以及拆出的岗位。
+
+运营者导入：
+
+```bash
+apps/api/.venv/bin/python scripts/import_jobs.py data/channel-imports/your-file.csv --source operator_file
+```
+
+默认 dry-run；加 `--execute` 才写入。原始文件不得提交 Git。
+
 ## 投递渠道与邮件草稿
 
 ```text

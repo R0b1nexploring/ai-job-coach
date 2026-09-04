@@ -73,7 +73,7 @@ function VersionCard({ version }: { version: any }) {
           <div className="flex flex-wrap items-center gap-2">
             <b>{version.title}</b>
             <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${isTarget ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-700'}`}>
-              {isTarget ? '蓝图 · 含未达成目标' : '可投递 · 全部已确认'}
+              {isTarget ? '蓝图 · 对照 JD 的差距' : '可投递 · 全部已确认'}
             </span>
           </div>
           <p className="mt-1 text-sm text-black/50">
@@ -92,7 +92,7 @@ function VersionCard({ version }: { version: any }) {
             </button>
           )}
           {canSubmit && <button className="btn" onClick={() => submitReview.mutate()}>提交顾问审核</button>}
-          {version.guard_status === 'passed' && version.review_status === 'approved' && (
+          {version.guard_status === 'passed' && (
             <>
               <a className="btn-secondary" href={`/api/resume-versions/${version.id}/preview`} target="_blank" rel="noreferrer">预览单页版</a>
               <a className="btn-secondary" href={`/api/resume-versions/${version.id}/download?format=html`}>下载 HTML</a>
@@ -101,6 +101,7 @@ function VersionCard({ version }: { version: any }) {
           )}
         </div>
       </div>
+      <ResumeDraft content={version.content_json} />
       {editing && (
         <div className="mt-4 space-y-4 rounded-xl border border-sage/20 bg-green-50/40 p-4">
           <p className="text-xs text-black/55">只能压缩、排序和改写已有来源；未达成目标必须继续明确标记。保存后会重新执行事实检查。</p>
@@ -250,4 +251,55 @@ function NewFactForm({ resumeId }: { resumeId: string }) {
     onSuccess: () => { setText(''); client.invalidateQueries({ queryKey: ['facts', resumeId] }); client.invalidateQueries({ queryKey: ['resumes'] }) },
   })
   return <form className="mt-4 rounded-xl border border-dashed border-sage/40 p-3" onSubmit={(event) => { event.preventDefault(); create.mutate() }}><h3 className="font-semibold">补充真实经历</h3><p className="mt-1 text-xs text-black/50">仅填写真实完成且可核对的事实，新增后仍需确认。</p><div className="mt-3 grid gap-2 md:grid-cols-[160px_1fr_auto]"><select aria-label="事实类型" className="field" value={category} onChange={(event) => setCategory(event.target.value)}><option value="projects">个人或课程项目</option><option value="employment">工作或实习</option><option value="education">教育经历</option><option value="skills">技能</option><option value="certificates">证书</option><option value="other">其他事实</option></select><input aria-label="新增事实内容" className="field" value={text} onChange={(event) => setText(event.target.value)} placeholder="描述真实动作、产物和证据" /><button className="btn" disabled={!text.trim() || create.isPending}>加入事实库</button></div>{create.error && <ErrorState error={create.error} />}</form>
+}
+
+export function ResumeDraft({ content }: { content: any }) {
+  const sections = content?.sections || []
+  const gap = content?.gap_summary
+  if (!sections.length && !gap?.reasons?.length) return null
+  return (
+    <div className="mt-4 space-y-4 rounded-xl bg-cream p-4 text-sm">
+      {content.headline && <p className="text-lg font-bold">意向：{content.headline}</p>}
+      {content.kind === 'target' && gap?.reasons?.length ? (
+        <div className="rounded-xl bg-amber-50 p-3 text-amber-950">
+          <p className="font-bold">{gap.title || '对照岗位还缺什么'}</p>
+          <p className="mt-1 text-xs text-amber-900/80">下面是按 JD 画出的差距，未达成条目不是你已经做过的经历。</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {gap.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}
+          </ul>
+        </div>
+      ) : null}
+      {sections.map((section: any, sectionIndex: number) => (
+        <section key={`${section.name}-${sectionIndex}`}>
+          <h3 className="font-semibold">{section.name}</h3>
+          {section.presentation === 'tags' || section.name === '技能' || section.name === '技能证书' ? (
+            <p className="mt-2 text-black/80">
+              {(section.items || []).flatMap((item: any) => item.bullets || []).map((bullet: any) => (
+                bullet.achieved === false ? `[未达成 · 学习目标] ${bullet.text}` : bullet.text
+              )).filter(Boolean).join(' / ')}
+            </p>
+          ) : (section.items || []).map((item: any, itemIndex: number) => (
+            <div className="mt-2" key={`${item.organization || item.text || 'item'}-${itemIndex}`}>
+              {(item.organization || item.role_title || item.start_date) && (
+                <p className="text-black/55">
+                  {(section.name === '教育背景'
+                    ? [item.organization, item.role_title, [item.start_date, item.end_date].filter(Boolean).join('–')]
+                    : [item.role_title, item.organization, [item.start_date, item.end_date].filter(Boolean).join('–')]
+                  ).filter(Boolean).join('｜').replace(/(\d{4})-(\d{2})(?:-\d{2})?/g, '$1.$2')}
+                </p>
+              )}
+              <ul className="mt-1 list-disc space-y-1 pl-5">
+                {(item.bullets || (item.text ? [{ text: item.text, achieved: true }] : [])).map((bullet: any, bulletIndex: number) => (
+                  <li key={bulletIndex} className={bullet.achieved === false ? 'text-black/45' : ''}>
+                    {bullet.achieved === false ? '[未达成 · 学习目标] ' : ''}
+                    {bullet.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </section>
+      ))}
+    </div>
+  )
 }

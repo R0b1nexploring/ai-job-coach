@@ -20,3 +20,15 @@ test-results/
 .DS_Store
 data/channel-imports/*
 !data/channel-imports/.gitkeep
+
+# Real public-job snapshots and local collection tooling are research inputs,
+# not repository fixtures. Keep only fully fictional samples under data/samples/.
+data/jd_collection.json
+data/job_intelligence_analysis.md
+scripts/fetch_job_jds.py
+tmp/
+output/
+
+# Local resume references and private generation inputs must never be committed.
+resume_pdf/resume_self/
+resume_pdf/private/

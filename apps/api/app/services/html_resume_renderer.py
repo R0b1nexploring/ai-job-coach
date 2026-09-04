@@ -18,6 +18,10 @@ from .resume_style import (
     PAGE_WIDTH_MM,
     SECTION_SIZE_PT,
     UNACHIEVED_LABEL,
+    format_entry_headline,
+    is_skill_tag_section,
+    labeled_contact_parts,
+    spaced_cjk_name,
 )
 
 
@@ -29,12 +33,31 @@ def render_resume_html(content: dict, title: str) -> str:
     """Render v1 or v2 resume content as a self-contained escaped A4 page."""
     headline = _text(content.get("headline") or title)
     contact = content.get("contact") if isinstance(content.get("contact"), dict) else {}
-    display_name = _text(contact.get("name") or content.get("headline") or title)
-    contact_text = " · ".join(
-        _text(contact.get(field)) for field in ("phone", "email", "city") if contact.get(field)
+    raw_name = contact.get("name") or content.get("headline") or title
+    display_name = _text(spaced_cjk_name(str(raw_name)))
+    contact_parts = labeled_contact_parts(contact)
+    contact_html = (
+        '<p class="contact">'
+        + "".join(f"<span>{_text(part)}</span>" for part in contact_parts)
+        + "</p>"
+        if contact_parts
+        else ""
     )
-    subtitle = f'<p class="subtitle">{headline}</p>' if contact.get("name") else ""
-    contact_html = f'<p class="contact">{contact_text}</p>' if contact_text else ""
+    subtitle = (
+        f'<p class="subtitle">意向：{headline}</p>'
+        if contact.get("name") and content.get("headline")
+        else (f'<p class="subtitle">{headline}</p>' if contact.get("name") else "")
+    )
+    gap = content.get("gap_summary") if isinstance(content.get("gap_summary"), dict) else {}
+    gap_html = ""
+    if content.get("kind") == "target" and gap.get("reasons"):
+        reason_items = "".join(f"<li>{_text(reason)}</li>" for reason in gap.get("reasons") or [])
+        gap_html = (
+            '<aside class="gap-summary"><h2>'
+            f'{_text(gap.get("title") or "对照岗位还缺什么")}</h2>'
+            '<p>未达成条目按 JD 列出，不是已经做过的经历。</p>'
+            f"<ul>{reason_items}</ul></aside>"
+        )
     sections_html: list[str] = []
     sections = content.get("sections", [])
     if not isinstance(sections, list):
@@ -56,7 +79,7 @@ def render_resume_html(content: dict, title: str) -> str:
 </style>
 </head>
 <body>
-<main class="page"><header><h1>{display_name}</h1>{subtitle}{contact_html}</header>{body}</main>
+<main class="page"><header><h1>{display_name}</h1>{subtitle}{contact_html}</header>{gap_html}{body}</main>
 </body>
 </html>"""
 
@@ -67,15 +90,19 @@ def _style_css() -> str:
 *{box-sizing:border-box}html,body{margin:0;padding:0}
 body{background:#$background;color:#$ink;font-family:"$latin","$cjk",sans-serif;font-size:${body_size}pt;line-height:1.15}
 .page{width:${page_width}mm;min-height:${page_height}mm;margin:18px auto;background:#fff;padding:${margin_vertical}mm ${margin_horizontal}mm;box-shadow:0 2px 16px #0002}
-header{border-bottom:1px solid #$border;padding-bottom:7px;margin-bottom:8px}
-h1{font-family:"$latin","$heading_cjk",sans-serif;font-size:${name_size}pt;line-height:1.2;margin:0;color:#$ink}
-.subtitle{font-family:"$latin","$heading_cjk",sans-serif;font-size:${section_size}pt;font-weight:700;color:#$accent;margin:3px 0 0}
-.contact{color:#$muted;font-size:9.5pt;margin:3px 0 0}
-section{margin:0 0 7px;break-inside:avoid}
-h2{font-family:"$latin","$heading_cjk",sans-serif;font-size:${section_size}pt;margin:0 0 4px;border-bottom:1px solid #$border;padding-bottom:2px;color:#$accent}
-.entry{margin:0 0 4px;break-inside:avoid}.entry-head{display:flex;justify-content:space-between;gap:12px;font-weight:700;margin:0 0 2px}.dates{white-space:nowrap}
+header{border-bottom:0;padding-bottom:8px;margin-bottom:10px}
+h1{font-family:"$latin","$heading_cjk",sans-serif;font-size:${name_size}pt;line-height:1.2;margin:0;color:#$accent;letter-spacing:0.08em}
+.subtitle{font-family:"$latin","$heading_cjk",sans-serif;font-size:11pt;font-weight:700;color:#$accent;margin:6px 0 0}
+.contact{color:#$ink;font-size:9.5pt;margin:6px 0 0;display:flex;flex-wrap:wrap;gap:18px 28px}
+.contact span{white-space:nowrap}
+section{margin:0 0 8px;break-inside:avoid}
+h2{font-family:"$latin","$heading_cjk",sans-serif;font-size:${section_size}pt;margin:0 0 5px;border-bottom:1.5px solid #$border;padding-bottom:3px;color:#$accent}
+.entry{margin:0 0 5px;break-inside:avoid}.entry-head{font-weight:700;margin:0 0 2px}
 ul{margin:0;padding:0;list-style:none}li{position:relative;padding-left:13px;margin:0 0 2px}li::before{content:"•";position:absolute;left:1px;color:#$accent}
 li.unachieved,li.unachieved::before{color:#$muted}.target-label{font-weight:700}.empty{color:#$muted}
+.skill-tags{margin:0;line-height:1.4}.skill-tags .unachieved{color:#$muted}
+.gap-summary{background:#f8f1e3;border:1px solid #$border;padding:6px 8px;margin:0 0 8px;font-size:9.5pt}
+.gap-summary h2{border:0;margin:0 0 3px;padding:0}.gap-summary p{margin:0 0 4px;color:#$muted}
 @page{size:A4;margin:0}@media print{body{background:#fff}.page{margin:0;box-shadow:none}}
 """
     ).substitute(
@@ -103,33 +130,50 @@ def _render_section(section) -> str:
     name = _text(section.get("name") or "相关经历")
     items = section.get("items") if isinstance(section.get("items"), list) else []
     items_html = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        if isinstance(item.get("bullets"), list):
-            rendered = _render_v2_item(item)
-        else:
-            value = _text(item.get("text"))
-            rendered = f'<div class="entry"><ul><li>{value}</li></ul></div>' if value else ""
+    if is_skill_tag_section(section):
+        rendered = _render_skill_tags(items)
         if rendered:
             items_html.append(rendered)
+    else:
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if isinstance(item.get("bullets"), list):
+                rendered = _render_v2_item(item, education=name == "教育背景")
+            else:
+                value = _text(item.get("text"))
+                rendered = f'<div class="entry"><ul><li>{value}</li></ul></div>' if value else ""
+            if rendered:
+                items_html.append(rendered)
     if not items_html:
         return ""
     return f'<section data-resume-section="true"><h2>{name}</h2>{"".join(items_html)}</section>'
 
 
-def _render_v2_item(item: dict) -> str:
-    organization = _text(item.get("organization"))
-    role_title = _text(item.get("role_title"))
-    left = " — ".join(value for value in (organization, role_title) if value)
-    dates = " – ".join(
-        _text(item.get(field)) for field in ("start_date", "end_date") if item.get(field)
-    )
-    head = (
-        f'<p class="entry-head"><span>{left}</span><span class="dates">{dates}</span></p>'
-        if left or dates
-        else ""
-    )
+def _render_skill_tags(items: list) -> str:
+    parts = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        for bullet in item.get("bullets") or []:
+            if not isinstance(bullet, dict):
+                continue
+            value = _text(bullet.get("text"))
+            if not value:
+                continue
+            if bullet.get("achieved") is False:
+                value = f'<span class="target-label">{_text(UNACHIEVED_LABEL)}</span> {value}'
+                parts.append(f'<span class="unachieved">{value}</span>')
+            else:
+                parts.append(value)
+    if not parts:
+        return ""
+    return f'<div class="entry"><p class="skill-tags">{" / ".join(parts)}</p></div>'
+
+
+def _render_v2_item(item: dict, *, education: bool = False) -> str:
+    headline = format_entry_headline(item, education=education)
+    head = f'<p class="entry-head">{_text(headline)}</p>' if headline else ""
     bullets_html = []
     for bullet in item.get("bullets") or []:
         if not isinstance(bullet, dict):

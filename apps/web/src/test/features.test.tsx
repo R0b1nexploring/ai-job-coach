@@ -11,6 +11,7 @@ import { AdminAccounts, AdminPackages, AdminSystem } from '../pages/Admin'
 import { CapabilityTargets } from '../pages/CapabilityTargets'
 import { Resumes } from '../pages/Resumes'
 import { Channels } from '../pages/Channels'
+import { Experience } from '../pages/Experience'
 
 function shell(node: React.ReactNode, path = '/') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -45,6 +46,7 @@ test('额度不足错误转换为清晰中文提示', async () => {
   }))
   shell(<Routes><Route path="/app/matches/:id" element={<MatchDetail />} /></Routes>, '/app/matches/m1')
   const user = userEvent.setup()
+  expect(await screen.findByRole('button', { name: '生成对照稿和可投递稿' })).toBeVisible()
   await user.click(await screen.findByRole('button', { name: '生成可投递简历' }))
   expect(await screen.findByText(/额度不足/)).toBeVisible()
 })
@@ -84,15 +86,16 @@ test('简历页明确区分蓝图和可投递版本', async () => {
     const payload = url.endsWith('/api/resumes')
       ? { items: [], total: 0 }
       : { items: [
-        { id: 'v1', job_id: 'j1', title: '设备工程师蓝图', kind: 'target', unachieved_count: 2, guard_status: 'passed', review_status: 'draft', content_json: { content_version: 2, kind: 'target', headline: '设备工程师', contact: {}, sections: [], excluded_gaps: [] } },
+        { id: 'v1', job_id: 'j1', title: '设备工程师蓝图', kind: 'target', unachieved_count: 2, guard_status: 'passed', review_status: 'draft', content_json: { content_version: 2, kind: 'target', headline: '设备工程师', contact: {}, sections: [{ name: '项目经历', items: [{ organization: '示例大学', role_title: '课程项目', bullets: [{ text: '完成设备点检练习', achieved: false }] }] }], excluded_gaps: [] } },
         { id: 'v2', job_id: 'j1', title: '设备工程师投递版', kind: 'submittable', unachieved_count: 0, guard_status: 'passed', review_status: 'draft', content_json: { content_version: 2, kind: 'submittable', headline: '设备工程师', contact: {}, sections: [], excluded_gaps: [] } },
       ], total: 2 }
     return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }))
   shell(<Resumes />)
-  expect(await screen.findByText('蓝图 · 含未达成目标')).toBeVisible()
+  expect(await screen.findByText('蓝图 · 对照 JD 的差距')).toBeVisible()
   expect(screen.getByText('可投递 · 全部已确认')).toBeVisible()
   expect(screen.getByText('2 条未达成，前往学习目标')).toBeVisible()
+  expect(screen.getByText((_, node) => (node?.textContent || '').includes('完成设备点检练习') && node.tagName === 'LI')).toBeVisible()
 })
 
 test('蓝图投递只提示一次未达成目标', async () => {
@@ -121,8 +124,9 @@ test('蓝图投递只提示一次未达成目标', async () => {
   await user.selectOptions(await screen.findByLabelText('投递渠道'), 'c1')
   const queueButton = await screen.findByRole('button', { name: '加入投递队列' })
   await user.click(queueButton)
-  expect(screen.getByRole('dialog', { name: '未达成目标投递提示' })).toBeVisible()
-  expect(screen.getByText(/完成设备点检练习/)).toBeVisible()
+  const dialog = screen.getByRole('dialog', { name: '未达成目标投递提示' })
+  expect(dialog).toBeVisible()
+  expect(dialog.textContent).toMatch(/完成设备点检练习/)
   await user.click(screen.getByRole('button', { name: '继续投递' }))
   expect(await screen.findByText('已加入投递队列。')).toBeVisible()
   await user.click(queueButton)
@@ -297,4 +301,60 @@ test('系统状态页显示真实 AI 配置缺口且不暴露密钥', async () =
   expect(screen.getByText(/LLM_API_KEY/)).toBeVisible()
   expect(screen.getByText(/待标记过期岗位/)).toBeVisible()
   expect(screen.queryByText(/gho_|sk-/)).not.toBeInTheDocument()
+})
+
+test('经历库可以添加实习并区分范本', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (init?.method === 'POST' && url.endsWith('/api/experience')) {
+      const payload = JSON.parse(String(init.body))
+      return new Response(JSON.stringify({
+        id: 'e1', kind: payload.kind, title: payload.title, organization: payload.organization,
+        role_title: payload.role_title, location: '', start_date: '', end_date: '',
+        summary: payload.summary, bullets_json: payload.bullets_json, skills_json: payload.skills_json,
+        source: 'user_added', is_template: false, is_own: true, linked_to_facts: true,
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({
+      items: [
+        { id: 't1', kind: 'internship', title: '设备点检与保养实习', organization: '示例智造装备股份有限公司', role_title: '设备实习工程师', location: '杭州', start_date: '2025-07', end_date: '2025-09', summary: '课程或实习范本', bullets_json: ['按点检表完成检查'], skills_json: ['设备点检'], source: 'template', is_template: true, is_own: false, linked_to_facts: false },
+      ],
+      total: 1,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }))
+  shell(<Experience />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: '全站范本' }))
+  expect(await screen.findByText('设备点检与保养实习')).toBeVisible()
+  expect(screen.getByRole('button', { name: '按此范本创建我的经历' })).toBeVisible()
+  await user.click(screen.getByRole('button', { name: '我的经历' }))
+  await user.type(screen.getByPlaceholderText('标题，例如设备点检实习'), '我的点检实习')
+  await user.type(screen.getByPlaceholderText('组织 / 学校 / 自主项目'), '自己实习过的工厂')
+  await user.type(screen.getByPlaceholderText('这段经历你实际做了什么，不要写没做过的数字或工具。'), '完成指定工位点检。')
+  await user.click(screen.getByRole('button', { name: '保存到经历库' }))
+  expect(await screen.findByText('已加入经历库，并写入可匹配的事实。')).toBeVisible()
+})
+
+test('岗位库展示校招简章的公告和投递入口', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes('/api/campus-announcements')) {
+      return new Response(JSON.stringify({
+        items: [{
+          id: 'a1', company_name: '示例智造装备股份有限公司', title: '2026 校园招聘简章',
+          cities_json: ['杭州'], jobs_json: ['设备工程师'], majors_json: ['机械类'],
+          announcement_url: 'https://example.test/campus/smart-equip', apply_url: '',
+          apply_email: 'campus@example.test', apply_kind: 'email', expired: false, batch: '秋招',
+          written_test: '有笔试', jobs: [{ id: 'j9', title: '设备工程师', company_name: '示例智造装备股份有限公司' }],
+        }],
+        total: 1, page: 1, page_size: 20,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ items: [], total: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }))
+  shell(<Jobs />)
+  expect(await screen.findByText('示例智造装备股份有限公司')).toBeVisible()
+  expect(screen.getByRole('link', { name: '公告链接' })).toHaveAttribute('href', 'https://example.test/campus/smart-equip')
+  expect(screen.getByRole('button', { name: '复制邮箱' })).toBeVisible()
+  expect(screen.getByRole('button', { name: '匹配「设备工程师」' })).toBeVisible()
 })

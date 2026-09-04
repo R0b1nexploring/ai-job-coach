@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { Job, ListResponse, Match, Resume } from '../types'
+import type { CampusAnnouncement, Job, ListResponse, Match, Resume } from '../types'
 import { Empty, ErrorState, Loading } from '../components/States'
+import { ResumeDraft } from './Resumes'
 import { dimensionLabels, reviewStatusLabels } from '../app/labels'
 
 export function Jobs() {
@@ -34,11 +35,71 @@ export function Jobs() {
   })
   const sourceRequired = ['greenhouse', 'lever', 'public_jsonld'].includes(discoveryProvider)
   const sourceLabel = discoveryProvider === 'public_jsonld' ? '公开招聘页 URL' : '企业标识'
-  return <><span className="badge">人工导入 · 不绕过平台限制</span><h1 className="mt-3 text-4xl font-black">岗位库</h1>
+  return <><span className="badge">校招简章 · 公告链接 · 投递入口</span><h1 className="mt-3 text-4xl font-black">岗位库</h1>
+    <CampusBoard resumeId={resumeId || resumes.data?.items[0]?.id} onMatch={(jobId) => match.mutate(jobId)} matching={match.isPending} />
     <section className="card mt-6"><div className="flex flex-wrap items-end gap-3"><label className="min-w-52 flex-1"><span className="label">用于推荐的简历</span><select aria-label="用于推荐的简历" className="field" value={resumeId} onChange={(event) => setResumeId(event.target.value)}><option value="">使用最新简历</option>{resumes.data?.items.map((resume) => <option key={resume.id} value={resume.id}>{resume.display_name}</option>)}</select></label><label className="min-w-52 flex-1"><span className="label">公开岗位来源</span><select aria-label="公开岗位来源" className="field" value={discoveryProvider} onChange={(event) => setDiscoveryProvider(event.target.value)}><option value="sample">本地受控样例</option><option value="public_catalog">工程类公开企业职位合集</option><option value="greenhouse">指定 Greenhouse 企业招聘页</option><option value="lever">指定 Lever 企业招聘页</option><option value="public_jsonld">白名单公开招聘页（JSON-LD）</option></select></label>{sourceRequired && <label className="min-w-52 flex-1"><span className="label">{sourceLabel}</span><input className="field" type={discoveryProvider === 'public_jsonld' ? 'url' : 'text'} value={sourceKey} onChange={(event) => setSourceKey(event.target.value)} placeholder={discoveryProvider === 'public_jsonld' ? 'https://careers.example.com/jobs/123' : '例如企业招聘页 URL 中的名称'} /></label>}<button className="btn" disabled={!resumes.data?.items.length || discover.isPending || (sourceRequired && !sourceKey.trim())} onClick={() => discover.mutate()}>{discover.isPending ? '正在读取…' : '按简历发现岗位'}</button></div><p className="mt-3 text-xs text-black/50">仅读取企业公开招聘接口或白名单页面中的 JobPosting 结构化数据，不自动登录、不处理验证码。岗位内容入库后仍需打开来源人工核对。</p>{discover.error && <div className="mt-3"><ErrorState error={discover.error} /></div>}</section>
     <div className="mt-6 grid gap-6 lg:grid-cols-[.9fr_1.1fr]"><form className="card space-y-3" onSubmit={(event) => { event.preventDefault(); create.mutate() }}><h2 className="text-xl font-bold">粘贴 JD</h2><input className="field" placeholder="公司名称" value={company} onChange={(event) => setCompany(event.target.value)} /><input className="field" placeholder="岗位名称" value={title} onChange={(event) => setTitle(event.target.value)} /><div className="grid gap-3 sm:grid-cols-2"><input className="field" placeholder="城市（待确认可留空）" value={city} onChange={(event) => setCity(event.target.value)} /><input aria-label="岗位发布日期" className="field" type="date" value={publishedAt} onChange={(event) => setPublishedAt(event.target.value)} /></div><input className="field" type="url" placeholder="公开来源链接（可选）" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} /><textarea className="field min-h-48" placeholder="粘贴完整岗位描述（至少 10 个字）" value={raw} onChange={(event) => setRaw(event.target.value)} /><button className="btn" disabled={raw.length < 10 || create.isPending}>导入并结构化</button>{(create.error || match.error) && <ErrorState error={create.error || match.error} />}</form>
       <div className="space-y-3">{message && <p className="rounded-xl bg-green-50 p-3 text-green-700">{message}</p>}{jobs.data?.items.length ? jobs.data.items.map((job) => <article className="card" key={job.id}><div className="flex justify-between gap-3"><div><h2 className="font-bold">{job.company_name} · {job.title}</h2><p className="text-sm text-black/50">{job.city || '城市待确认'} · {job.published_at ? `发布于 ${new Date(job.published_at).toLocaleDateString('zh-CN')}` : '发布日期待确认'} · {job.keywords_json.join(' / ') || '待人工补充关键词'}</p>{job.source_url && <a className="mt-2 inline-block text-sm text-sage" href={job.source_url} target="_blank" rel="noreferrer">打开公开来源</a>}</div><button className="btn-secondary" disabled={!resumes.data?.items[0]} onClick={() => match.mutate(job.id)}>生成匹配</button></div></article>) : <Empty title="还没有岗位，粘贴一个公开 JD。" />}</div>
     </div><Matches /></>
+}
+
+function CampusBoard({ resumeId, onMatch, matching }: { resumeId?: string; onMatch: (jobId: string) => void; matching: boolean }) {
+  const [query, setQuery] = useState('')
+  const [city, setCity] = useState('')
+  const [copied, setCopied] = useState('')
+  const announcements = useQuery({
+    queryKey: ['campus-announcements', query, city],
+    queryFn: () => api<ListResponse<CampusAnnouncement>>(`/api/campus-announcements?q=${encodeURIComponent(query)}&city=${encodeURIComponent(city)}&hide_expired=false`),
+  })
+  const copyEmail = async (email: string) => {
+    await navigator.clipboard.writeText(email)
+    setCopied(email)
+  }
+  return (
+    <section className="card mt-6">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="min-w-52 flex-1">
+          <span className="label">搜索公司或公告</span>
+          <input className="field" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如机械、设备、某公司" />
+        </label>
+        <label className="w-40">
+          <span className="label">城市</span>
+          <input className="field" value={city} onChange={(event) => setCity(event.target.value)} placeholder="杭州" />
+        </label>
+      </div>
+      {announcements.isLoading && <p className="mt-4 text-sm text-black/50">正在加载校招简章…</p>}
+      {announcements.error && <div className="mt-4"><ErrorState error={announcements.error} /></div>}
+      <p className="mt-3 text-xs text-black/45">共 {announcements.data?.total ?? 0} 条简章。公告链接和投递入口来自运营者导入的公开校招信息，不是自动爬取。</p>
+      <div className="mt-4 space-y-3">
+        {announcements.data?.items.length ? announcements.data.items.map((item) => (
+          <article className="rounded-2xl border border-black/10 p-4" key={item.id}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-bold">{item.company_name}</h2>
+                <p className="mt-1 text-sm text-black/60">{item.title}</p>
+                <p className="mt-1 text-xs text-black/45">{item.cities_json.join('、') || '城市待确认'} · {item.expired_at ? `截止 ${new Date(item.expired_at).toLocaleDateString('zh-CN')}` : '招满即止'} · {item.batch || '批次待确认'}</p>
+                <p className="mt-2 text-sm">{item.jobs_json.join(' / ') || '岗位见公告'}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {item.announcement_url && <a className="btn-secondary" href={item.announcement_url} target="_blank" rel="noreferrer">公告链接</a>}
+                {item.apply_url && <a className="btn-secondary" href={item.apply_url} target="_blank" rel="noreferrer">投递链接</a>}
+                {item.apply_email && <button className="btn-secondary" type="button" onClick={() => copyEmail(item.apply_email)}>{copied === item.apply_email ? '已复制邮箱' : '复制邮箱'}</button>}
+              </div>
+            </div>
+            {item.jobs && item.jobs.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {item.jobs.slice(0, 6).map((job) => (
+                  <button key={job.id} className="btn-secondary" disabled={matching || !resumeId} onClick={() => onMatch(job.id)}>
+                    匹配「{job.title}」
+                  </button>
+                ))}
+              </div>
+            )}
+          </article>
+        )) : <Empty title="还没有校招简章。可先导入公开校招表格，或右侧粘贴 JD。" />}
+      </div>
+    </section>
+  )
 }
 
 function Matches() {
@@ -77,26 +138,39 @@ function MatchActions({ match, versions, channels, setMessage }: {
       client.invalidateQueries({ queryKey: ['capability-targets'] })
     },
   })
-  const generate = useMutation({
-    mutationFn: (kind: 'target' | 'submittable') => api<any>('/api/resume-versions', {
-      method: 'POST',
-      headers: { 'Idempotency-Key': `web-version-${match.id}-${kind}-${Date.now()}` },
-      body: JSON.stringify({
-        base_resume_id: match.resume_id,
-        job_id: match.job_id,
-        match_id: match.id,
-        kind,
-      }),
+  const generateOne = (kind: 'target' | 'submittable') => api<any>('/api/resume-versions', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': `web-version-${match.id}-${kind}-${Date.now()}` },
+    body: JSON.stringify({
+      base_resume_id: match.resume_id,
+      job_id: match.job_id,
+      match_id: match.id,
+      kind,
     }),
+  })
+  const generate = useMutation({
+    mutationFn: (kind: 'target' | 'submittable') => generateOne(kind),
     onSuccess: (data) => {
-      setMessage(data.guard_status === 'passed' ? '简历已生成，事实检查通过。' : '检测到未经确认的新事实，已拦截。')
+      setMessage(data.guard_status === 'passed' ? '简历已生成，事实检查通过。可直接预览下载。' : '检测到未经确认的新事实，已拦截。')
       client.invalidateQueries({ queryKey: ['resume-versions'] })
+    },
+  })
+  const generatePair = useMutation({
+    mutationFn: async () => {
+      const target = await generateOne('target')
+      const submittable = await generateOne('submittable')
+      return { target, submittable }
+    },
+    onSuccess: () => {
+      setMessage('已生成蓝图对照稿和可投递稿，可直接预览下载。加入投递队列仍需顾问审核。')
+      client.invalidateQueries({ queryKey: ['resume-versions'] })
+      client.invalidateQueries({ queryKey: ['capability-targets'] })
     },
   })
   const submitReview = useMutation({
     mutationFn: (version: any) => api<any>(`/api/resume-versions/${version.id}/submit-review`, { method: 'POST' }),
     onSuccess: () => {
-      setMessage('已提交顾问审核，通过后可以下载或加入投递。')
+      setMessage('已提交顾问审核，通过后可加入投递队列或生成面试题。')
       client.invalidateQueries({ queryKey: ['resume-versions'] })
     },
   })
@@ -127,7 +201,8 @@ function MatchActions({ match, versions, channels, setMessage }: {
       (item.bullets || []).filter((bullet: any) => bullet.achieved === false).map((bullet: any) => bullet.text)
     ))
   )) || []
-  const error = createTargets.error || generate.error || submitReview.error || queue.error
+  const error = createTargets.error || generate.error || generatePair.error || submitReview.error || queue.error
+  const generating = generate.isPending || generatePair.isPending
 
   return (
     <section className="card">
@@ -140,18 +215,16 @@ function MatchActions({ match, versions, channels, setMessage }: {
         </select>
       </label>
       <div className="mt-4 flex flex-wrap gap-3">
-        {match.gaps_json.length > 0 && (
-          <button className="btn-secondary" disabled={createTargets.isPending} onClick={() => createTargets.mutate()}>
-            生成学习目标
-          </button>
-        )}
-        <Link className="btn-secondary" to={`/app/capability-targets?job_id=${match.job_id}`}>查看学习目标</Link>
-        <button className="btn-secondary" disabled={generate.isPending} onClick={() => generate.mutate('target')}>
-          生成蓝图简历
+        <button className="btn" disabled={generating} onClick={() => generatePair.mutate()}>
+          {generating ? '正在生成…' : '生成对照稿和可投递稿'}
         </button>
-        <button className="btn" disabled={generate.isPending} onClick={() => generate.mutate('submittable')}>
+        <button className="btn-secondary" disabled={generating} onClick={() => generate.mutate('target')}>
+          只生成蓝图
+        </button>
+        <button className="btn-secondary" disabled={generating} onClick={() => generate.mutate('submittable')}>
           生成可投递简历
         </button>
+        <Link className="btn-secondary" to={`/app/capability-targets?job_id=${match.job_id}`}>查看学习目标</Link>
       </div>
       <div className="mt-5 space-y-3">
         {versions.map((version) => (
@@ -159,25 +232,28 @@ function MatchActions({ match, versions, channels, setMessage }: {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${version.kind === 'target' ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-700'}`}>
-                  {version.kind === 'target' ? `蓝图 · ${version.unachieved_count} 条未达成` : '可投递 · 全部已确认'}
+                  {version.kind === 'target' ? `蓝图 · 对照 JD 的差距 · ${version.unachieved_count} 条未达成` : '可投递 · 全部已确认'}
                 </span>
                 <p className="mt-2 text-sm text-black/55">审核状态：{reviewStatusLabels[version.review_status] || '未知状态'}</p>
               </div>
               <div className="flex flex-wrap gap-2">
+                {version.guard_status === 'passed' && (
+                  <>
+                    <a className="btn-secondary" href={`/api/resume-versions/${version.id}/preview`} target="_blank" rel="noreferrer">预览单页版</a>
+                    <a className="btn-secondary" href={`/api/resume-versions/${version.id}/download?format=html`}>下载 HTML</a>
+                    <a className="btn-secondary" href={`/api/resume-versions/${version.id}/download`}>下载 DOCX</a>
+                  </>
+                )}
                 {version.guard_status === 'passed' && ['draft', 'user_review', 'rejected'].includes(version.review_status) && (
                   <button className="btn-secondary" onClick={() => submitReview.mutate(version)}>提交顾问审核</button>
                 )}
                 {version.review_status === 'advisor_review' && <span className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">等待顾问审核</span>}
                 {version.review_status === 'approved' && (
-                  <>
-                    <a className="btn-secondary" href={`/api/resume-versions/${version.id}/preview`} target="_blank" rel="noreferrer">预览单页版</a>
-                    <a className="btn-secondary" href={`/api/resume-versions/${version.id}/download?format=html`}>下载 HTML</a>
-                    <a className="btn-secondary" href={`/api/resume-versions/${version.id}/download`}>下载 DOCX</a>
-                    <button className="btn" onClick={() => requestQueue(version)}>加入投递队列</button>
-                  </>
+                  <button className="btn" onClick={() => requestQueue(version)}>加入投递队列</button>
                 )}
               </div>
             </div>
+            <ResumeDraft content={version.content_json} />
           </div>
         ))}
       </div>

@@ -107,6 +107,40 @@ def test_docx_uses_a4_and_portable_chinese_fonts():
     assert b'<w:tab w:val="right"' in styles_xml
 
 
+def test_skill_tags_render_inline_in_html_and_docx():
+    content = {
+        "content_version": 2,
+        "kind": "submittable",
+        "headline": "机械设计工程师",
+        "contact": {"name": "张三", "phone": "13800000000", "email": "", "city": ""},
+        "sections": [
+            {
+                "name": "技能",
+                "presentation": "tags",
+                "items": [
+                    {
+                        "bullets": [
+                            {"text": "SolidWorks", "achieved": True},
+                            {"text": "AutoCAD", "achieved": True},
+                            {"text": "GD&T", "achieved": True},
+                        ]
+                    }
+                ],
+            }
+        ],
+        "excluded_gaps": [],
+    }
+
+    html = render_resume_html(content, "备用标题")
+    document = Document(io.BytesIO(render_resume_docx(content, "备用标题")))
+    assert "SolidWorks / AutoCAD / GD&amp;T" in html or "SolidWorks / AutoCAD / GD&T" in html
+    assert 'class="skill-tags"' in html
+    assert html.count("<li") == 0
+    assert any("SolidWorks / AutoCAD / GD&T" in paragraph.text for paragraph in document.paragraphs)
+    assert sum(paragraph.style.name == "Resume Bullet" for paragraph in document.paragraphs) == 0
+    assert sum(paragraph.style.name == "Resume Skills" for paragraph in document.paragraphs) == 1
+
+
 def test_v2_html_and_docx_show_same_sections_bullets_and_unachieved_marker():
     content = v2_content()
     html = render_resume_html(content, "备用标题")
@@ -118,5 +152,11 @@ def test_v2_html_and_docx_show_same_sections_bullets_and_unachieved_marker():
     assert html.count("<li") == bullet_count == 3
     assert "未达成 · 学习目标" in html
     assert any("未达成 · 学习目标" in paragraph.text for paragraph in document.paragraphs)
-    assert "13800000000 · zhangsan@example.test · 杭州" in html
-    assert any("13800000000 · zhangsan@example.test · 杭州" in p.text for p in document.paragraphs)
+    assert "电话：13800000000" in html
+    assert "邮箱：zhangsan@example.test" in html
+    assert "城市：杭州" in html
+    assert "意向：机械设计工程师" in html
+    assert "项目负责人｜示例大学｜2024.03–2024.06" in html
+    assert any("电话：13800000000" in p.text and "邮箱：zhangsan@example.test" in p.text for p in document.paragraphs)
+    assert any("意向：机械设计工程师" in p.text for p in document.paragraphs)
+    assert any("项目负责人｜示例大学｜2024.03–2024.06" in p.text for p in document.paragraphs)

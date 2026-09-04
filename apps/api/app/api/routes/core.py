@@ -33,6 +33,11 @@ from app.providers.llm.schemas import (
 )
 from app.providers.storage.runtime import get_storage
 from app.services.channel_sources import allowed_job_source_hosts
+from app.services.experience_service import (
+    LIBRARY_PARSE_STATUS,
+    sync_confirmed_facts_to_experience,
+)
+from app.services.job_access import visible_job
 from app.services.job_normalizer import ground_job_output, normalize_job
 from app.services.matcher import score_match
 from app.services.provider_status import provider_status
@@ -211,7 +216,11 @@ async def upload_resume(
 async def resumes(user: User = Depends(current_user), db: Session = Depends(get_db)):
     rows = db.scalars(
         select(Resume)
-        .where(Resume.user_id == user.id, Resume.deleted_at.is_(None))
+        .where(
+            Resume.user_id == user.id,
+            Resume.deleted_at.is_(None),
+            Resume.parse_status != LIBRARY_PARSE_STATUS,
+        )
         .order_by(Resume.created_at.desc())
     ).all()
     return listed([dump(x, {"original_file_key", "parsed_text"}) for x in rows])
@@ -384,6 +393,9 @@ async def confirm_fact(
     row.confirmed_at = datetime.now(timezone.utc)
     db.flush()
     refresh_resume_confirmation(db, row.resume_id)
+    resume = db.get(Resume, row.resume_id)
+    if resume:
+        sync_confirmed_facts_to_experience(db, user, resume)
     db.commit()
     return dump(row)
 
@@ -440,6 +452,7 @@ async def confirm_all_facts(
         fact.verification_status = "user_confirmed"
         fact.confirmed_at = datetime.now(timezone.utc)
     row.facts_confirmed_at = datetime.now(timezone.utc)
+    sync_confirmed_facts_to_experience(db, user, row)
     row.missing_information_json = build_missing_information(
         list(
             db.scalars(
@@ -649,6 +662,7 @@ async def create_job(data: JobIn, user: User, db: Session):
         return dump(existing, {"raw_jd"})
     job = Job(
         created_by=user.id,
+        owner_user_id=user.id,
         raw_jd=data.raw_jd,
         source_url=data.source_url,
         source_type="user_url" if data.source_url else "manual",
@@ -818,7 +832,7 @@ async def create_match(
     data: MatchIn, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
     resume = owned_resume(db, user, data.resume_id)
-    job = owned_job(db, user, data.job_id)
+    job = visible_job(db, user, data.job_id)
     existing_match = db.scalar(
         select(Match).where(
             Match.user_id == user.id,
@@ -836,6 +850,24 @@ async def create_match(
             )
         )
     )
+    library_resume = db.scalar(
+        select(Resume).where(
+            Resume.user_id == user.id,
+            Resume.parse_status == LIBRARY_PARSE_STATUS,
+            Resume.deleted_at.is_(None),
+        )
+    )
+    if library_resume and library_resume.id != resume.id:
+        facts_list.extend(
+            list(
+                db.scalars(
+                    select(ResumeFact).where(
+                        ResumeFact.resume_id == library_resume.id,
+                        ResumeFact.user_id == user.id,
+                    )
+                )
+            )
+        )
     result = score_match(facts_list, job, profile)
     explanation, provider_name = await generate_structured(
         task="match_explain",

@@ -99,6 +99,8 @@ apps/api/.venv/bin/python scripts/import_channels.py \
 
 确认新增、更新和拒绝原因后追加 `--execute`。脚本支持 `--mapping` 列名映射，只输出统计，不打印完整渠道或邮箱。招聘页域名入库后可供 `public_jsonld` 读取，但 HTTPS、DNS 公网地址、端口、robots、重定向和响应大小保护仍全部生效。详见 [`docs/integrations.md`](docs/integrations.md)。
 
+同一来源如果是校招**简章**（公司、岗位列表、公告链接、投递链接/邮箱），用 `scripts/import_jobs.py`。它会写入简章看板、拆出岗位，并把合法投递入口写入渠道表。虚构样例在 `data/samples/campus_announcements.csv`。公开企业招聘门户收集结果应放在 `data/channel-imports/`，不要提交 Git，也不要从第三方看板爬取。
+
 ## Demo 账号
 
 以下账号仅用于本地虚构演示，密码均为 `ChangeMe123!`：

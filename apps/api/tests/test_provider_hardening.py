@@ -8,7 +8,11 @@ from pydantic import BaseModel
 
 from app.config import Settings
 from app.providers.jobs import runtime as job_runtime
-from app.providers.jobs.public_jsonld import _PinnedNetworkBackend
+from app.providers.jobs.public_jsonld import (
+    MAX_JSONLD_DEPTH,
+    _job_postings,
+    _PinnedNetworkBackend,
+)
 from app.providers.llm import runtime as llm_runtime
 from app.providers.llm.base import ProviderError
 from app.providers.llm.compatible import CompatibleLLMProvider
@@ -175,3 +179,26 @@ def test_public_jsonld_network_backend_connects_to_pinned_address_only():
     assert recording.hosts == ["93.184.216.34"]
     with pytest.raises(httpcore.ConnectError):
         asyncio.run(backend.connect_tcp("rebound.internal", 443))
+
+
+def test_public_jsonld_deep_graph_is_rejected_without_python_recursion():
+    value: object = {
+        "@type": "JobPosting",
+        "title": "机械工程师",
+        "description": "负责机械设备设计与维护工作。",
+    }
+    for _index in range(1_200):
+        value = [value]
+
+    with pytest.raises(ValueError, match="安全遍历预算"):
+        list(_job_postings(value))
+
+
+def test_public_jsonld_bounded_graph_preserves_document_order():
+    first = {"@type": "JobPosting", "title": "岗位一"}
+    second = {"@type": ["Thing", "JobPosting"], "title": "岗位二"}
+    value: object = [first, {"@graph": [second]}]
+    for _index in range(MAX_JSONLD_DEPTH - 3):
+        value = [value]
+
+    assert [item["title"] for item in _job_postings(value)] == ["岗位一", "岗位二"]

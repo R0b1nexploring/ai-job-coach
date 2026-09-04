@@ -19,6 +19,9 @@ from .common import plain_text, relevance
 USER_AGENT = "AIJobCoachBot/0.1"
 MAX_PAGE_BYTES = 2 * 1024 * 1024
 MAX_ROBOTS_BYTES = 256 * 1024
+MAX_JSONLD_DEPTH = 64
+MAX_JSONLD_NODES = 10_000
+MAX_JSONLD_POSTINGS = 1_000
 
 
 class _PinnedNetworkBackend(httpcore.AsyncNetworkBackend):
@@ -194,19 +197,42 @@ async def _limited_get(client: httpx.AsyncClient, url: str, max_bytes: int) -> h
         raise JobProviderError("公开招聘页读取失败。") from exc
 
 
-def _job_postings(value) -> Iterable[dict]:
-    if isinstance(value, list):
-        for item in value:
-            yield from _job_postings(item)
-        return
-    if not isinstance(value, dict):
-        return
-    item_type = value.get("@type")
-    types = item_type if isinstance(item_type, list) else [item_type]
-    if any(str(name).lower() == "jobposting" for name in types):
-        yield value
-    if "@graph" in value:
-        yield from _job_postings(value["@graph"])
+def _job_postings(
+    value,
+    *,
+    max_depth: int = MAX_JSONLD_DEPTH,
+    max_nodes: int = MAX_JSONLD_NODES,
+    max_postings: int = MAX_JSONLD_POSTINGS,
+) -> Iterable[dict]:
+    """Iteratively find JobPosting nodes within a bounded JSON-LD graph.
+
+    Public pages are untrusted. A recursive walk can exhaust Python's call
+    stack with a small deeply nested document, while an unbounded iterative
+    walk can still consume excessive CPU or memory. Enforce both budgets and
+    let the caller skip only the malformed JSON-LD document.
+    """
+    stack: list[tuple[object, int]] = [(value, 0)]
+    visited = 0
+    found = 0
+    while stack:
+        current, depth = stack.pop()
+        visited += 1
+        if depth > max_depth or visited > max_nodes:
+            raise ValueError("JSON-LD 结构超过安全遍历预算")
+        if isinstance(current, list):
+            stack.extend((item, depth + 1) for item in reversed(current))
+            continue
+        if not isinstance(current, dict):
+            continue
+        item_type = current.get("@type")
+        types = item_type if isinstance(item_type, list) else [item_type]
+        if any(str(name).lower() == "jobposting" for name in types):
+            found += 1
+            if found > max_postings:
+                raise ValueError("JSON-LD 岗位数量超过安全遍历预算")
+            yield current
+        if "@graph" in current:
+            stack.append((current["@graph"], depth + 1))
 
 
 def _as_text(value) -> str:
@@ -321,8 +347,17 @@ class PublicJsonLdJobProvider:
         postings = []
         for document in parser.documents:
             try:
-                postings.extend(_job_postings(json.loads(document)))
-            except (json.JSONDecodeError, TypeError):
+                remaining = MAX_JSONLD_POSTINGS - len(postings)
+                if remaining <= 0:
+                    break
+                document_postings = list(
+                    _job_postings(
+                        json.loads(document),
+                        max_postings=remaining,
+                    )
+                )
+                postings.extend(document_postings)
+            except (json.JSONDecodeError, RecursionError, TypeError, ValueError):
                 continue
         if not postings:
             raise JobProviderError("页面未提供可识别的 JobPosting 结构化岗位数据。")

@@ -6,8 +6,9 @@ from app.providers.llm.runtime import generate_structured
 from app.providers.llm.schemas import ResumeStructuredV2Output
 
 from .fact_guard import guard_content
+from .resume_style import SKILL_SECTION_NAME, is_skill_tag_section
 
-MAX_BULLET_CHARS = 45
+MAX_BULLET_CHARS = 120
 MAX_RESUME_LINES = 48
 ACTION_PREFIXES = (
     "负责",
@@ -35,23 +36,26 @@ ACTION_PREFIXES = (
     "具备",
     "积累",
     "围绕",
+    "根据",
+    "将",
 )
 CATEGORY_ORDER = {
-    "employment": 0,
-    "projects": 1,
-    "skills": 2,
-    "education": 3,
+    "projects": 0,
+    "employment": 1,
+    "education": 2,
+    "skills": 3,
     "certificates": 4,
     "other": 5,
 }
 SECTION_NAMES = {
-    "employment": "工作与实习经历",
     "projects": "项目经历",
-    "skills": "技能",
+    "employment": "实习经历",
     "education": "教育背景",
-    "certificates": "证书",
+    "skills": SKILL_SECTION_NAME,
+    "certificates": "奖项/校园",
     "other": "其他经历",
 }
+JD_GAP_SECTION = "对照 JD 尚未具备"
 DEFAULT_PREFIX = {
     "employment": "积累",
     "projects": "完成",
@@ -61,10 +65,16 @@ DEFAULT_PREFIX = {
     "other": "积累",
 }
 RESUME_SYSTEM_PROMPT = (
-    "你是中文求职简历编辑。每个 bullet 必须引用 source_fact_ids 或 "
-    "source_target_ids；不得引入来源中不存在的数字、工具、公司、证书，不得把团队"
-    "成果写成个人成果。日期未知必须留空。每条不超过 45 字且以动作词开头，同一章节"
-    "动作词不重复。kind=target 且输入含 capability_targets 时，必须至少选择一条目标，"
+    "你是中文校招/实习简历编辑，按一页单栏模板改写已确认事实。"
+    "章节顺序必须是：项目经历、实习经历、教育背景、技能证书、奖项/校园。"
+    "headline 只写求职意向（岗位名），不要写资深、年限或职级。"
+    "经历条目写成完整段落：先写任务，再写自己做的动作，最后只写原文已有的产物。"
+    "能放进一条里就不要拆开。技能章节 presentation 必须为 tags，每条 bullet 只写工具或技能名，"
+    "不要写成「掌握了…」。每个 bullet 必须引用 source_fact_ids 或 source_target_ids；"
+    "不得引入来源中不存在的数字、工具、公司、证书，不得把团队成果写成个人成果。"
+    "日期未知必须留空。"
+    f"经历条目不超过 {MAX_BULLET_CHARS} 字，以动作词开头；不要为了动词不重复而改掉原意，"
+    "不要用省略号截断。kind=target 且输入含 capability_targets 时，必须至少选择一条目标，"
     "填写 source_target_ids 且 achieved 必须为 false。所有 new_claims 必须为空数组；"
     "无法完全溯源的 bullet 直接省略。请在一页预算内取舍，不要缩小字号。输出严格 JSON。"
 )
@@ -77,6 +87,7 @@ def generate_resume(
     *,
     kind: str = "submittable",
     contact: dict | None = None,
+    match=None,
 ) -> dict:
     confirmed = [fact for fact in facts if fact.verification_status == "user_confirmed"]
     active_targets = [
@@ -89,26 +100,34 @@ def generate_resume(
     target_severity = {
         str(target.id): str(getattr(target, "severity", "medium")) for target in active_targets
     }
-    grouped: dict[str, list[dict]] = {}
+    grouped: dict[str, dict[tuple, dict]] = {}
     for fact in sorted(
         confirmed,
         key=lambda item: (-fact_relevance[str(item.id)], CATEGORY_ORDER.get(item.category, 9)),
     ):
-        grouped.setdefault(fact.category, []).append(_fact_item(fact))
-    for target in sorted(
-        active_targets,
-        key=lambda item: {"high": 0, "medium": 1, "low": 2}.get(item.severity, 1),
-    ):
-        category = target.category if target.category in SECTION_NAMES else "skills"
-        grouped.setdefault(category, []).append(_target_item(target))
-
+        item = _fact_item(fact)
+        if fact.category == "skills":
+            key = ("", "", "", "", "")
+        else:
+            key = (
+                str(getattr(fact, "organization", "") or ""),
+                str(getattr(fact, "role_title", "") or ""),
+                str(getattr(fact, "start_date", "") or ""),
+                str(getattr(fact, "end_date", "") or ""),
+                fact.label if not getattr(fact, "organization", "") else "",
+            )
+        bucket = grouped.setdefault(fact.category, {})
+        if key in bucket:
+            bucket[key]["bullets"].extend(item["bullets"])
+        else:
+            bucket[key] = item
     content = {
         "content_version": 2,
         "kind": kind,
         "headline": job.title,
         "contact": dict(contact or {}),
         "sections": [
-            {"name": SECTION_NAMES.get(category, "其他经历"), "items": items}
+            {"name": SECTION_NAMES.get(category, "其他经历"), "items": list(items.values())}
             for category, items in sorted(
                 grouped.items(), key=lambda entry: CATEGORY_ORDER.get(entry[0], 9)
             )
@@ -118,9 +137,25 @@ def generate_resume(
             for requirement in requirements
             if not any(requirement.casefold() in _fact_text(fact).casefold() for fact in confirmed)
         ],
+        "gap_summary": _gap_summary(job, match, active_targets, confirmed) if kind == "target" else {},
     }
-    content = enforce_page_budget(content, fact_relevance, target_severity)
-    return _dedupe_section_verbs(content)
+    if kind == "target" and active_targets:
+        content["sections"] = [
+            {
+                "name": JD_GAP_SECTION,
+                "items": [
+                    _target_item(target)
+                    for target in sorted(
+                        active_targets,
+                        key=lambda item: {"high": 0, "medium": 1, "low": 2}.get(item.severity, 1),
+                    )
+                ],
+            },
+            *content["sections"],
+        ]
+    content = _normalize_skill_sections(content)
+    content = _dedupe_section_verbs(content)
+    return enforce_page_budget(content, fact_relevance, target_severity)
 
 
 def evaluate_resume_content(
@@ -157,11 +192,14 @@ async def generate_guarded_resume(
     *,
     kind: str,
     contact: dict | None = None,
+    match=None,
 ) -> dict:
     """Generate once, retry one semantic failure, then use the safe local result."""
     confirmed = [fact for fact in facts if fact.verification_status == "user_confirmed"]
     active_targets = list(targets or []) if kind == "target" else []
-    fallback = generate_resume(confirmed, job, active_targets, kind=kind, contact=contact)
+    fallback = generate_resume(
+        confirmed, job, active_targets, kind=kind, contact=contact, match=match
+    )
     payload = _resume_llm_payload(confirmed, job, active_targets, kind, contact, fallback)
     structured, provider_name = await generate_structured(
         task="resume_rewrite",
@@ -170,7 +208,7 @@ async def generate_guarded_resume(
         response_model=ResumeStructuredV2Output,
     )
     content, evaluation = _prepare_and_evaluate_resume(
-        structured.model_dump(), confirmed, job, active_targets, kind, contact
+        structured.model_dump(), confirmed, job, active_targets, kind, contact, match
     )
     semantic_retry_used = False
     semantic_retry_issues: list[str] = []
@@ -193,7 +231,7 @@ async def generate_guarded_resume(
             response_model=ResumeStructuredV2Output,
         )
         content, evaluation = _prepare_and_evaluate_resume(
-            structured.model_dump(), confirmed, job, active_targets, kind, contact
+            structured.model_dump(), confirmed, job, active_targets, kind, contact, match
         )
 
     fallback_used = provider_name != "compatible"
@@ -278,9 +316,15 @@ def _resume_llm_payload(
             "new_claims_must_be_empty": True,
             "instruction": (
                 "蓝图不能只复述已确认事实；至少一条 bullet 必须逐字使用上述 target id；"
-                "目标条目优先以“完成”或“学习”开头。所有 new_claims 必须是空数组。"
+                "目标条目优先以“完成”或“学习”开头，放在最前面的对照 JD 章节。"
+                "章节顺序：项目、实习、教育、技能证书。技能必须是词条，不要写掌握/熟悉。"
+                "所有 new_claims 必须是空数组。要点按动作-任务-结果改写，产物必须来自原文。"
                 if targets
-                else "不得引用学习目标；所有 new_claims 必须是空数组。"
+                else (
+                    "不得引用学习目标；所有 new_claims 必须是空数组。"
+                    "章节顺序：项目、实习、教育、技能证书。技能必须是词条，不要写掌握/熟悉。"
+                    "要点按动作-任务-结果改写，只保留原文已有的动作、任务和产物。"
+                )
             ),
         },
         "contact": dict(contact or {}),
@@ -295,11 +339,16 @@ def _prepare_and_evaluate_resume(
     targets: list,
     kind: str,
     contact: dict | None,
+    match=None,
 ) -> tuple[dict, dict]:
     requirements = list(dict.fromkeys([*(job.must_have_json or []), *(job.keywords_json or [])]))
     fact_relevance = {str(fact.id): relevance(fact, requirements) for fact in facts}
     target_severity = {str(target.id): target.severity for target in targets}
-    prepared = enforce_page_budget(content, fact_relevance, target_severity)
+    if kind == "target" and not content.get("gap_summary"):
+        content = {**content, "gap_summary": _gap_summary(job, match, targets, facts)}
+    prepared = _normalize_skill_sections(content)
+    prepared = _dedupe_section_verbs(prepared)
+    prepared = enforce_page_budget(prepared, fact_relevance, target_severity)
     evaluation = evaluate_resume_content(
         prepared,
         facts,
@@ -337,7 +386,7 @@ def content_quality_issues(
     targets_by_id = {str(target.id): target for target in targets or []}
     referenced_target_ids: set[str] = set()
     for section_index, section in enumerate(content.get("sections") or []):
-        verbs = set()
+        skill_tags = is_skill_tag_section(section)
         for item_index, item in enumerate(section.get("items") or []):
             fact_ids = {
                 str(value)
@@ -345,14 +394,18 @@ def content_quality_issues(
                 for value in bullet.get("source_fact_ids") or []
             }
             referenced_facts = [facts_by_id[value] for value in fact_ids if value in facts_by_id]
-            for field in ("organization", "role_title", "location", "start_date", "end_date"):
-                value = str(item.get(field) or "")
-                if value and not any(
-                    value == str(getattr(fact, field, "") or "") for fact in referenced_facts
-                ):
-                    issues.append(
-                        f"第 {section_index + 1} 节第 {item_index + 1} 项的{field}缺少来源"
-                    )
+            target_only = not fact_ids and any(
+                bullet.get("source_target_ids") for bullet in item.get("bullets") or []
+            )
+            if not target_only:
+                for field in ("organization", "role_title", "location", "start_date", "end_date"):
+                    value = str(item.get(field) or "")
+                    if value and not any(
+                        value == str(getattr(fact, field, "") or "") for fact in referenced_facts
+                    ):
+                        issues.append(
+                            f"第 {section_index + 1} 节第 {item_index + 1} 项的{field}缺少来源"
+                        )
             for bullet_index, bullet in enumerate(item.get("bullets") or []):
                 text = str(bullet.get("text") or "").strip()
                 location = (
@@ -360,13 +413,8 @@ def content_quality_issues(
                 )
                 if len(text) > MAX_BULLET_CHARS:
                     issues.append(f"{location}超过 {MAX_BULLET_CHARS} 字")
-                verb = _action_prefix(text)
-                if not verb:
+                if not skill_tags and not _action_prefix(text):
                     issues.append(f"{location}未以动作词开头")
-                elif verb in verbs:
-                    issues.append(f"第 {section_index + 1} 节动作词“{verb}”重复")
-                else:
-                    verbs.add(verb)
                 source_fact_ids = bullet.get("source_fact_ids") or []
                 source_target_ids = bullet.get("source_target_ids") or []
                 referenced_target_ids.update(str(value) for value in source_target_ids)
@@ -461,6 +509,15 @@ def estimate_resume_lines(content: dict) -> int:
         lines += 1
     for section in content.get("sections") or []:
         lines += 1
+        if is_skill_tag_section(section):
+            tag_text = " / ".join(
+                str(bullet.get("text") or "")
+                for item in section.get("items") or []
+                for bullet in item.get("bullets") or []
+                if bullet.get("text")
+            )
+            lines += max(1, math.ceil(len(tag_text) / 40)) if tag_text else 0
+            continue
         for item in section.get("items") or []:
             if any(
                 item.get(field)
@@ -468,7 +525,7 @@ def estimate_resume_lines(content: dict) -> int:
             ):
                 lines += 1
             for bullet in item.get("bullets") or []:
-                lines += max(1, math.ceil(len(str(bullet.get("text") or "")) / 36))
+                lines += max(1, math.ceil(len(str(bullet.get("text") or "")) / 40))
     return lines
 
 
@@ -478,7 +535,27 @@ def relevance(fact, requirements: list[str]) -> int:
 
 
 def _fact_item(fact) -> dict:
-    text = _bullet_text(_fact_text(fact), DEFAULT_PREFIX.get(fact.category, "积累"))
+    if fact.category == "skills":
+        tokens = _skill_tokens(_fact_text(fact)) or [_fact_text(fact).strip()]
+        return {
+            "organization": "",
+            "role_title": "",
+            "location": "",
+            "start_date": "",
+            "end_date": "",
+            "bullets": [
+                {
+                    "text": token,
+                    "source_fact_ids": [str(fact.id)],
+                    "source_target_ids": [],
+                    "achieved": True,
+                    "new_claims": [],
+                }
+                for token in tokens
+                if token
+            ],
+        }
+    prefix = DEFAULT_PREFIX.get(fact.category, "完成")
     return {
         "organization": str(getattr(fact, "organization", "") or ""),
         "role_title": str(getattr(fact, "role_title", "") or ""),
@@ -493,20 +570,25 @@ def _fact_item(fact) -> dict:
                 "achieved": True,
                 "new_claims": [],
             }
+            for text in _star_texts(_fact_text(fact), prefix)
         ],
     }
 
 
 def _target_item(target) -> dict:
+    requirement = str(getattr(target, "requirement", "") or "")
+    deliverable = str(getattr(target, "deliverable", "") or requirement)
     return {
-        "organization": "",
-        "role_title": "",
+        "organization": "对照 JD",
+        "role_title": requirement,
         "location": "",
         "start_date": "",
         "end_date": "",
+        "jd_requirement": requirement,
+        "jd_evidence": str(getattr(target, "jd_evidence", "") or ""),
         "bullets": [
             {
-                "text": _bullet_text(str(target.deliverable), "完成"),
+                "text": _bullet_text(deliverable, "学习"),
                 "source_fact_ids": [],
                 "source_target_ids": [str(target.id)],
                 "achieved": False,
@@ -516,20 +598,94 @@ def _target_item(target) -> dict:
     }
 
 
+def _gap_summary(job, match, targets: list, confirmed: list) -> dict:
+    reasons = []
+    if match is not None:
+        recommendation = str(getattr(match, "recommendation", "") or "")
+        scores = getattr(match, "dimension_scores_json", None) or {}
+        hard_block = scores.get("hard_requirements", 30) < 15 or recommendation in {"低优先", "不建议"}
+        if hard_block:
+            reasons.append("硬性要求覆盖不足，所以匹配被压低。")
+        for gap in getattr(match, "gaps_json", None) or []:
+            requirement = str(gap.get("requirement") or "").strip()
+            if requirement:
+                reasons.append(f"JD 要求「{requirement}」，已确认事实里没有对应证据。")
+        explanation = getattr(match, "ai_explanation_json", None) or {}
+        summary = str(explanation.get("summary") or "").strip()
+        if summary and summary not in reasons:
+            reasons.append(summary)
+    for target in targets:
+        requirement = str(getattr(target, "requirement", "") or "").strip()
+        line = f"JD 要求「{requirement}」，当前尚未达成。"
+        if requirement and line not in reasons:
+            reasons.append(line)
+    return {
+        "title": f"对照「{getattr(job, 'title', '该岗位')}」还缺什么",
+        "reasons": reasons[:12],
+        "unachieved_count": len(targets),
+        "confirmed_count": len(confirmed),
+    }
+
+
 def _bullet_text(value: str, prefix: str) -> str:
+    texts = _star_texts(value, prefix)
+    return texts[0] if texts else prefix
+
+
+def _star_texts(value: str, prefix: str) -> list[str]:
+    """Keep a fact as complete action-task-result bullets; split only when over budget."""
     lines = [
-        re.sub(r"\s+", " ", line).strip(" ·|｜") for line in value.splitlines() if line.strip()
+        re.sub(r"\s+", " ", line).strip(" ·|｜") for line in str(value or "").splitlines() if line.strip()
     ]
     first_is_metadata = bool(
         lines
         and ("|" in lines[0] or "｜" in lines[0] or re.search(r"(?:19|20)\d{2}[-年./]", lines[0]))
     )
-    text = "；".join(lines[1:] if len(lines) > 1 and first_is_metadata else lines)
-    if not _action_prefix(text):
-        text = f"{prefix}{text}"
-    if len(text) > MAX_BULLET_CHARS:
-        text = text[: MAX_BULLET_CHARS - 1].rstrip("，,；;。 ") + "…"
-    return text
+    body = "，".join(lines[1:] if len(lines) > 1 and first_is_metadata else lines)
+    body = re.sub(r"[。；;]+", "，", body)
+    body = re.sub(r"[，,]{2,}", "，", body).strip(" ，,")
+    if not body:
+        return [prefix]
+    merged = _ensure_action_prefix(body, prefix)
+    if len(merged) <= MAX_BULLET_CHARS:
+        return [merged]
+    clauses = [part.strip(" ，,") for part in re.split(r"[，,]", body) if part.strip()]
+    bullets: list[str] = []
+    current = ""
+    for clause in clauses:
+        joined = clause if not current else f"{current}，{clause}"
+        joined = _ensure_action_prefix(joined, prefix)
+        if len(joined) <= MAX_BULLET_CHARS:
+            current = joined
+            continue
+        if current:
+            bullets.append(current)
+        current = _ensure_action_prefix(clause, prefix)
+        if len(current) > MAX_BULLET_CHARS:
+            bullets.append(_clip_to_budget(current))
+            current = ""
+    if current:
+        bullets.append(current)
+    unique = list(dict.fromkeys(text for text in bullets if text))
+    return unique[:3] or [_clip_to_budget(merged)]
+
+
+def _ensure_action_prefix(text: str, prefix: str) -> str:
+    cleaned = re.sub(r"\s+", " ", text).strip(" ，,；;。")
+    if not cleaned:
+        return prefix
+    if _action_prefix(cleaned):
+        return cleaned
+    return f"{prefix}{cleaned}"
+
+
+def _clip_to_budget(text: str) -> str:
+    if len(text) <= MAX_BULLET_CHARS:
+        return text
+    window = text[:MAX_BULLET_CHARS]
+    cut = max(window.rfind("，"), window.rfind("、"), window.rfind(" "), window.rfind("；"))
+    clipped = window[:cut].rstrip("，,；;。 ") if cut >= 8 else window.rstrip("，,；;。 ")
+    return clipped or window[:MAX_BULLET_CHARS]
 
 
 def _fact_text(fact) -> str:
@@ -541,19 +697,85 @@ def _action_prefix(text: str) -> str:
     return next((prefix for prefix in ACTION_PREFIXES if text.startswith(prefix)), "")
 
 
+def _normalize_skill_sections(content: dict) -> dict:
+    result = deepcopy(content)
+    sections = []
+    for section in result.get("sections") or []:
+        if not is_skill_tag_section(section):
+            sections.append(section)
+            continue
+        tags = []
+        seen: set[str] = set()
+        for item in section.get("items") or []:
+            for bullet in item.get("bullets") or []:
+                source_text = str(bullet.get("text") or "")
+                tokens = _skill_tokens(source_text) or ([source_text.strip()] if source_text.strip() else [])
+                for token in tokens:
+                    key = token.casefold()
+                    if not token or key in seen:
+                        continue
+                    seen.add(key)
+                    tags.append({**bullet, "text": token})
+        if not tags:
+            continue
+        sections.append(
+            {
+                "name": SKILL_SECTION_NAME,
+                "presentation": "tags",
+                "items": [
+                    {
+                        "organization": "",
+                        "role_title": "",
+                        "location": "",
+                        "start_date": "",
+                        "end_date": "",
+                        "bullets": tags,
+                    }
+                ],
+            }
+        )
+    result["sections"] = sections
+    return result
+
+
+def _skill_tokens(value: str) -> list[str]:
+    text = re.sub(r"\s+", " ", str(value or "")).strip(" 。；;，,")
+    text = re.sub(
+        r"^(?:熟练掌握|熟练使用|熟练|掌握了|掌握|熟悉|了解|精通|具备|使用)+",
+        "",
+        text,
+    ).strip(" ：:，,")
+    parts = [part.strip(" ·-") for part in re.split(r"[、，,/／|｜;；]+", text) if part.strip()]
+    noise = {"技能", "专业技能", "相关技能", "能力", "软件", "工具"}
+    tokens: list[str] = []
+    for part in parts:
+        part = re.sub(
+            r"^(?:熟练掌握|熟练使用|熟练|掌握了|掌握|熟悉|了解|精通|具备|使用)+",
+            "",
+            part,
+        ).strip(" ·-")
+        if not part or part in noise:
+            continue
+        if " " in part and re.fullmatch(r"[A-Za-z0-9+#.\- ]+", part):
+            tokens.extend(token for token in part.split() if len(token) >= 2 and token not in noise)
+        elif 1 < len(part) <= 32:
+            tokens.append(part)
+    return list(dict.fromkeys(tokens))
+
+
 def _dedupe_section_verbs(content: dict) -> dict:
+    """Keep original verbs; only add a prefix when a bullet has none."""
     result = deepcopy(content)
     for section in result.get("sections") or []:
-        seen = set()
+        if is_skill_tag_section(section):
+            continue
         for item in section.get("items") or []:
             kept = []
             for bullet in item.get("bullets") or []:
-                verb = _action_prefix(str(bullet.get("text") or ""))
-                if verb and verb in seen:
-                    continue
-                if verb:
-                    seen.add(verb)
-                kept.append(bullet)
+                text = _ensure_action_prefix(str(bullet.get("text") or ""), "完成")
+                if len(text) > MAX_BULLET_CHARS:
+                    text = _clip_to_budget(text)
+                kept.append({**bullet, "text": text})
             item["bullets"] = kept
         section["items"] = [item for item in section.get("items") or [] if item.get("bullets")]
     result["sections"] = [

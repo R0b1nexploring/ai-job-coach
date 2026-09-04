@@ -26,6 +26,8 @@ _OWNER_COLUMNS = {
     "resume_versions": "user_id",
     "applications": "user_id",
     "application_channels": "owner_user_id",
+    "campus_announcements": "owner_user_id",
+    "experience_entries": "owner_user_id",
     "application_channel_reports": "user_id",
     "interviews": "user_id",
     "orders": "user_id",
