@@ -75,8 +75,10 @@ def seed():
             admin = db.scalar(select(User).where(User.role == "admin"))
             if admin:
                 seeded = _seed_shared_catalog(db, admin.id)
-                if seeded:
-                    print("Added shared campus catalog and experience templates.")
+                studio = _seed_studio_examples(db, existing_user.id)
+                if seeded or studio:
+                    db.commit()
+                    print("Added shared campus catalog, experience templates, or studio samples.")
             return
         admin = User(
             email=settings.demo_admin_email,
@@ -389,8 +391,52 @@ def seed():
             )
         )
         _seed_shared_catalog(db, admin.id)
+        _seed_studio_examples(db, user.id)
         db.commit()
         print("Created complete fictional demo data.")
+
+
+def _seed_studio_examples(db, user_id: str) -> int:
+    from app.models.entities import Job as JobModel
+    from app.services.job_normalizer import normalize_job
+
+    samples = [
+        ("示例智造装备", "机械设计工程师", "负责机械结构设计。\n要求熟悉 SolidWorks 并能输出装配体。"),
+        ("示例自动化科技", "电气自动化工程师", "负责产线 PLC 点检。\n要求熟悉 PLC 点检与故障记录。"),
+        ("示例数据实验室", "数据分析实习生", "负责实验数据清洗。\n要求使用 Python 处理数据并输出汇总表。"),
+        ("示例生物工程", "生物医药工艺助理", "协助培养基配制。\n要求熟悉培养基配制与批记录。"),
+    ]
+    created = 0
+    for company, title, raw_jd in samples:
+        exists = db.scalar(
+            select(JobModel).where(
+                JobModel.created_by == user_id,
+                JobModel.company_name == company,
+                JobModel.title == title,
+            )
+        )
+        if exists:
+            continue
+        value = normalize_job(raw_jd, title, company, "杭州")
+        db.add(
+            JobModel(
+                created_by=user_id,
+                owner_user_id=user_id,
+                company_name=company,
+                title=title,
+                city="杭州",
+                raw_jd=raw_jd,
+                responsibilities_json=value["responsibilities"],
+                must_have_json=value["must_have"],
+                nice_to_have_json=value["nice_to_have"],
+                keywords_json=value["keywords"],
+                work_conditions_json=value["work_conditions"],
+                content_hash=value["content_hash"],
+                source_type="manual",
+            )
+        )
+        created += 1
+    return created
 
 
 def _seed_shared_catalog(db, created_by: str) -> bool:

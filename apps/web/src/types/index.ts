@@ -5,7 +5,7 @@ export type Resume = { id: string; display_name: string; parse_status: string; f
 export type Job = { id: string; company_name: string; title: string; city: string; keywords_json: string[]; status: string; source_url: string; published_at?: string }
 export type ExperienceEntry = {
   id: string
-  kind: 'internship' | 'project'
+  kind: 'education' | 'internship' | 'employment' | 'project' | 'research' | 'competition' | 'award' | 'certificate' | 'skill'
   title: string
   organization: string
   role_title: string
@@ -20,6 +20,9 @@ export type ExperienceEntry = {
   is_own: boolean
   linked_to_facts: boolean
   linked_fact_id?: string | null
+  status?: 'draft' | 'confirmed'
+  details_json?: Record<string, string>
+  clarifications_json?: Array<{ field: string; question: string }>
 }
 export type CampusAnnouncement = {
   id: string

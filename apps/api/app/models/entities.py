@@ -124,12 +124,19 @@ class ResumeFact(Base):
     verification_status: Mapped[str] = mapped_column(String(30), default="extracted")
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    material_id: Mapped[str | None] = mapped_column(
+        ForeignKey("experience_entries.id", use_alter=True, name="fk_resume_facts_material_id"),
+        nullable=True,
+        index=True,
+    )
+    claim_type: Mapped[str] = mapped_column(String(30), default="")
+    evidence_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
 class ExperienceEntry(Base):
-    """A first-class internship or project in the experience library."""
+    """A first-class resume material covering education, experience, and credentials."""
 
     __tablename__ = "experience_entries"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -153,6 +160,10 @@ class ExperienceEntry(Base):
     linked_fact_id: Mapped[str | None] = mapped_column(
         ForeignKey("resume_facts.id"), nullable=True
     )
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    clarifications_json: Mapped[list] = mapped_column(JSON, default=list)
+    completeness_score: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(20), default="draft")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
@@ -190,6 +201,42 @@ class Job(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class TargetProfile(Base):
+    """A source-grounded job-requirement contract for dual-resume generation."""
+
+    __tablename__ = "target_profiles"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    mode: Mapped[str] = mapped_column(String(20))
+    title: Mapped[str] = mapped_column(String(200), default="")
+    snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    input_hash: Mapped[str] = mapped_column(String(64), index=True)
+    quality_metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class TargetProfileSource(Base):
+    """One JD contributing evidence to a target profile."""
+
+    __tablename__ = "target_profile_sources"
+    __table_args__ = (
+        UniqueConstraint(
+            "target_profile_id",
+            "job_id",
+            name="uq_target_profile_sources_profile_job",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    target_profile_id: Mapped[str] = mapped_column(
+        ForeignKey("target_profiles.id"), index=True
+    )
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"), index=True)
+    raw_jd_snapshot: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class Match(Base):
@@ -259,14 +306,66 @@ class CapabilityTargetRun(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class ResumeBundle(Base):
+    """Paired submittable + target resume delivery and async generation boundary."""
+
+    __tablename__ = "resume_bundles"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "idempotency_key",
+            name="uq_resume_bundles_user_idempotency",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    base_resume_id: Mapped[str] = mapped_column(ForeignKey("resumes.id"), index=True)
+    target_profile_id: Mapped[str] = mapped_column(
+        ForeignKey("target_profiles.id"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    facts_snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    target_snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    template_snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    request_hash: Mapped[str] = mapped_column(String(64), default="")
+    idempotency_key: Mapped[str] = mapped_column(String(200))
+    generation_metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    portrait_file_key: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ResumeBundleRun(Base):
+    """Atomic generation claim for one resume bundle."""
+
+    __tablename__ = "resume_bundle_runs"
+    bundle_id: Mapped[str] = mapped_column(
+        ForeignKey("resume_bundles.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    claim_token: Mapped[str] = mapped_column(String(36), default=uid)
+    request_hash: Mapped[str] = mapped_column(String(64), default="")
+    provider: Mapped[str] = mapped_column(String(50), default="")
+    last_error: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class ResumeVersion(Base):
     __tablename__ = "resume_versions"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     base_resume_id: Mapped[str] = mapped_column(ForeignKey("resumes.id"))
-    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"))
+    job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
     match_id: Mapped[str | None] = mapped_column(
         ForeignKey("matches.id"), nullable=True, index=True
+    )
+    bundle_id: Mapped[str | None] = mapped_column(
+        ForeignKey("resume_bundles.id"), nullable=True, index=True
+    )
+    target_profile_id: Mapped[str | None] = mapped_column(
+        ForeignKey("target_profiles.id"), nullable=True, index=True
     )
     title: Mapped[str] = mapped_column(String(200))
     kind: Mapped[str] = mapped_column(String(20), default="submittable")
@@ -278,6 +377,9 @@ class ResumeVersion(Base):
     reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     export_file_key: Mapped[str] = mapped_column(String(255), default="")
+    quality_report_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    content_hash: Mapped[str] = mapped_column(String(64), default="")
+    template_snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
@@ -434,6 +536,30 @@ class Interview(Base):
     scorecard_json: Mapped[dict] = mapped_column(JSON, default=dict)
     feedback_json: Mapped[dict] = mapped_column(JSON, default=dict)
     advisor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class InterviewGuide(Base):
+    """Version-bound interview preparation material, separate from practice Interviews."""
+
+    __tablename__ = "interview_guides"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    resume_version_id: Mapped[str] = mapped_column(
+        ForeignKey("resume_versions.id"), index=True
+    )
+    target_profile_id: Mapped[str] = mapped_column(
+        ForeignKey("target_profiles.id"), index=True
+    )
+    bundle_id: Mapped[str | None] = mapped_column(
+        ForeignKey("resume_bundles.id"), nullable=True, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(20))
+    content_hash: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    content_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    quality_report_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 

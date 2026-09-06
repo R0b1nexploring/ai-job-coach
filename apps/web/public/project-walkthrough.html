@@ -1,0 +1,1295 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>AI Job Coach · 产品与项目进展</title><style>
+  :root {
+    --ink: #1F2933;
+    --accent: #2F3E63;
+    --accent-light: #E8EBF2;
+    --muted: #5B6575;
+    --border: #D8DCE3;
+    --bg: #F4F3EE;
+    --card: #FFFFFF;
+    --green: #2D7A4F;
+    --green-bg: #E6F4EC;
+    --amber: #9A6B00;
+    --amber-bg: #FFF4D6;
+    --red: #B42318;
+    --red-bg: #FDECEC;
+    --blue-bg: #EAF0FA;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.65;
+    font-size: 15px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(135deg, var(--accent) 0%, #1A2540 100%);
+    color: #fff;
+    border-radius: 20px;
+    padding: 48px 40px;
+    margin-bottom: 32px;
+  }
+  .hero h1 { font-size: 32px; font-weight: 800; margin-bottom: 12px; letter-spacing: -0.5px; }
+  .hero p { font-size: 16px; opacity: 0.85; max-width: 640px; }
+  .hero .tags { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .hero .tag {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+  }
+
+  /* Nav */
+  .toc {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 24px;
+    margin-bottom: 32px;
+  }
+  .toc h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .toc ol { columns: 2; column-gap: 32px; padding-left: 20px; }
+  .toc li { margin-bottom: 6px; font-size: 14px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  /* Section */
+  section { margin-bottom: 40px; }
+  h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent-light);
+  }
+  h3 { font-size: 17px; font-weight: 600; margin: 20px 0 10px; color: var(--ink); }
+  h4 { font-size: 15px; font-weight: 600; margin: 14px 0 8px; }
+  p { margin-bottom: 12px; }
+
+  /* Card */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+
+  /* Table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    margin: 12px 0;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    background: var(--accent-light);
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 13px;
+  }
+  tr:last-child td { border-bottom: none; }
+
+  /* Badge */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge-green { background: var(--green-bg); color: var(--green); }
+  .badge-amber { background: var(--amber-bg); color: var(--amber); }
+  .badge-red { background: var(--red-bg); color: var(--red); }
+  .badge-blue { background: var(--blue-bg); color: var(--accent); }
+
+  /* Flow diagram */
+  .flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0;
+    margin: 20px 0;
+  }
+  .flow-step {
+    flex: 1;
+    min-width: 120px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 12px;
+    text-align: center;
+    position: relative;
+  }
+  .flow-step .num {
+    display: inline-block;
+    width: 24px; height: 24px;
+    line-height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .flow-step .label { font-size: 13px; font-weight: 600; }
+  .flow-step .desc { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+    color: var(--muted);
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  /* Architecture */
+  .arch-layers { display: flex; flex-direction: column; gap: 10px; margin: 16px 0; }
+  .arch-layer {
+    border-radius: 10px;
+    padding: 14px 18px;
+    border: 1px solid var(--border);
+  }
+  .arch-layer .layer-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+  .arch-layer .modules { display: flex; flex-wrap: wrap; gap: 6px; }
+  .arch-module {
+    background: rgba(255,255,255,0.7);
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+  .layer-frontend { background: #EAF0FA; }
+  .layer-api { background: #E6F4EC; }
+  .layer-service { background: #FFF4D6; }
+  .layer-provider { background: #FDECEC; }
+  .layer-data { background: #F0EAF8; }
+
+  /* Comparison */
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .compare-col {
+    border-radius: 12px;
+    padding: 18px;
+    border: 1px solid var(--border);
+  }
+  .compare-col.old { background: #F5F5F5; }
+  .compare-col.new { background: var(--accent-light); border-color: var(--accent); }
+  .compare-col h4 { margin-top: 0; font-size: 15px; }
+  .compare-col ul { padding-left: 18px; font-size: 13px; }
+  .compare-col li { margin-bottom: 6px; }
+
+  /* Entity diagram */
+  .entity-group { margin: 12px 0; }
+  .entity-title { font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+  .entity-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .entity-chip {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-family: 'SF Mono', 'Consolas', monospace;
+  }
+  .entity-chip.new { border-color: var(--green); background: var(--green-bg); font-weight: 600; }
+
+  /* Code */
+  code {
+    background: rgba(0,0,0,0.06);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: 'SF Mono', 'Consolas', monospace;
+  }
+  pre {
+    background: #1A2540;
+    color: #E8EBF2;
+    padding: 16px;
+    border-radius: 10px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 12px 0;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 28px; margin: 16px 0; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px; top: 4px; bottom: 4px;
+    width: 2px;
+    background: var(--border);
+  }
+  .tl-item { position: relative; margin-bottom: 20px; }
+  .tl-item::before {
+    content: '';
+    position: absolute;
+    left: -24px; top: 6px;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #fff;
+  }
+  .tl-item.major::before { background: var(--green); width: 14px; height: 14px; left: -25px; }
+  .tl-date { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .tl-title { font-size: 15px; font-weight: 600; margin: 2px 0; }
+  .tl-desc { font-size: 13px; color: var(--muted); }
+
+  /* Gate list */
+  .gate-list { list-style: none; padding: 0; }
+  .gate-list li {
+    padding: 10px 14px;
+    border-left: 3px solid var(--accent);
+    background: var(--card);
+    margin-bottom: 8px;
+    border-radius: 0 8px 8px 0;
+    font-size: 13px;
+  }
+  .gate-list li.hard { border-left-color: var(--red); }
+  .gate-list li.soft { border-left-color: var(--amber); }
+
+  /* Grid 2col */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 640px) {
+    .grid2, .compare { grid-template-columns: 1fr; }
+    .toc ol { columns: 1; }
+    .flow { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); justify-content: center; padding: 4px 0; }
+    .hero { padding: 32px 24px; }
+    .hero h1 { font-size: 24px; }
+  }
+
+  .note {
+    background: var(--amber-bg);
+    border-left: 4px solid var(--amber);
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    font-size: 13px;
+    margin: 12px 0;
+  }
+  .note strong { color: var(--amber); }
+
+  .stat-row { display: flex; flex-wrap: wrap; gap: 16px; margin: 16px 0; }
+  .stat {
+    flex: 1; min-width: 120px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat .num { font-size: 28px; font-weight: 800; color: var(--accent); }
+  .stat .label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  .footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+
+:root{--ink:#202b29;--accent:#245c50;--accent-light:#e7efea;--muted:#68736d;--border:#dce3dc;--bg:#f6f7f2;--blue-bg:#edf2ee}
+html{scroll-behavior:smooth;scroll-padding-top:90px}body{font-size:15px;line-height:1.8}.wrap{max-width:1180px;padding:0 36px 48px}a{color:var(--accent)}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:24px 0;font-size:12px;color:var(--muted)}.brand{font-weight:800;color:var(--ink);font-size:16px}.brand i{display:inline-grid;place-items:center;background:var(--accent);color:white;border-radius:9px;width:30px;height:30px;font-style:normal;margin-right:9px}
+.hero{display:grid;grid-template-columns:1.3fr 1fr;gap:48px;background:#e8eee5;color:var(--ink);border:1px solid #d7e1d3;padding:56px;border-radius:24px;margin-bottom:24px;position:relative;overflow:hidden}.eyebrow{font-size:11px;letter-spacing:2px;font-weight:700;color:var(--accent);margin-bottom:18px}.hero h1{font-size:clamp(32px,4vw,48px);line-height:1.3;letter-spacing:-1.5px;margin-bottom:20px;font-weight:750}.hero p{font-size:15px;opacity:1;color:#5a685e}.hero .tag{background:#ffffff80;border-color:#cbd7c8;color:var(--accent)}.hero-link{display:inline-block;background:var(--accent);color:white;text-decoration:none;padding:10px 19px;border-radius:9px;margin-top:10px;font-size:13px}
+.deliverables{position:relative;align-self:center;padding:24px;background:#ffffff75;border:1px solid white;border-radius:16px}.deliverable{background:white;border:1px solid var(--border);border-radius:10px;padding:17px 20px;margin-top:12px;box-shadow:0 6px 20px #29452a06}.deliverable strong{display:block;font-size:17px}.deliverable small{color:var(--muted);font-size:12px}.deliverable.blueprint{background:#f4f6eb}.mini-label{font-size:11px;color:var(--accent);letter-spacing:1px}.output-foot{display:flex;justify-content:space-between;margin-top:16px;font-size:11px;color:var(--muted)}
+.toc{position:sticky;top:0;z-index:10;display:flex;gap:6px;padding:9px;background:#f6f7f2f2;backdrop-filter:blur(14px);border-radius:12px;margin-bottom:52px}.toc a{flex:1;text-align:center;padding:10px;border-radius:7px;color:var(--muted);font-size:13px;text-decoration:none}.toc a.active,.toc a:hover{background:var(--accent);color:white}
+section{margin-bottom:48px}h2{font-size:27px;border:0;padding:0;margin:0 0 12px;letter-spacing:-.5px;color:var(--ink)}h3{font-size:18px} .section-head{display:flex;gap:20px;align-items:flex-start;margin-bottom:24px}.section-index{color:#809782;font:400 34px Georgia,serif;line-height:1.4}.section-head p{color:var(--muted);font-size:14px;margin:0}.card{padding:25px;border-radius:14px;box-shadow:0 3px 10px #203b2803}.card h4{margin-top:0}.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.flow-step{text-align:left;padding:20px;min-width:0}.flow-step .label{font-size:15px}.flow-step .desc{font-size:12px}.flow-step .num{text-align:center;background:var(--accent-light);color:var(--accent);margin-bottom:14px}.flow-arrow{display:none}.compare-col{padding:25px}.compare-col ul{font-size:14px}.section-intro{max-width:760px;color:var(--muted)}
+.status-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.status-panel{background:white;border:1px solid var(--border);border-radius:16px;padding:28px}.status-panel.pending{background:#fbf8ef;border-color:#e6deca}.status-panel h3{margin:12px 0 18px}.status-item{padding:15px 0;border-top:1px solid var(--border)}.status-item strong{display:block;font-size:14px}.status-item p{font-size:13px;color:var(--muted);margin:4px 0 0}.status-note{font-size:12px;color:var(--muted);margin-top:16px}.backlog{display:flex;flex-wrap:wrap;gap:8px}.backlog span{background:white;border:1px solid var(--border);padding:6px 12px;border-radius:7px;font-size:12px}.tech-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.tech-card{background:white;padding:23px;border:1px solid var(--border);border-radius:12px}.tech-card small{color:var(--muted);font-size:11px}.tech-card strong{display:block;margin:8px 0;font-size:17px}.tech-card p{font-size:12px;color:var(--muted);margin:0}details{border:1px solid var(--border);background:white;border-radius:12px;margin:12px 0;overflow:hidden}summary{cursor:pointer;padding:19px 23px;font-size:14px;font-weight:600}details[open] summary{border-bottom:1px solid var(--border);background:#f0f4ee}.detail-body{padding:24px}.detail-body section{margin-bottom:0}.detail-body h2{display:none}.detail-body h3{font-size:16px}.table-scroll{overflow-x:auto}table{min-width:500px}code{overflow-wrap:anywhere}pre{background:#233b33}.footer{text-align:left;display:flex;justify-content:space-between;gap:20px}.footer p{margin:0}.note{background:#f7f0df;border-color:#b79245}a:focus-visible,summary:focus-visible{outline:3px solid #b68b31;outline-offset:3px}
+@media(max-width:760px){.wrap{padding:0 18px 30px}.hero{grid-template-columns:1fr;padding:28px;gap:22px}.deliverables{padding:18px}.status-grid,.tech-grid{grid-template-columns:1fr}.flow{grid-template-columns:1fr 1fr}.toc{margin-bottom:32px}.toc a{font-size:12px;padding:9px 4px}.section-head{gap:12px}h2{font-size:23px}.footer{display:block}.topbar>span{font-size:10px}.detail-body{padding:16px}.status-panel{padding:22px}.grid2,.compare{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media print{.toc,.hero-link{display:none}.hero{break-inside:avoid}.wrap{max-width:none;padding:0}details{break-inside:avoid}.status-grid{display:block}.status-panel{margin-bottom:16px}body{background:white}}
+/* ===== Interactive Studio ===== */
+.studio{background:white;border:2px solid var(--accent);border-radius:16px;padding:24px;margin-bottom:28px}
+.studio h2{font-size:20px;margin:0 0 12px;color:var(--accent)}
+.studio-user{font-size:13px;color:var(--muted);margin-bottom:12px}
+.studio-user strong{color:var(--accent)}
+.studio-tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid var(--border)}
+.studio-tab{padding:8px 16px;cursor:pointer;font-size:14px;font-weight:600;border:none;background:none;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-2px}
+.studio-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.studio-pane{display:none}.studio-pane.active{display:block}
+.studio-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:12px}
+.studio-field{flex:1;min-width:200px}
+.studio-field label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px}
+.studio-field input,.studio-field textarea,.studio-field select{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit}
+.studio-field textarea{min-height:100px;resize:vertical}
+.btn{display:inline-block;padding:8px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;background:var(--accent);color:#fff;text-decoration:none}
+.btn:hover{opacity:0.9}.btn:disabled{opacity:0.5;cursor:not-allowed}
+.btn-secondary{background:white;color:var(--accent);border:1px solid var(--accent)}
+.btn-sm{padding:4px 10px;font-size:12px}
+.studio-status{padding:10px 14px;border-radius:8px;font-size:13px;margin:12px 0}
+.studio-status.info{background:var(--blue-bg);color:var(--accent)}
+.studio-status.success{background:var(--green-bg);color:var(--green)}
+.studio-status.warn{background:var(--amber-bg);color:var(--amber)}
+.studio-status.error{background:var(--red-bg);color:var(--red)}
+.resume-preview{border:1px solid var(--border);border-radius:10px;padding:20px;background:#fff;margin-top:12px}
+.resume-preview h3{font-size:18px;margin:0 0 4px;color:var(--accent)}
+.resume-preview .section-title{font-size:13px;font-weight:700;color:var(--accent);border-bottom:1px solid var(--accent-light);padding-bottom:4px;margin:14px 0 6px}
+.resume-preview .item-header{font-size:13px;font-weight:600;margin-top:8px}
+.resume-preview .item-meta{font-size:11px;color:var(--muted)}
+.resume-preview ul{padding-left:18px;margin:4px 0}
+.resume-preview li{font-size:13px;margin-bottom:3px;line-height:1.5}
+.bullet-ai{color:var(--amber);font-size:11px;font-weight:600;margin-left:4px}
+.bullet-unachieved{color:var(--muted);font-size:11px;margin-left:2px}
+.bullet-source{color:var(--muted);font-size:10px;margin-left:4px}
+.quality-bar{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.quality-dim{background:var(--accent-light);border-radius:6px;padding:4px 8px;font-size:11px}
+.quality-dim .score{font-weight:700;color:var(--accent)}
+.export-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.step-indicator{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.step-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--border);color:var(--muted)}
+.step-dot.done{background:var(--green);color:#fff}
+.step-dot.active{background:var(--accent);color:#fff}
+.step-line{flex:1;min-width:20px;height:2px;background:var(--border);align-self:center}
+.step-line.done{background:var(--green)}
+.hidden{display:none!important}
+.login-box{max-width:360px;margin:0 auto}
+</style></head><body><main class="wrap">
+<header class="topbar"><div class="brand"><i>A</i>AI Job Coach</div><span>项目概览 / 2026.09.06</span></header>
+<div class="hero"><div><div class="eyebrow">面向理工科本硕学生 · 自助求职准备</div><h1>从一个目标岗位，<br>走到一份有准备的简历。</h1><p>把岗位要求、个人经历和面试准备串起来。看清当下怎么表达，也知道下一步该补齐什么。</p><a class="hero-link" href="#business">了解业务流程 ↗</a><div class="tags"><span class="tag">目标画像</span><span class="tag">同源双版本</span><span class="tag">逐条面试指南</span></div></div><div class="deliverables"><div class="mini-label">一次生成 · 两种用途</div><div class="deliverable"><strong>求职版</strong><small>整理已有经历，形成面向岗位的表达</small></div><div class="deliverable blueprint"><strong>蓝图 Plus <span style="color:#889565">*</span></strong><small>展开目标能力，标记仍需补齐的经历</small></div><div class="output-foot"><span>各自配套面试指南</span><span>HTML / DOCX / PDF</span></div></div></div>
+
+<!-- ===== Interactive Studio ===== -->
+<div class="studio" id="studio">
+  <h2>在线工作台 · 直接生成简历</h2>
+  <div class="studio-user" id="studioUser">检查登录状态…</div>
+
+  <!-- Login pane -->
+  <div class="studio-pane active" id="pane-login">
+    <div class="login-box">
+      <div class="studio-row">
+        <div class="studio-field"><label>邮箱</label><input type="email" id="loginEmail" placeholder="user@example.test" value="user@example.test"></div>
+      </div>
+      <div class="studio-row">
+        <div class="studio-field"><label>密码</label><input type="password" id="loginPassword" placeholder="ChangeMe123!" value="ChangeMe123!"></div>
+      </div>
+      <button class="btn" onclick="studioLogin()">登录并开始</button>
+      <p style="font-size:12px;color:var(--muted);margin-top:10px">默认 demo 账号已预填。需通过 <code>http://localhost:5173</code> 访问本页面（同源代理 API）。</p>
+    </div>
+  </div>
+
+  <!-- Main workspace pane -->
+  <div class="studio-pane" id="pane-work">
+    <!-- Step indicator -->
+    <div class="step-indicator" id="stepIndicator">
+      <div class="step-dot active" id="step-1">1</div><div class="step-line" id="line-1"></div>
+      <div class="step-dot" id="step-2">2</div><div class="step-line" id="line-2"></div>
+      <div class="step-dot" id="step-3">3</div><div class="step-line" id="line-3"></div>
+      <div class="step-dot" id="step-4">4</div>
+    </div>
+
+    <!-- Step 1: JD input -->
+    <div id="step-jd">
+      <h3 style="margin-top:0">第一步：粘贴岗位描述（JD）</h3>
+      <div class="studio-row">
+        <div class="studio-field" style="flex:2">
+          <label>职位描述原文</label>
+          <textarea id="jdText" placeholder="粘贴招聘页面的职位描述…例如：&#10;岗位：机械工程师&#10;职责：负责产品结构设计、3D建模、工程图输出…&#10;要求：熟悉SolidWorks/CAD，了解加工工艺…"></textarea>
+        </div>
+      </div>
+      <div class="studio-row">
+        <div class="studio-field"><label>公司名（可选）</label><input type="text" id="jdCompany" placeholder="目标公司"></div>
+        <div class="studio-field"><label>岗位名（可选）</label><input type="text" id="jdTitle" placeholder="目标岗位"></div>
+      </div>
+      <button class="btn" id="btnAnalyze" onclick="studioAnalyzeJD()">分析岗位，生成目标画像</button>
+      <div id="jdStatus"></div>
+    </div>
+
+    <!-- Step 2: Resume upload -->
+    <div id="step-resume" class="hidden">
+      <h3 style="margin-top:0">第二步：上传简历（可选，可跳过）</h3>
+      <p style="font-size:13px;color:var(--muted)">没有简历也可以直接生成，AI 会从目标画像出发扩写草稿。</p>
+      <div class="studio-row">
+        <div class="studio-field">
+          <label>简历文件（.docx / .pdf）</label>
+          <input type="file" id="resumeFile" accept=".docx,.pdf">
+        </div>
+      </div>
+      <div class="studio-row">
+        <button class="btn" id="btnUpload" onclick="studioUploadResume()">上传并解析</button>
+        <button class="btn btn-secondary" onclick="studioSkipResume()">跳过，直接生成</button>
+      </div>
+      <div id="resumeStatus"></div>
+    </div>
+
+    <!-- Step 3: Generate -->
+    <div id="step-generate" class="hidden">
+      <h3 style="margin-top:0">第三步：生成双版本简历</h3>
+      <p style="font-size:13px;color:var(--muted)" id="generateSummary"></p>
+      <button class="btn" id="btnGenerate" onclick="studioGenerate()">生成求职版 + 蓝图 Plus</button>
+      <div id="generateStatus"></div>
+    </div>
+
+    <!-- Step 4: Results -->
+    <div id="step-result" class="hidden">
+      <h3 style="margin-top:0">第四步：查看与导出</h3>
+      <div class="studio-tabs">
+        <button class="studio-tab active" onclick="switchVersion('submittable')" id="tab-submittable">求职版</button>
+        <button class="studio-tab" onclick="switchVersion('target')" id="tab-target">蓝图 Plus</button>
+      </div>
+      <div id="versionContent"></div>
+      <div class="export-row" id="exportRow"></div>
+    </div>
+  </div>
+</div>
+
+<nav class="toc" aria-label="页面目录"><a class="active" href="#business">01 业务逻辑</a><a href="#progress">02 完成与待办</a><a href="#technology">03 技术实现</a></nav>
+<section id="business"><div class="section-head"><span class="section-index">01</span><div><h2>业务如何运转</h2><p>先理解岗位，再组织素材，最后形成简历与面试准备。</p></div></div><p class="section-intro">用户从一份 JD，或 2–10 份同方向 JD 开始。系统把要求整理成可追溯的目标画像，再结合上传的简历或空白建立的素材，产出两份用途不同的简历。</p><div class="flow">
+      <div class="flow-step">
+        <div class="num">1</div>
+        <div class="label">粘贴 JD</div>
+        <div class="desc">单份或 2-10 份聚合</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="num">2</div>
+        <div class="label">目标画像</div>
+        <div class="desc">JD 结构化 + 去重聚合</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="num">3</div>
+        <div class="label">素材库</div>
+        <div class="desc">上传简历 / 空白建档</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="num">4</div>
+        <div class="label">双版本生成</div>
+        <div class="desc">求职版 + 蓝图 Plus</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="num">5</div>
+        <div class="label">质量门禁</div>
+        <div class="desc">硬门禁 + 七维评分</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="num">6</div>
+        <div class="label">逐条编辑</div>
+        <div class="desc">锁定 / 重写 / 整份重生</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="num">7</div>
+        <div class="label">三格式导出</div>
+        <div class="desc">HTML / DOCX / PDF</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="num">8</div>
+        <div class="label">面试指南</div>
+        <div class="desc">作战指南 + 风险指南</div>
+      </div>
+    </div>
+
+    <div class="compare"><div class="compare-col" style="background:#eaf0e8"><h4>求职版：把经历讲清楚</h4><p>围绕目标岗位组织经历与成果，并可由 AI 补充草稿。配套作战指南，逐条准备主问题、追问与个人贡献说明。</p></div><div class="compare-col" style="background:#f3f0e2"><h4>蓝图 Plus：把差距看清楚</h4><p>展示补齐岗位能力后的目标状态。未达成内容以 * 标记，配套风险指南解释还缺什么证据、哪些问题需要准备。</p></div></div><div class="note"><strong>AI 补充 ≠ 已确认事实。</strong> 两个版本都允许 AI 扩写，补充内容保持“待核验”；来源归属、内容结构和版面仍需通过质量检查。内容改变后，旧指南会过期，需要重新生成。</div></section>
+<section id="progress"><div class="section-head"><span class="section-index">02</span><div><h2>已经做了什么，还差什么</h2><p>按当前工作区与任务记录整理；实现情况与最终验收分开看。</p></div></div><div class="status-grid"><div class="status-panel"><span class="badge badge-green">已有实现</span><h3>主流程已搭建</h3><div class="status-item"><strong>目标画像与素材入口</strong><p>已接入 JD 导入、单 / 多 JD 画像、简历上传、空白建档与素材确认。</p></div><div class="status-item"><strong>双版本生成与编辑</strong><p>已有异步生成、状态轮询、重试、锁定与局部重生成接口和工作台交互。</p></div><div class="status-item"><strong>导出与两份指南</strong><p>已有模板快照、HTML / DOCX / PDF 导出链路，以及指南生成、过期与重新生成能力。</p></div><div class="status-item"><strong>工作台与兼容能力</strong><p>主导航收敛为工作台、面试指南和账户设置，旧岗位、投递与顾问入口保留兼容。</p></div></div><div class="status-panel pending"><span class="badge badge-amber">尚未闭环 · 4 项</span><h3>需要继续完成与验收</h3><div class="status-item"><strong>生成失败的修复与降级</strong><p>任务 4.7：两轮定向修复、修复历史和模型不可用时的安全降级仍未勾选完成。</p></div><div class="status-item"><strong>降级交付与 PDF 版面边界</strong><p>任务 5.4：降级提示、硬门禁通过后导出，以及超页 PDF 拒绝交付仍需闭环验收。</p></div><div class="status-item"><strong>指南逐条覆盖率</strong><p>任务 7.4：确保每条必要要点都有指南卡片；漏项修复或回退完成前不能标为 ready。</p></div><div class="status-item"><strong>工作台完整编辑体验</strong><p>任务 8.2：A4 预览、来源展示、排序、撤销、版本对比及锁定重生成的整体验收尚未完成。</p></div></div></div><p class="status-note">依据：<a href="../openspec/changes/focus-resume-interview-core/tasks.md">OpenSpec 任务记录</a>。以上“已有实现”不代表本次重新通过了完整业务验收。</p><div class="card"><h4>已有验证记录</h4><p>任务记录最近一次记载：后端 264 项、前端 35 项、浏览器 E2E 3 项及生产构建通过。真实模型协议使用本地 HTTP 替身验证，未调用收费外部模型。</p><p class="status-note">这是历史记录，本次页面改版不把这些数字当作重新运行结果。人工内容质量和实际部署仍需独立验收。</p></div><h3>后续建设</h3><div class="backlog"><span>人工内容质量验收</span><span>生产部署与对象存储</span><span>邮件通知 Provider</span><span>国内岗位授权来源</span><span>真实支付 · MVP-2</span></div><p class="status-note">扫描版 PDF OCR、视频面试与批量投递属于当前范围外能力，不计入本阶段待完成事项。</p></section>
+<section id="technology"><div class="section-head"><span class="section-index">03</span><div><h2>技术如何支撑业务</h2><p>前后端分层，生成任务独立编排，导出与指南共享同一份内容。</p></div></div><div class="tech-grid"><div class="tech-card"><small>前端体验</small><strong>React + TypeScript</strong><p>Vite 构建 · React Router 路由 · TanStack Query 服务端状态</p></div><div class="tech-card"><small>API 与服务</small><strong>FastAPI + Pydantic</strong><p>SQLAlchemy 数据访问 · Alembic 迁移 · 生成与质量服务</p></div><div class="tech-card"><small>数据与存储</small><strong>SQLite → PostgreSQL</strong><p>开发使用 SQLite；生产要求 PostgreSQL 与对象存储。</p></div><div class="tech-card"><small>模型能力</small><strong>可替换 LLM Provider</strong><p>Mock / Compatible · 本地安全回退 · 按任务选择模型档位</p></div><div class="tech-card"><small>文件交付</small><strong>HTML / DOCX / PDF</strong><p>统一内容与模板快照 · Chromium / LibreOffice · PDF 物理检查</p></div><div class="tech-card"><small>质量验证</small><strong>Pytest + Playwright</strong><p>后端回归 · Vitest 组件测试 · 浏览器完整流程验证</p></div></div><h3>实现细节</h3><p class="section-intro">按需展开，查看架构、数据关系和接口约定。下列细节描述现有设计与实现，未闭环项以第二部分为准。</p><details><summary>系统架构与模块分工</summary><div class="detail-body"><section id="arch">
+    <h2>系统架构</h2>
+    <div class="arch-layers">
+      <div class="arch-layer layer-frontend">
+        <div class="layer-title">前端层 · React + TypeScript + Vite</div>
+        <div class="modules">
+          <span class="arch-module">ResumeStudio（新主工作台）</span>
+          <span class="arch-module">InterviewGuides</span>
+          <span class="arch-module">Resumes</span>
+          <span class="arch-module">Jobs / MatchDetail</span>
+          <span class="arch-module">Experience</span>
+          <span class="arch-module">Dashboard / Settings</span>
+          <span class="arch-module">Advisor / Admin（兼容）</span>
+          <span class="arch-module">AuthContext</span>
+          <span class="arch-module">TanStack Query</span>
+        </div>
+      </div>
+      <div class="arch-layer layer-api">
+        <div class="layer-title">API 路由层 · FastAPI（9 个 router）</div>
+        <div class="modules">
+          <span class="arch-module">studio.py（新）</span>
+          <span class="arch-module">auth.py</span>
+          <span class="arch-module">core.py</span>
+          <span class="arch-module">workflow.py</span>
+          <span class="arch-module">channels.py</span>
+          <span class="arch-module">campus.py</span>
+          <span class="arch-module">experience.py</span>
+          <span class="arch-module">advisor.py</span>
+          <span class="arch-module">admin_router</span>
+        </div>
+      </div>
+      <div class="arch-layer layer-service">
+        <div class="layer-title">业务服务层 · 20+ service</div>
+        <div class="modules">
+          <span class="arch-module">bundle_service（新）</span>
+          <span class="arch-module">target_profile_service（新）</span>
+          <span class="arch-module">quality_service（新）</span>
+          <span class="arch-module">interview_guide_service（新）</span>
+          <span class="arch-module">content_contract（新）</span>
+          <span class="arch-module">resume_template（新）</span>
+          <span class="arch-module">pdf_export（新）</span>
+          <span class="arch-module">fact_guard</span>
+          <span class="arch-module">claim_entities</span>
+          <span class="arch-module">resume_generator</span>
+          <span class="arch-module">resume_parser</span>
+          <span class="arch-module">matcher</span>
+          <span class="arch-module">capability_service</span>
+          <span class="arch-module">docx/html_resume_renderer</span>
+          <span class="arch-module">quota_service</span>
+          <span class="arch-module">privacy_service</span>
+        </div>
+      </div>
+      <div class="arch-layer layer-provider">
+        <div class="layer-title">Provider 抽象层 · Base Provider + 安全回退</div>
+        <div class="modules">
+          <span class="arch-module">LLM: mock / compatible / mock_fallback</span>
+          <span class="arch-module">Jobs: sample / greenhouse / lever / public_jsonld / catalog</span>
+          <span class="arch-module">Payment: disabled（固定）</span>
+          <span class="arch-module">Storage: local</span>
+        </div>
+      </div>
+      <div class="arch-layer layer-data">
+        <div class="layer-title">数据层 · SQLAlchemy 2.0 + Alembic（head=0010）</div>
+        <div class="modules">
+          <span class="arch-module">SQLite（开发）</span>
+          <span class="arch-module">PostgreSQL（生产）</span>
+          <span class="arch-module">31 张表</span>
+          <span class="arch-module">10 个迁移</span>
+        </div>
+      </div>
+    </div>
+  </section></div></details><details><summary>数据模型与关联关系</summary><div class="detail-body"><section id="data">
+    <h2>数据模型（31 张表）</h2>
+
+    <h3>新增表（迁移 0009 + 0010）</h3>
+    <div class="entity-group">
+      <div class="entity-title">目标画像体系</div>
+      <div class="entity-chips">
+        <span class="entity-chip new">TargetProfile</span>
+        <span class="entity-chip new">TargetProfileSource</span>
+      </div>
+    </div>
+    <div class="entity-group">
+      <div class="entity-title">双版本生成体系</div>
+      <div class="entity-chips">
+        <span class="entity-chip new">ResumeBundle</span>
+        <span class="entity-chip new">ResumeBundleRun</span>
+      </div>
+    </div>
+    <div class="entity-group">
+      <div class="entity-title">面试指南体系</div>
+      <div class="entity-chips">
+        <span class="entity-chip new">InterviewGuide</span>
+      </div>
+    </div>
+
+    <h3>全量表分类</h3>
+    <div class="table-scroll"><table>
+      <tr><th style="width:140px">领域</th><th>表名</th></tr>
+      <tr><td>账号与权限</td><td><code>users</code> <code>user_profiles</code> <code>advisor_assignments</code></td></tr>
+      <tr><td>简历与事实</td><td><code>resumes</code> <code>resume_facts</code> <code>resume_versions</code> <code>experience_entries</code></td></tr>
+      <tr><td>目标画像（新）</td><td><code>target_profiles</code> <code>target_profile_sources</code></td></tr>
+      <tr><td>双版本包（新）</td><td><code>resume_bundles</code> <code>resume_bundle_runs</code></td></tr>
+      <tr><td>岗位与匹配</td><td><code>jobs</code> <code>matches</code></td></tr>
+      <tr><td>学习目标</td><td><code>capability_targets</code> <code>capability_target_runs</code></td></tr>
+      <tr><td>面试（新旧并存）</td><td><code>interviews</code>（旧） <code>interview_guides</code>（新）</td></tr>
+      <tr><td>投递与渠道</td><td><code>application_channels</code> <code>campus_announcements</code> <code>applications</code> <code>application_events</code></td></tr>
+      <tr><td>套餐与额度</td><td><code>packages</code> <code>orders</code> <code>quota_ledger</code> <code>quota_balances</code> <code>quota_reservations</code></td></tr>
+      <tr><td>系统</td><td><code>audit_logs</code> <code>notifications</code> <code>storage_deletion_tasks</code></td></tr>
+    </table></div>
+
+    <h3>核心关系</h3>
+    <div class="card">
+      <pre style="font-size:12px;">User 1──* Resume 1──* ResumeFact (user_confirmed)
+              │
+              ├──* TargetProfile 1──* TargetProfileSource *──1 Job
+              │         │
+              │         └──* ResumeBundle 1──2 ResumeVersion (submittable + target)
+              │                   │              │
+              │                   │              └──* InterviewGuide (1 per version)
+              │                   └──1 ResumeBundleRun (atomic claim)
+              │
+              ├──* ExperienceEntry (素材库)
+              └──* Application / Interview (旧流程兼容)</pre>
+    </div>
+  </section></div></details><details><summary>双版本生成、局部重写与幂等</summary><div class="detail-body"><section id="bundle">
+    <h2>双版本生成编排（bundle_service）</h2>
+    <div class="card">
+      <p><code>process_bundle()</code> 是核心编排函数，执行以下步骤：</p>
+      <ol style="padding-left:20px; font-size:14px; line-height:1.8;">
+        <li><strong>原子 claim</strong>：通过 <code>UPDATE ... WHERE status IN (queued, stale)</code> 原子抢占运行权，返回 claim_token。15 分钟未更新的 generating 任务视为 stale 可被抢占。</li>
+        <li><strong>LLM 写入双版本</strong>：分别调用 <code>_write_version()</code> 生成 submittable 和 target。系统提示词明确允许 AI 扩写，要求补充内容设 verification_status=ai_generated、achieved=false。</li>
+        <li><strong>质量评审</strong>：每份版本调用 <code>evaluate_version_with_critic()</code>（确定性硬门禁 + 可选 LLM 七维评分）。</li>
+        <li><strong>修复循环（最多 2 轮）</strong>：硬门禁未通过的版本用确定性 fallback 重写后重新评审。任一回退触发 degraded 标记。</li>
+        <li><strong>终态判定</strong>：
+          <ul>
+            <li>submittable 必须 hard_passed，否则整个 bundle failed</li>
+            <li>target 若仍不通过，调用 <code>_omit_ungrounded_future()</code> 移除无来源未来项后降级为 degraded</li>
+          </ul>
+        </li>
+        <li><strong>持久化</strong>：<code>_upsert_version()</code> 写入/更新两份 ResumeVersion，计算 content_hash，保存 quality_report 和 template_snapshot。</li>
+        <li><strong>自动生成面试指南</strong>：bundle 达到 ready/degraded 后，调用 <code>generate_guides_for_bundle()</code> 为每份版本创建 InterviewGuide。</li>
+      </ol>
+    </div>
+
+    <h3>选择性重生成</h3>
+    <div class="table-scroll"><table>
+      <tr><th>scope</th><th>行为</th></tr>
+      <tr><td><code>bullet</code></td><td>只重写指定 bullet_id，保留其 id 和来源字段。已锁定（locked=true）的 bullet 拒绝重写（409）。</td></tr>
+      <tr><td><code>section</code></td><td>只重写指定分区，其余分区保持原结构。锁定条目在重写后通过 <code>_merge_locked()</code> 恢复。</td></tr>
+      <tr><td><code>all</code></td><td>整份重生成，但通过 <code>_merge_locked()</code> 保留所有 locked bullet 的原文和位置。</td></tr>
+    </table></div>
+    <p>重生成后若 content_hash 变化，关联的 InterviewGuide 自动标记为 <code>stale</code>。</p>
+
+    <h3>幂等与额度</h3>
+    <ul style="padding-left:20px; font-size:14px;">
+      <li>默认幂等键 = <code>resume-bundle:{user_id}:{resume_id}:{profile_id}:{payload_hash}</code>，也支持客户端通过 <code>Idempotency-Key</code> 头自定义。</li>
+      <li>同一幂等键不同 payload 返回 409。</li>
+      <li>生成消耗 1 点 resume 额度，通过 quota_ledger 记录。</li>
+    </ul>
+  </section></div></details><details><summary>质量门禁与解释性评分</summary><div class="detail-body"><section id="quality">
+    <h2>质量门禁机制（quality_service）</h2>
+
+    <h3>硬门禁（阻止交付）</h3>
+    <ul class="gate-list">
+      <li class="hard"><strong>来源归属</strong>：bullet 引用的 source_fact_ids / requirement_ids 必须存在于当前生成上下文中，否则「引用了不属于当前生成上下文的来源」。</li>
+      <li class="hard"><strong>kind 一致性</strong>：content.kind 必须与生成模式匹配。旧 strict 模式限制未达成项；当前 ai_expansion 模式允许 AI 待核验内容，仍校验来源 ID 归属与结构。</li>
+      <li class="hard"><strong>蓝图覆盖率</strong>：target 模式下，所有 high priority 要求必须被引用或在文本中覆盖，否则「蓝图未覆盖高优先级目标要求」。</li>
+      <li class="hard"><strong>分区顺序</strong>：sections 顺序必须符合模板定义（教育背景 → 实习/工作 → 项目/科研/竞赛 → 奖项证书 → 技能）。</li>
+      <li class="hard"><strong>单页预算</strong>：估算行数 ≤ 48 行（按字符数估算），超出则「超过单页内容预算」。</li>
+      <li class="hard"><strong>headline 非空</strong>：求职方向不能为空。</li>
+      <li class="hard"><strong>可校验条目</strong>：简历内容必须至少有一条可校验 bullet。</li>
+    </ul>
+
+    <h3>解释性评分（不阻止交付）</h3>
+    <p>LLM critic 可选调用，失败时回退确定性评分。七个维度各 0-100 分：</p>
+    <div class="table-scroll"><table>
+      <tr><th>维度</th><th>确定性评分逻辑</th></tr>
+      <tr><td>target_relevance</td><td>高优先级要求覆盖率 = 100 × (1 - 未覆盖数 / 高优先级总数)</td></tr>
+      <tr><td>specificity</td><td>有数字则 70，否则 60</td></tr>
+      <tr><td>personal_contribution</td><td>有「本人」或 source_fact_ids 则 80，否则 55</td></tr>
+      <tr><td>information_density</td><td>min(100, 40 + 8 × bullet 数)</td></tr>
+      <tr><td>readability</td><td>固定 75</td></tr>
+      <tr><td>ats</td><td>固定 80</td></tr>
+      <tr><td>interview_defensibility</td><td>submittable 70，target 65</td></tr>
+    </table></div>
+
+    <div class="note">
+      <strong>critic 不能覆盖硬门禁</strong>：<code>apply_critic_cannot_override()</code> 确保即使 LLM 给了高分，只要 hard_passed=false，状态仍为 blocked。LLM 只提供解释性评分和改进建议。
+    </div>
+
+    <h3>ai_expansion 模式下的 Fact Guard 角色转变</h3>
+    <p>在 <code>factuality_policy=ai_expansion</code> 时，Fact Guard 的结果不再作为交付否决，而是作为「来源诊断」：</p>
+    <ul style="padding-left:20px; font-size:14px;">
+      <li>引用了不存在的来源 ID → 仍为硬 issue（阻止交付）</li>
+      <li>缺少事实支持 / 实体不在来源中 / 中文主张无来源 → 降级为 warning，自动将该 bullet 设为 <code>verification_status=ai_generated</code>、<code>achieved=false</code>，并记录「AI 补充内容，待核验」</li>
+      <li>经历条目的 header（organization/role_title 等）若不在引用事实中，也触发 ai_generated 标记</li>
+    </ul>
+  </section></div></details><details><summary>两类指南与覆盖率</summary><div class="detail-body"><section id="interview">
+    <h2>面试指南（InterviewGuide）</h2>
+    <p>新 InterviewGuide 与旧 Interview 表完全分离。第一阶段<strong>不提供答题、评分或语音模拟</strong>，只提供准备材料。</p>
+
+    <div class="compare">
+      <div class="compare-col" style="background:var(--blue-bg);">
+        <h4>求职版作战指南 (submittable)</h4>
+        <ul>
+          <li>60 秒 / 90 秒自我介绍</li>
+          <li>JD 专业与行为题</li>
+          <li>岗位动机说明</li>
+          <li>向面试官的反问</li>
+          <li>面试前检查表</li>
+          <li>每条 bullet → 一张卡片：
+            <ul>
+              <li>主问题 + 连续追问</li>
+              <li>六段式讲法（背景/目标/行动/工具/结果/收获）</li>
+              <li>个人贡献边界</li>
+              <li>核验材料提示</li>
+              <li>危险说法警示</li>
+            </ul>
+          </li>
+          <li>AI 补充条目自动加 honest_boundary</li>
+        </ul>
+      </div>
+      <div class="compare-col" style="background:var(--amber-bg);">
+        <h4>蓝图风险指南 (target)</h4>
+        <ul>
+          <li>只覆盖 achieved=false 的条目</li>
+          <li>每张卡片：
+            <ul>
+              <li>可能被问穿的问题</li>
+              <li>诚实边界（不能声称已完成）</li>
+              <li>缺少的证据</li>
+              <li>补齐后的答法</li>
+            </ul>
+          </li>
+          <li>completed_as_done: false（明确标记未完成）</li>
+          <li>核心原则：等补齐证据后再用真实过程回答，而不是现在排练假经历</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>覆盖率校验</h3>
+    <p>LLM 生成的卡片必须覆盖所有 needed bullets（submittable 覆盖全部，target 覆盖未达成项）。缺失任何一条 → 回退通用模板。模板仍缺失 → 指南状态保持 queued，quality_report 标记 coverage_incomplete。</p>
+  </section></div></details><details><summary>模板快照、导出与 PDF 检查</summary><div class="detail-body"><section id="template">
+    <h2>模板与渲染导出</h2>
+
+    <h3>唯一模板 classic-navy-ats-v2</h3>
+    <div class="grid2">
+      <div class="card">
+        <h4>页面规格</h4>
+        <div class="table-scroll"><table>
+          <tr><td>尺寸</td><td>A4 210×297mm</td></tr>
+          <tr><td>边距</td><td>水平 16mm / 垂直 18mm</td></tr>
+          <tr><td>最大页数</td><td>1 页</td></tr>
+          <tr><td>正文字体</td><td>微软雅黑 + Calibri</td></tr>
+          <tr><td>字号</td><td>姓名 22pt / 章节 12pt / 正文 10.5pt</td></tr>
+          <tr><td>行距</td><td>1.15</td></tr>
+        </table></div>
+      </div>
+      <div class="card">
+        <h4>配色</h4>
+        <div class="table-scroll"><table>
+          <tr><td>ink（正文）</td><td><code>#1F2933</code></td></tr>
+          <tr><td>accent（强调）</td><td><code>#2F3E63</code></td></tr>
+          <tr><td>muted（次要）</td><td><code>#5B6575</code></td></tr>
+          <tr><td>border</td><td><code>#2F3E63</code></td></tr>
+          <tr><td>background</td><td><code>#ECEBE6</code></td></tr>
+        </table></div>
+        <h4 style="margin-top:14px">分区顺序</h4>
+        <p style="font-size:13px;">求职方向 → 教育背景 → 实习/工作 → 项目/科研/竞赛 → 奖项证书 → 技能</p>
+      </div>
+    </div>
+
+    <p>模板以 JSON 快照存入 <code>ResumeBundle.template_snapshot_json</code>，<strong>不建模板目录表</strong>。蓝图未达成条目标记为上标 <code>*</code>，页脚注明「* 为目标蓝图内容，尚未形成可核验经历」。</p>
+
+    <h3>三格式导出</h3>
+    <div class="table-scroll"><table>
+      <tr><th>格式</th><th>实现</th><th>校验</th></tr>
+      <tr><td>HTML</td><td><code>html_resume_renderer.py</code>，内联 CSS + CSP</td><td>实体转义，无 JS 缩放</td></tr>
+      <tr><td>DOCX</td><td><code>docx_resume_renderer.py</code>，python-docx</td><td>A4 纸张，不用 macOS 专有字体</td></tr>
+      <tr><td>PDF</td><td><code>pdf_export.py</code>：Playwright Chromium → LibreOffice 回退</td><td>6 项物理 QA（见下）</td></tr>
+    </table></div>
+
+    <h3>PDF 物理 QA（6 项检查）</h3>
+    <ul class="gate-list">
+      <li class="hard"><strong>页数</strong>：必须恰好 1 页</li>
+      <li class="hard"><strong>尺寸</strong>：必须 A4 纵向（595.28×841.89pt，±8pt 容差）</li>
+      <li class="hard"><strong>裁切</strong>：CropBox 不得裁切 MediaBox；无文字超出页面边界</li>
+      <li class="hard"><strong>文本层</strong>：所有 section 名称和 bullet 文本必须在 PDF 文本层中可提取</li>
+      <li class="hard"><strong>字体嵌入</strong>：所有字体必须 embedded（pdfinfo / pdfminer 双重检测）</li>
+      <li class="hard"><strong>Unicode 映射</strong>：所有字体必须有 ToUnicode 映射</li>
+    </ul>
+    <p>任一检查失败返回 422「PDF 未通过单页、裁切、字体或文本层检查」。Chromium 和 LibreOffice 都不可用时返回 503，但 HTML 和 DOCX 仍可下载。</p>
+  </section></div></details><details><summary>API 端点速查</summary><div class="detail-body"><section id="api">
+    <h2>API 端点速查</h2>
+
+    <h3>新工作台 API（studio.py）</h3>
+    <div class="table-scroll"><table>
+      <tr><th style="width:80px">方法</th><th>路径</th><th>说明</th></tr>
+      <tr><td>POST</td><td><code>/api/target-profiles</code></td><td>创建目标画像（single_jd / multi_jd，2-10 份）</td></tr>
+      <tr><td>GET</td><td><code>/api/target-profiles</code></td><td>列表（自动检测源 JD 变更）</td></tr>
+      <tr><td>GET</td><td><code>/api/target-profiles/{id}</code></td><td>详情（源 JD 变更时自动刷新 version+1）</td></tr>
+      <tr><td>POST</td><td><code>/api/resume-bundles</code></td><td>创建双版本包（202，异步，幂等键）</td></tr>
+      <tr><td>POST</td><td><code>/api/resume-bundles/{id}/retry</code></td><td>重试失败/排队中的包</td></tr>
+      <tr><td>POST</td><td><code>/api/resume-bundles/{id}/process</code></td><td>同步处理（测试用）</td></tr>
+      <tr><td>GET</td><td><code>/api/resume-bundles</code></td><td>包列表</td></tr>
+      <tr><td>GET</td><td><code>/api/resume-bundles/{id}</code></td><td>包详情（含 versions + guides 状态）</td></tr>
+      <tr><td>GET</td><td><code>/api/resume-versions/{id}/studio</code></td><td>工作台版本详情（含 content_json + quality_report）</td></tr>
+      <tr><td>POST</td><td><code>/api/resume-versions/{id}/lock</code></td><td>锁定/解锁单条 bullet</td></tr>
+      <tr><td>POST</td><td><code>/api/resume-versions/{id}/regenerate</code></td><td>按 bullet / section / all 重生成</td></tr>
+      <tr><td>GET</td><td><code>/api/resume-versions/{id}/studio-preview</code></td><td>HTML 预览</td></tr>
+      <tr><td>GET</td><td><code>/api/resume-versions/{id}/studio-download</code></td><td>下载（?format=html|docx|pdf）</td></tr>
+      <tr><td>GET</td><td><code>/api/interview-guides/{id}</code></td><td>面试指南详情</td></tr>
+      <tr><td>POST</td><td><code>/api/interview-guides/{id}/regenerate</code></td><td>重新生成指南</td></tr>
+      <tr><td>GET</td><td><code>/api/interview-guides/{id}/download</code></td><td>下载 HTML 指南</td></tr>
+    </table></div>
+
+    <h3>兼容 API（旧流程）</h3>
+    <p>以下路由保留兼容但退出主导航：<code>/api/resumes</code>（上传/解析/事实确认）、<code>/api/jobs</code>（发现/导入/匹配）、<code>/api/capability-targets</code>、<code>/api/channels</code>、<code>/api/applications</code>、<code>/api/interviews</code>（旧版）、<code>/api/advisor/*</code>、<code>/api/admin/*</code>。</p>
+  </section></div></details><details><summary>安全、隐私与用户隔离</summary><div class="detail-body"><section id="security">
+    <h2>安全与隐私设计</h2>
+    <div class="grid2">
+      <div class="card">
+        <h4>生产启动自检</h4>
+        <ul style="padding-left:18px; font-size:13px;">
+          <li>JWT 密钥强度 ≥ 32 字节，禁止默认值</li>
+          <li>必须 HTTPS（非 localhost 时）</li>
+          <li>必须 PostgreSQL（禁止 SQLite）</li>
+          <li>必须非默认管理员密码</li>
+          <li>Storage 必须非 local（需对象存储）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>文件权限</h4>
+        <ul style="padding-left:18px; font-size:13px;">
+          <li><code>.env</code> 自动 chmod 600</li>
+          <li>SQLite 文件自动 chmod 600</li>
+          <li>uploads 目录自动 chmod 700</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>LLM 日志安全</h4>
+        <ul style="padding-left:18px; font-size:13px;">
+          <li>只记任务名/档位/模型/耗时/token 数</li>
+          <li><strong>不记简历原文或密钥</strong></li>
+          <li>错误信息过滤 prompt/raw_jd/password/api_key</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>public_jsonld 七层防护</h4>
+        <ul style="padding-left:18px; font-size:13px;">
+          <li>仅 HTTPS / 443 端口</li>
+          <li>拒绝 IP 字面量 URL</li>
+          <li>DNS 解析必须为公网地址</li>
+          <li>不跟随重定向</li>
+          <li>robots.txt 检查</li>
+          <li>2MB 响应截断</li>
+          <li>Content-Type 白名单</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>数据保留与删除</h3>
+    <ul style="padding-left:20px; font-size:14px;">
+      <li>账号删除后数据保留 <strong>180 天</strong>（可恢复窗口），之后进入 7 天删除宽限期，由 <code>storage_deletion_tasks</code> 跟踪。</li>
+      <li>用户可申请数据导出（JSON 格式）。</li>
+      <li>所有写操作记录 <code>audit_logs</code>。</li>
+    </ul>
+
+    <h3>跨用户隔离</h3>
+    <p>所有查询通过 <code>current_user</code> 依赖注入获取用户身份，服务层的 <code>owned_*</code> 函数（owned_bundle / owned_profile / owned_guide 等）强制校验 <code>user_id</code> 匹配，不匹配返回 404。测试覆盖跨用户越权访问场景。</p>
+  </section></div></details><details><summary>产品方向演进与决策依据</summary><div class="detail-body"><section id="direction">
+    <h2>方向演进与关键裁决</h2>
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-date">早期版本</div>
+        <div class="tl-title">v1/v2 严格事实模式</div>
+        <div class="tl-desc">简历内容仅限已确认事实，AI 不得扩写。Fact Guard 拦截任何缺少来源支持的条目。顾问批准是预览和导出的前置条件。</div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-date">PROJECT_SPEC §27</div>
+        <div class="tl-title">双版本简历裁决</div>
+        <div class="tl-desc">引入蓝图简历（target）与可投递简历（submittable）双版本机制。蓝图可包含未达成学习目标，但必须带 achieved:false 标记。推翻原 §21.4/§22 的「简历不得超出原始事实」设计。</div>
+      </div>
+      <div class="tl-item major">
+        <div class="tl-date">2026-09-05 · PROJECT_SPEC §28</div>
+        <div class="tl-title">方向收敛：自助简历产品</div>
+        <div class="tl-desc">主流程从「岗位看板 + 学习目标 + 投递 + 顾问运营」收敛为自助式简历产品。新增目标画像、ResumeBundle、新 InterviewGuide。顾问批准不再是导出条件。岗位看板/投递/学习目标/顾问运营退出主导航，保留兼容接口。</div>
+      </div>
+      <div class="tl-item major">
+        <div class="tl-date">2026-09-05 · §28.4 用户裁决</div>
+        <div class="tl-title">允许 AI 扩写（factuality_policy=ai_expansion）</div>
+        <div class="tl-desc">新工作台 v3 默认允许 AI 超出已确认事实补充内容。缺少事实支持、新主张和未达成状态不再阻止生成、预览或导出。AI 补充记录 verification_status=ai_generated、achieved=false，标识待核验，不自动写入已确认事实库。submittable 界面名称改为「求职版」。</div>
+      </div>
+    </div>
+    <div class="note">
+      <strong>优先级规则</strong>：需求冲突时按 <code>docs/plan-resume-interview-core.md</code> → <code>docs/plan-target-resume-loop.md</code>（仅历史参考）→ <code>PROJECT_SPEC.md</code> 顺序裁决。§28 优先于 §27，§27 作为历史裁决保留不删除。
+    </div>
+  </section></div></details></section><footer class="footer"><p>AI Job Coach<br>业务逻辑 → 项目进度 → 技术实现</p><p>基于 2026-09-06 工作区与任务文档整理<br>静态项目介绍 · 非实时运行报告</p></footer></main><script>
+const links = [...document.querySelectorAll('.toc a')];
+const sections = ['business','progress','technology'].map(id => document.getElementById(id));
+function updateNavigation() {
+ let current = sections[0];
+ for (const section of sections) if (section.getBoundingClientRect().top <= 180) current = section;
+ links.forEach(link => {
+  const active = link.hash === '#' + current.id;
+  link.classList.toggle('active', active);
+  if (active) link.setAttribute('aria-current', 'location'); else link.removeAttribute('aria-current');
+ });
+}
+window.addEventListener('scroll', updateNavigation, {passive:true});
+window.addEventListener('resize', updateNavigation);
+updateNavigation();
+</script>
+<script>
+// ===== Interactive Studio Logic =====
+const S = {
+  user: null,
+  jobId: null,
+  profileId: null,
+  resumeId: null,
+  bundleId: null,
+  versions: {},
+  currentKind: 'submittable',
+  pollTimer: null
+};
+
+async function api(path, opts = {}) {
+  const init = { ...opts, credentials: 'include' };
+  if (opts.body && !(opts.body instanceof FormData)) {
+    init.headers = { ...(opts.headers || {}), 'Content-Type': 'application/json' };
+  }
+  const res = await fetch(path, init);
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch(e) { data = text; }
+  if (!res.ok) {
+    const msg = (data && data.error && data.error.message) || (data && data.message) || ('HTTP ' + res.status);
+    throw new Error(msg);
+  }
+  return data;
+}
+
+function showPane(id) {
+  document.querySelectorAll('.studio-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function setStep(n) {
+  for (let i = 1; i <= 4; i++) {
+    const dot = document.getElementById('step-' + i);
+    const line = document.getElementById('line-' + i);
+    dot.classList.toggle('done', i < n);
+    dot.classList.toggle('active', i === n);
+    if (line) line.classList.toggle('done', i < n);
+  }
+  document.getElementById('step-jd').classList.toggle('hidden', n > 1);
+  document.getElementById('step-resume').classList.toggle('hidden', n !== 2);
+  document.getElementById('step-generate').classList.toggle('hidden', n !== 3);
+  document.getElementById('step-result').classList.toggle('hidden', n < 4);
+}
+
+function status(elId, msg, type = 'info') {
+  const el = document.getElementById(elId);
+  if (!msg) { el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="studio-status ' + type + '">' + msg + '</div>';
+}
+
+async function studioCheckAuth() {
+  try {
+    const me = await api('/api/auth/me');
+    S.user = me;
+    document.getElementById('studioUser').innerHTML =
+      '已登录：<strong>' + (me.display_name || me.email) + '</strong> (' + me.role + ') · <a href="#" onclick="studioLogout();return false;" style="color:var(--accent)">退出</a>';
+    showPane('pane-work');
+    setStep(1);
+  } catch(e) {
+    document.getElementById('studioUser').textContent = '未登录';
+    showPane('pane-login');
+  }
+}
+
+async function studioLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  try {
+    await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+    await studioCheckAuth();
+  } catch(e) {
+    alert('登录失败：' + e.message);
+  }
+}
+
+async function studioLogout() {
+  await api('/api/auth/logout', { method: 'POST' });
+  S.user = null; S.jobId = null; S.profileId = null; S.resumeId = null; S.bundleId = null;
+  document.getElementById('studioUser').textContent = '未登录';
+  showPane('pane-login');
+}
+
+async function studioAnalyzeJD() {
+  const raw = document.getElementById('jdText').value.trim();
+  if (!raw) { alert('请先粘贴岗位描述'); return; }
+  const btn = document.getElementById('btnAnalyze');
+  btn.disabled = true; btn.textContent = '分析中…';
+  status('jdStatus', '正在导入 JD 并结构化…', 'info');
+  try {
+    const job = await api('/api/jobs/import-text', {
+      method: 'POST',
+      body: JSON.stringify({
+        company_name: document.getElementById('jdCompany').value.trim() || '目标公司',
+        title: document.getElementById('jdTitle').value.trim() || '目标岗位',
+        raw_jd: raw
+      })
+    });
+    S.jobId = job.id;
+    status('jdStatus', 'JD 已导入（job_id: ' + job.id.slice(0,8) + '…），正在生成目标画像…', 'info');
+    const profile = await api('/api/target-profiles', {
+      method: 'POST',
+      body: JSON.stringify({ mode: 'single_jd', job_ids: [job.id] })
+    });
+    S.profileId = profile.id;
+    const reqCount = (profile.snapshot_json && profile.snapshot_json.requirements) ? profile.snapshot_json.requirements.length : 0;
+    status('jdStatus', '目标画像已生成！提取到 ' + reqCount + ' 条岗位要求。', 'success');
+    setStep(2);
+  } catch(e) {
+    status('jdStatus', '分析失败：' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '分析岗位，生成目标画像';
+  }
+}
+
+async function studioUploadResume() {
+  const fileInput = document.getElementById('resumeFile');
+  if (!fileInput.files || !fileInput.files[0]) { alert('请选择简历文件'); return; }
+  const btn = document.getElementById('btnUpload');
+  btn.disabled = true; btn.textContent = '上传中…';
+  status('resumeStatus', '正在上传并解析简历…', 'info');
+  try {
+    const fd = new FormData();
+    fd.append('file', fileInput.files[0]);
+    const resume = await api('/api/resumes', { method: 'POST', body: fd });
+    S.resumeId = resume.id;
+    status('resumeStatus', '简历已上传（id: ' + resume.id.slice(0,8) + '…），正在确认解析出的事实…', 'info');
+    try {
+      await api('/api/resumes/' + resume.id + '/confirm-facts', { method: 'POST' });
+      status('resumeStatus', '简历事实已确认，可以生成了。', 'success');
+    } catch(e) {
+      status('resumeStatus', '简历已上传，但自动确认事实失败（' + e.message + '）。你仍可以继续生成，AI 会基于可用素材扩写。', 'warn');
+    }
+    prepareGenerate();
+  } catch(e) {
+    status('resumeStatus', '上传失败：' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '上传并解析';
+  }
+}
+
+function studioSkipResume() {
+  S.resumeId = null;
+  status('resumeStatus', '已跳过简历上传，将从空白生成（AI 扩写模式）。', 'info');
+  prepareGenerate();
+}
+
+function prepareGenerate() {
+  setStep(3);
+  const summary = document.getElementById('generateSummary');
+  summary.innerHTML = '目标画像：<strong>' + (S.profileId || '').slice(0,8) + '…</strong>' +
+    (S.resumeId ? ' · 素材简历：<strong>' + S.resumeId.slice(0,8) + '…</strong>' : ' · 无简历（空白扩写）');
+}
+
+async function studioGenerate() {
+  const btn = document.getElementById('btnGenerate');
+  btn.disabled = true; btn.textContent = '生成中…';
+  status('generateStatus', '正在创建双版本生成任务…', 'info');
+  try {
+    const body = { target_profile_id: S.profileId };
+    if (S.resumeId) body.base_resume_id = S.resumeId;
+    const bundle = await api('/api/resume-bundles', { method: 'POST', body: JSON.stringify(body) });
+    S.bundleId = bundle.id;
+    S.versions = {};
+    status('generateStatus', '任务已创建，正在后台生成（通常 5-30 秒）…', 'info');
+    setStep(4);
+    updateVersionTabs();
+    pollBundle();
+  } catch(e) {
+    status('generateStatus', '生成失败：' + e.message, 'error');
+    btn.disabled = false; btn.textContent = '生成求职版 + 蓝图 Plus';
+  }
+}
+
+function updateVersionTabs() {
+  const hasSub = !!(S.versions.submittable && S.versions.submittable.id);
+  const hasTgt = !!(S.versions.target && S.versions.target.id);
+  document.getElementById('tab-submittable').style.opacity = hasSub ? '1' : '0.4';
+  document.getElementById('tab-target').style.opacity = hasTgt ? '1' : '0.4';
+}
+
+function pollBundle() {
+  if (S.pollTimer) clearInterval(S.pollTimer);
+  let attempts = 0;
+  S.pollTimer = setInterval(async () => {
+    attempts++;
+    if (attempts > 60) {
+      clearInterval(S.pollTimer);
+      status('generateStatus', '生成超时（超过 2 分钟），可点击重试。', 'error');
+      return;
+    }
+    try {
+      const bundle = await api('/api/resume-bundles/' + S.bundleId);
+      const st = bundle.status;
+      if (st === 'ready' || st === 'degraded') {
+        clearInterval(S.pollTimer);
+        S.versions = bundle.versions || {};
+        updateVersionTabs();
+        const available = Object.keys(S.versions).join('、') || '无';
+        status('generateStatus',
+          (st === 'degraded' ? '生成完成（降级模式）。' : '双版本简历生成完成！') +
+          ' 可用版本：' + available,
+          st === 'degraded' ? 'warn' : 'success');
+        // Auto-select first available version
+        if (S.versions.submittable && S.versions.submittable.id) {
+          switchVersion('submittable');
+        } else if (S.versions.target && S.versions.target.id) {
+          switchVersion('target');
+        } else {
+          document.getElementById('versionContent').innerHTML =
+            '<div class="studio-status error">生成已完成但没有可用的简历版本。bundle 状态：' + st + '。请重试。</div>';
+        }
+      } else if (st === 'failed') {
+        clearInterval(S.pollTimer);
+        S.versions = {};
+        updateVersionTabs();
+        const errMsg = bundle.error || (bundle.generation_metadata_json && bundle.generation_metadata_json.error) || '未知错误';
+        status('generateStatus', '生成失败：' + errMsg + '。可点击下方按钮重试。', 'error');
+        document.getElementById('versionContent').innerHTML =
+          '<div class="studio-status error">生成失败，暂无可用版本。错误：' + errMsg + '</div>';
+        document.getElementById('exportRow').innerHTML = '';
+        const btn = document.getElementById('btnGenerate');
+        btn.disabled = false;
+        btn.textContent = '重试生成';
+        btn.onclick = studioRetry;
+      } else {
+        status('generateStatus', '状态：' + st + '，继续等待…', 'info');
+      }
+    } catch(e) {
+      // ignore transient errors during polling
+    }
+  }, 1500);
+}
+
+async function studioRetry() {
+  try {
+    await api('/api/resume-bundles/' + S.bundleId + '/retry', { method: 'POST' });
+    status('generateStatus', '已重新排队…', 'info');
+    pollBundle();
+  } catch(e) {
+    status('generateStatus', '重试失败：' + e.message, 'error');
+  }
+}
+
+function switchVersion(kind) {
+  S.currentKind = kind;
+  document.getElementById('tab-submittable').classList.toggle('active', kind === 'submittable');
+  document.getElementById('tab-target').classList.toggle('active', kind === 'target');
+  loadVersion(kind);
+}
+
+async function loadVersion(kind) {
+  const v = S.versions[kind];
+  const kindLabel = kind === 'submittable' ? '求职版' : '蓝图 Plus';
+  if (!v || !v.id) {
+    const available = Object.entries(S.versions || {})
+      .filter(([_, val]) => val && val.id)
+      .map(([k, val]) => (k === 'submittable' ? '求职版' : '蓝图 Plus') + '(' + val.status + ')')
+      .join('、') || '无';
+    document.getElementById('versionContent').innerHTML =
+      '<div class="studio-status warn">' +
+      '<strong>' + kindLabel + '暂不可用。</strong><br>' +
+      '可能原因：该版本生成失败、质量门禁未通过，或 bundle 仍在生成中。<br>' +
+      '当前可用版本：' + available +
+      (S.bundleId ? '<br>bundle_id: ' + S.bundleId.slice(0,12) + '…' : '') +
+      '</div>' +
+      '<div style="margin-top:10px">' +
+      '<button class="btn btn-secondary btn-sm" onclick="refreshBundle()">刷新 bundle 状态</button> ' +
+      '<button class="btn btn-secondary btn-sm" onclick="studioRetry()">重试生成</button>' +
+      '</div>';
+    document.getElementById('exportRow').innerHTML = '';
+    return;
+  }
+  try {
+    const data = await api('/api/resume-versions/' + v.id + '/studio');
+    renderVersion(data);
+    renderExports(v.id);
+  } catch(e) {
+    document.getElementById('versionContent').innerHTML =
+      '<div class="studio-status error">' +
+      '<strong>' + kindLabel + '加载失败：' + e.message + '</strong><br>' +
+      '版本状态：' + (v.status || '未知') +
+      '</div>' +
+      '<div style="margin-top:10px">' +
+      '<button class="btn btn-secondary btn-sm" onclick="loadVersion(\'' + kind + '\')">重试加载</button> ' +
+      '<button class="btn btn-secondary btn-sm" onclick="refreshBundle()">刷新 bundle 状态</button>' +
+      '</div>';
+    document.getElementById('exportRow').innerHTML = '';
+  }
+}
+
+async function refreshBundle() {
+  if (!S.bundleId) return;
+  try {
+    const bundle = await api('/api/resume-bundles/' + S.bundleId);
+    S.versions = bundle.versions || {};
+    updateVersionTabs();
+    status('generateStatus', '已刷新。bundle 状态：' + bundle.status + '，可用版本：' + (Object.keys(S.versions).join('、') || '无'), 'info');
+    loadVersion(S.currentKind);
+  } catch(e) {
+    status('generateStatus', '刷新失败：' + e.message, 'error');
+  }
+}
+
+function renderVersion(data) {
+  const content = data.content_json || {};
+  const qr = data.quality_report_json || {};
+  let html = '';
+  // Quality summary
+  html += '<div style="margin-bottom:12px">';
+  html += '<span class="badge ' + (qr.hard_passed ? 'badge-green' : 'badge-red') + '">' +
+    (qr.hard_passed ? '质量门禁通过' : '质量门禁未通过') + '</span> ';
+  if (qr.reviewer) html += '<span style="font-size:12px;color:var(--muted);margin-left:8px">评审：' + qr.reviewer + (qr.reviewer_note ? ' · ' + qr.reviewer_note : '') + '</span>';
+  if (qr.unachieved_count) html += '<span style="font-size:12px;color:var(--amber);margin-left:8px">未达成/待核验：' + qr.unachieved_count + ' 条</span>';
+  html += '</div>';
+  // Dimension scores
+  if (qr.dimensions && Object.keys(qr.dimensions).length) {
+    html += '<div class="quality-bar">';
+    const dimNames = { target_relevance:'目标相关', specificity:'具体度', personal_contribution:'个人贡献', information_density:'信息密度', readability:'可读性', ats:'ATS友好', interview_defensibility:'面试可辩' };
+    for (const [k, v] of Object.entries(qr.dimensions)) {
+      html += '<span class="quality-dim">' + (dimNames[k] || k) + ' <span class="score">' + (v.score || '?') + '</span></span>';
+    }
+    html += '</div>';
+  }
+  // Issues
+  if (qr.issues && qr.issues.length) {
+    html += '<div class="studio-status warn" style="margin:8px 0"><strong>问题：</strong>' + qr.issues.join('；') + '</div>';
+  }
+  // Resume content
+  html += '<div class="resume-preview">';
+  html += '<h3>' + (content.headline || data.title || '简历') + '</h3>';
+  if (content.contact && (content.contact.name || content.contact.phone || content.contact.email)) {
+    const c = content.contact;
+    html += '<p style="font-size:12px;color:var(--muted);margin-bottom:8px">' +
+      [c.name, c.phone, c.email, c.city].filter(Boolean).join(' · ') + '</p>';
+  }
+  for (const section of (content.sections || [])) {
+    if (!section.items || !section.items.length) continue;
+    html += '<div class="section-title">' + (section.name || '') + '</div>';
+    for (const item of section.items) {
+      const header = [item.organization, item.role_title].filter(Boolean).join(' · ');
+      const meta = [item.location, [item.start_date, item.end_date].filter(Boolean).join('–')].filter(Boolean).join(' · ');
+      if (header) html += '<div class="item-header">' + header + '</div>';
+      if (meta) html += '<div class="item-meta">' + meta + '</div>';
+      if (item.bullets && item.bullets.length) {
+        html += '<ul>';
+        for (const b of item.bullets) {
+          let line = (b.text || '').replace(/</g, '&lt;');
+          if (b.achieved === false) line += '<span class="bullet-unachieved">*</span>';
+          if (b.verification_status === 'ai_generated') line += '<span class="bullet-ai">AI补充·待核验</span>';
+          if (b.source_fact_ids && b.source_fact_ids.length) line += '<span class="bullet-source">来源' + b.source_fact_ids.length + '</span>';
+          html += '<li>' + line + '</li>';
+        }
+        html += '</ul>';
+      }
+    }
+  }
+  if (content.excluded_gaps && content.excluded_gaps.length) {
+    html += '<p style="font-size:11px;color:var(--muted);margin-top:10px">未覆盖的高优先级要求：' + content.excluded_gaps.join('；') + '</p>';
+  }
+  html += '<p style="font-size:11px;color:var(--muted);margin-top:10px;border-top:1px solid var(--border);padding-top:6px">* 为 AI 补充或目标蓝图内容，尚未形成可核验经历。</p>';
+  html += '</div>';
+  document.getElementById('versionContent').innerHTML = html;
+}
+
+function renderExports(versionId) {
+  const row = document.getElementById('exportRow');
+  row.innerHTML =
+    '<a class="btn btn-secondary btn-sm" href="/api/resume-versions/' + versionId + '/studio-preview" target="_blank">预览 HTML</a>' +
+    '<a class="btn btn-secondary btn-sm" href="/api/resume-versions/' + versionId + '/studio-download?format=html">下载 HTML</a>' +
+    '<a class="btn btn-secondary btn-sm" href="/api/resume-versions/' + versionId + '/studio-download?format=docx">下载 DOCX</a>' +
+    '<a class="btn btn-secondary btn-sm" href="/api/resume-versions/' + versionId + '/studio-download?format=pdf">下载 PDF</a>';
+}
+
+// Init
+studioCheckAuth();
+</script></body></html>

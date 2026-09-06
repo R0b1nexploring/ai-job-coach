@@ -64,6 +64,7 @@ def main() -> int:
         check=True,
     )
     os.chdir(API_ROOT)
+    port = os.environ.get("E2E_API_PORT", "18000").strip() or "18000"
     os.execve(
         sys.executable,
         [
@@ -74,7 +75,7 @@ def main() -> int:
             "--host",
             "127.0.0.1",
             "--port",
-            "8000",
+            port,
         ],
         environment,
     )

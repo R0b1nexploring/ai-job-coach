@@ -18,6 +18,11 @@ TASK_TIERS = {
     "capability_plan": "strong",
     "interview_guide": "strong",
     "email_draft": "cheap",
+    "target_profile": "cheap",
+    "material_clarify": "cheap",
+    "resume_plan": "strong",
+    "resume_quality": "cheap",
+    "interview_guide_v2": "strong",
 }
 
 

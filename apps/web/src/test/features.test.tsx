@@ -95,7 +95,7 @@ test('简历页明确区分蓝图和可投递版本', async () => {
   expect(await screen.findByText('蓝图 · 对照 JD 的差距')).toBeVisible()
   expect(screen.getByText('可投递 · 全部已确认')).toBeVisible()
   expect(screen.getByText('2 条未达成，前往学习目标')).toBeVisible()
-  expect(screen.getByText((_, node) => (node?.textContent || '').includes('完成设备点检练习') && node.tagName === 'LI')).toBeVisible()
+  expect(screen.getByText((_, node) => Boolean(node && (node.textContent || '').includes('完成设备点检练习') && node.tagName === 'LI'))).toBeVisible()
 })
 
 test('蓝图投递只提示一次未达成目标', async () => {
@@ -332,7 +332,7 @@ test('经历库可以添加实习并区分范本', async () => {
   await user.type(screen.getByPlaceholderText('组织 / 学校 / 自主项目'), '自己实习过的工厂')
   await user.type(screen.getByPlaceholderText('这段经历你实际做了什么，不要写没做过的数字或工具。'), '完成指定工位点检。')
   await user.click(screen.getByRole('button', { name: '保存到经历库' }))
-  expect(await screen.findByText('已加入经历库，并写入可匹配的事实。')).toBeVisible()
+  expect(await screen.findByText('已保存草稿素材，确认后才会写入事实库。')).toBeVisible()
 })
 
 test('岗位库展示校招简章的公告和投递入口', async () => {

@@ -103,6 +103,8 @@ def db(isolated_test_environment):
         with Session() as session:
             yield session
     finally:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
         Base.metadata.drop_all(engine)
         engine.dispose()
 

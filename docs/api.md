@@ -1,6 +1,8 @@
 # API
 
-启动后访问 `http://localhost:8000/docs` 查看实时 OpenAPI 文档。接口统一使用 `/api` 前缀；错误响应为 `{ "error": { "code", "message", "details", "request_id" } }`。
+> **2026-09-05 用户最新裁决：允许 AI 扩写。** 新生成的工作台 v3 简历采用 `factuality_policy=ai_expansion`，允许超出已确认事实补充内容，也允许仅凭目标画像创建草稿。缺少事实支持、新主张和未达成状态不再阻止生成、预览或导出；来源 ID 归属、结构及版面仍需通过检查。AI 补充记录 `verification_status=ai_generated`、`achieved=false`，在工作台、导出和指南标识待核验，不自动写入已确认事实库。`submittable` 的界面名称改为“求职版”。本裁决覆盖本文此前相冲突的事实限制；旧 v1/v2 接口保持兼容。
+
+启动后访问 `http://localhost:8000/docs` 查看实时 OpenAPI 文档；如果设置了 `API_PORT`，请替换为对应端口。接口统一使用 `/api` 前缀；错误响应为 `{ "error": { "code", "message", "details", "request_id" } }`。
 
 MVP-1 不暴露订单创建、支付回调或退款接口。`GET /api/packages` 用于展示说明，`GET /api/quotas` 与 `GET /api/quotas/ledger` 用于查询演示额度；管理员通过 `POST /api/admin/quotas/grant` 发放额度。Payment Provider 固定为 Disabled，并返回 `PAYMENT_NOT_AVAILABLE`。
 
@@ -25,6 +27,28 @@ PATCH /api/capability-targets/{target_id}
 ```
 
 生成接口按匹配报告幂等，目标包含 JD 原文证据、可展示产出物、验收标准和预计工时。状态为 `pending`、`in_progress`、`achieved` 或 `abandoned`。标记 `achieved` 必须提交非空 `evidence_text`；系统据此新增一条 `provenance=learned`、`verification_status=user_confirmed` 的事实，已达成目标不能回退。
+
+## 自助工作台（当前主流程）
+
+普通用户主路径不再依赖顾问批准：
+
+```text
+POST /api/target-profiles
+GET  /api/target-profiles/{id}
+POST /api/experience
+POST /api/experience/{id}/clarifications
+POST /api/experience/{id}/confirm
+POST /api/resume-bundles
+GET  /api/resume-bundles/{id}
+GET  /api/resume-versions/{id}/studio
+POST /api/resume-versions/{id}/lock
+POST /api/resume-versions/{id}/regenerate
+GET  /api/resume-versions/{id}/studio-preview
+GET  /api/resume-versions/{id}/studio-download?format=html|docx|pdf
+GET  /api/interview-guides/{id}
+```
+
+`POST /api/resume-bundles` 返回 202，并在进程内生成恰好一份 `submittable` 与一份 `target`。相同 `Idempotency-Key` 复用同一简历包。工作台导出只要求硬门禁通过；`degraded` 可带提示导出。PDF 在没有 Chromium/LibreOffice 时返回 `PDF_CONVERTER_UNAVAILABLE`，不阻断 HTML/DOCX。新面试指南只含准备内容，不含作答或评分入口。旧 `/api/resume-versions` 与 `/api/interviews` 保留兼容。
 
 ## 蓝图简历与可投递简历
 

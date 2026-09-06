@@ -1,6 +1,8 @@
 # 产品规格
 
-本文件是产品规格入口，不复制完整正文，避免形成分叉。一般需求以根目录 [`PROJECT_SPEC.md`](../PROJECT_SPEC.md) 为准；涉及简历生成、事实校验、学习目标、面试指南和投递渠道时，以 [`plan-target-resume-loop.md`](plan-target-resume-loop.md) 为当前实施依据，并结合 `PROJECT_SPEC.md` §27 的裁决记录验收。
+> **2026-09-05 用户最新裁决：允许 AI 扩写。** 新生成的工作台 v3 简历采用 `factuality_policy=ai_expansion`，允许超出已确认事实补充内容，也允许仅凭目标画像创建草稿。缺少事实支持、新主张和未达成状态不再阻止生成、预览或导出；来源 ID 归属、结构及版面仍需通过检查。AI 补充记录 `verification_status=ai_generated`、`achieved=false`，在工作台、导出和指南标识待核验，不自动写入已确认事实库。`submittable` 的界面名称改为“求职版”。本裁决覆盖本文此前相冲突的事实限制；旧 v1/v2 接口保持兼容。
+
+本文件是产品规格入口，不复制完整正文，避免形成分叉。一般需求以根目录 [`PROJECT_SPEC.md`](../PROJECT_SPEC.md) 为准；涉及目标画像、素材确认、双轨简历、导出和面试指南时，以 [`plan-resume-interview-core.md`](plan-resume-interview-core.md) 和 `PROJECT_SPEC.md` §28 为当前实施依据。旧计划 [`plan-target-resume-loop.md`](plan-target-resume-loop.md) 与 §27 保留为历史记录。
 
 当前闭环同时产出蓝图简历 `target` 与可投递简历 `submittable`：蓝图把未满足 JD 要求转换为明确标记 `achieved=false` 的学习靶子；用户完成产出物后，目标进入已确认事实库，可投递版本随之更新。Fact Guard 按版本模式逐条校验来源，面试指南针对未达成条目提示暴露风险，投递邮件正文只引用已确认事实。
 

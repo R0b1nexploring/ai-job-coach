@@ -14,6 +14,21 @@ from app.providers.llm.schemas import JobStructuredOutput
 from app.providers.storage.local import LocalStorage
 
 
+def test_openapi_operation_ids_are_unique():
+    from collections import Counter
+
+    from app.main import app
+
+    ids = [
+        operation.get("operationId")
+        for methods in app.openapi()["paths"].values()
+        for name, operation in methods.items()
+        if name in {"get", "post", "put", "patch", "delete"} and operation.get("operationId")
+    ]
+    duplicates = [item for item, count in Counter(ids).items() if count > 1]
+    assert duplicates == []
+
+
 def test_upload_reader_stops_immediately_after_crossing_limit():
     class ChunkedUpload:
         def __init__(self):

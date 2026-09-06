@@ -10,6 +10,8 @@ from app.models.entities import (
     Job,
     QuotaLedger,
     QuotaReservation,
+    ResumeBundle,
+    ResumeBundleRun,
     ResumeVersion,
     User,
 )
@@ -22,6 +24,26 @@ from app.services.storage_cleanup import process_storage_deletions
 # validation and a semantic retry. Keep the crash-recovery window comfortably
 # above that total so maintenance never refunds a request that is still working.
 QUOTA_RESERVATION_TIMEOUT = timedelta(hours=1)
+
+
+def requeue_stale_bundle_runs(db: Session, *, current: datetime) -> int:
+    cutoff = current - timedelta(minutes=15)
+    runs = list(
+        db.scalars(
+            select(ResumeBundleRun).where(
+                ResumeBundleRun.status == "generating",
+                ResumeBundleRun.updated_at <= cutoff,
+            )
+        )
+    )
+    for run in runs:
+        run.status = "queued"
+        bundle = db.get(ResumeBundle, run.bundle_id)
+        if bundle is not None:
+            bundle.status = "queued"
+    if runs:
+        db.commit()
+    return len(runs)
 
 
 def reconcile_stale_quota_reservations(
@@ -208,6 +230,7 @@ def run_maintenance(
         "purge_failed_count": 0,
         "expired_job_count": 0,
         "quota_reservation_refund_count": 0,
+        "requeued_bundle_count": 0,
     }
     if not execute:
         return result
@@ -222,6 +245,7 @@ def run_maintenance(
         db,
         current=current,
     )
+    result["requeued_bundle_count"] = requeue_stale_bundle_runs(db, current=current)
     deletion_cutoff = current - timedelta(days=get_settings().deletion_grace_days)
     for user, reason in users.values():
         user_id = user.id

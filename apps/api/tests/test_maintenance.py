@@ -91,6 +91,7 @@ def test_maintenance_dry_run_then_executes_retention_and_job_expiry(db):
         "purge_failed_count": 0,
         "expired_job_count": 0,
         "quota_reservation_refund_count": 0,
+        "requeued_bundle_count": 0,
     }
     assert expired.status == "active" and requested.status == "deletion_requested"
     assert old_job.status == "active"

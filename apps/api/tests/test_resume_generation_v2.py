@@ -898,6 +898,8 @@ def test_experience_library_facts_appear_in_generated_resume(client, db):
         },
     )
     assert created.status_code == 201, created.text
+    confirmed = client.post(f"/api/experience/{created.json()['id']}/confirm")
+    assert confirmed.status_code == 200, confirmed.text
     version = client.post(
         "/api/resume-versions",
         headers={"Idempotency-Key": "library-fact-resume"},

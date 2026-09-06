@@ -43,7 +43,7 @@ export function Experience() {
       }),
     }),
     onSuccess: () => {
-      setMessage('已加入经历库，并写入可匹配的事实。')
+      setMessage('已保存草稿素材，确认后才会写入事实库。')
       setForm(emptyForm)
       client.invalidateQueries({ queryKey: ['experience'] })
     },

@@ -53,6 +53,8 @@ if (!path.isAbsolute(storageValue) || !isInside(testRoot, path.resolve(storageVa
   throw new Error('E2E 测试启动已拒绝：上传目录不在隔离测试目录中。')
 }
 
+const apiPort = process.env.E2E_API_PORT || '18000'
+const webPort = process.env.E2E_WEB_PORT || '15173'
 const apiEnvironment = {
   AI_JOB_COACH_TEST_ROOT: testRoot,
   APP_ENV: 'test',
@@ -73,25 +75,29 @@ const apiEnvironment = {
   DEMO_ADVISOR_PASSWORD: 'ChangeMe123!',
   DEMO_USER_EMAIL: 'user@example.test',
   DEMO_USER_PASSWORD: 'ChangeMe123!',
+  E2E_API_PORT: apiPort,
+  E2E_WEB_PORT: webPort,
+  FRONTEND_ORIGIN: `http://127.0.0.1:${webPort}`,
 }
 const apiPython = process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python'
 
 export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
-  use: { baseURL: 'http://127.0.0.1:5173', trace: 'retain-on-failure' },
+  use: { baseURL: `http://127.0.0.1:${webPort}`, trace: 'retain-on-failure' },
   webServer: [
     {
       command: `${apiPython} ../../scripts/run_e2e_api.py`,
       cwd: '../api',
-      url: 'http://127.0.0.1:8000/api/health',
-      env: apiEnvironment,
+      url: `http://127.0.0.1:${apiPort}/api/health`,
+      env: { ...process.env, ...apiEnvironment },
       reuseExistingServer: false,
     },
     {
-      command: 'npm run dev -- --host 127.0.0.1',
+      command: `npm run dev -- --host 127.0.0.1 --port ${webPort} --strictPort`,
       cwd: '.',
-      url: 'http://127.0.0.1:5173',
+      url: `http://127.0.0.1:${webPort}`,
+      env: { ...process.env, ...apiEnvironment },
       reuseExistingServer: false,
     },
   ],

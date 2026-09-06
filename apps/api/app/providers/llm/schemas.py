@@ -149,7 +149,77 @@ class ResumeStructuredV2Output(BaseModel):
     excluded_gaps: list[str] = Field(default_factory=list)
 
 
-ResumeContentOutput = ResumeStructuredOutput | ResumeStructuredV2Output
+class ResumeBulletV3Output(ResumeBulletV2Output):
+    id: str = ""
+    locked: bool = False
+    requirement_ids: list[str] = Field(default_factory=list)
+    new_claims: list[str] = Field(default_factory=list, description="允许补充主张，在此记录补充内容")
+    verification_status: Literal["source_based", "ai_generated"] = "ai_generated"
+    achieved: bool = Field(default=False, description="仅有事实支持时为 true；AI 补充和蓝图目标为 false")
+
+
+class ResumeEntryV3Output(ResumeEntryV2Output):
+    bullets: list[ResumeBulletV3Output] = Field(default_factory=list)
+
+
+class ResumeSectionV3Output(ResumeSectionV2Output):
+    items: list[ResumeEntryV3Output] = Field(default_factory=list)
+
+
+class ResumeStructuredV3Output(ResumeStructuredV2Output):
+    content_version: Literal[3] = 3
+    factuality_policy: Literal["ai_expansion"] = "ai_expansion"
+    sections: list[ResumeSectionV3Output] = Field(default_factory=list)
+
+
+class ResumeBulletRewriteOutput(BaseModel):
+    text: str
+    source_fact_ids: list[str] = Field(default_factory=list)
+    source_target_ids: list[str] = Field(default_factory=list)
+    requirement_ids: list[str] = Field(default_factory=list)
+    achieved: bool = False
+    new_claims: list[str] = Field(default_factory=list)
+    verification_status: Literal["source_based", "ai_generated"] = "ai_generated"
+
+
+ResumeContentOutput = ResumeStructuredOutput | ResumeStructuredV2Output | ResumeStructuredV3Output
+
+
+class QualityDimensionOutput(BaseModel):
+    score: int = Field(default=60, ge=0, le=100)
+    notes: list[str] = Field(default_factory=list)
+
+
+class QualityCriticOutput(BaseModel):
+    dimensions: dict[str, QualityDimensionOutput] = Field(default_factory=dict)
+    summary: str = ""
+
+
+class GuideCardOutput(BaseModel):
+    bullet_id: str
+    main_question: str = ""
+    follow_ups: list[str] = Field(default_factory=list)
+    six_part_story: dict[str, str] = Field(default_factory=dict)
+    personal_boundary: str = ""
+    verification: str = ""
+    danger: str = ""
+    exposure_questions: list[str] = Field(default_factory=list)
+    honest_boundary: str = ""
+    missing_evidence: str = ""
+    future_answer: str = ""
+    source_fact_ids: list[str] = Field(default_factory=list)
+    requirement_ids: list[str] = Field(default_factory=list)
+
+
+class InterviewGuideStructuredOutput(BaseModel):
+    kind: Literal["submittable", "target"]
+    cards: list[GuideCardOutput] = Field(default_factory=list)
+    self_intro_60s: str = ""
+    self_intro_90s: str = ""
+    jd_questions: list[str] = Field(default_factory=list)
+    motivation: str = ""
+    questions_to_ask: list[str] = Field(default_factory=list)
+    checklist: list[str] = Field(default_factory=list)
 
 
 class InterviewQuestionOutput(BaseModel):

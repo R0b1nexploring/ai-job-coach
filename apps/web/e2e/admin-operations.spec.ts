@@ -7,7 +7,7 @@ test('管理员查看系统状态、账号清理并完成套餐 CRUD', async ({ 
   await page.getByLabel('邮箱').fill('admin@example.test')
   await page.getByLabel('密码').fill('ChangeMe123!')
   await page.getByRole('button', { name: '登录' }).click()
-  await expect(page.getByRole('heading', { name: /下一步/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /求职简历|下一步/ })).toBeVisible()
 
   await page.goto('/admin/system')
   await expect(page.getByRole('heading', { name: '系统状态' })).toBeVisible()

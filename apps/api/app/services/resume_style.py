@@ -19,9 +19,39 @@ MUTED_HEX = "5B6575"
 BORDER_HEX = "2F3E63"
 BACKGROUND_HEX = "ECEBE6"
 UNACHIEVED_LABEL = "[未达成 · 学习目标]"
+BLUEPRINT_MARK = "*"
+BLUEPRINT_FOOTER = "* 为目标蓝图内容，尚未形成可核验经历"
+AI_EXPANSION_FOOTER = "* 为 AI 补充或目标内容，尚未核验"
 SKILL_SECTION_NAME = "技能证书"
 ENTRY_SEPARATOR = "｜"
 CONTACT_LABELS = (("phone", "电话"), ("email", "邮箱"), ("city", "城市"))
+
+
+def is_v3(content: dict | None) -> bool:
+    return int((content or {}).get("content_version") or 0) >= 3
+
+
+def unachieved_mark(content: dict | None) -> str:
+    return BLUEPRINT_MARK if is_v3(content) else UNACHIEVED_LABEL
+
+
+def has_unachieved_bullets(content: dict | None) -> bool:
+    for section in (content or {}).get("sections") or []:
+        for item in section.get("items") or []:
+            for bullet in item.get("bullets") or []:
+                if isinstance(bullet, dict) and bullet.get("achieved") is False:
+                    return True
+    return False
+
+
+def blueprint_footer(content: dict | None) -> str:
+    if (content or {}).get("factuality_policy") == "ai_expansion" and has_unachieved_bullets(content):
+        return AI_EXPANSION_FOOTER
+    if (content or {}).get("kind") != "target" or not is_v3(content):
+        return ""
+    if not has_unachieved_bullets(content):
+        return ""
+    return BLUEPRINT_FOOTER
 
 
 def is_skill_tag_section(section) -> bool:

@@ -15,6 +15,7 @@ from app.models.entities import (
     CapabilityTargetRun,
     ExperienceEntry,
     Interview,
+    InterviewGuide,
     Job,
     Match,
     Notification,
@@ -22,8 +23,12 @@ from app.models.entities import (
     QuotaLedger,
     QuotaReservation,
     Resume,
+    ResumeBundle,
+    ResumeBundleRun,
     ResumeFact,
     ResumeVersion,
+    TargetProfile,
+    TargetProfileSource,
     User,
     UserProfile,
 )
@@ -112,6 +117,12 @@ def _purge_user_data(
         db.delete(target)
     db.flush()
 
+    facts = list(db.scalars(select(ResumeFact).where(ResumeFact.user_id == user.id)))
+    owned_entity_ids.update(fact.id for fact in facts)
+    for fact in facts:
+        fact.material_id = None
+    db.flush()
+
     private_experience = list(
         db.scalars(select(ExperienceEntry).where(ExperienceEntry.owner_user_id == user.id))
     )
@@ -120,10 +131,9 @@ def _purge_user_data(
         db.delete(entry)
     db.flush()
 
-    facts = list(db.scalars(select(ResumeFact).where(ResumeFact.user_id == user.id)))
-    owned_entity_ids.update(fact.id for fact in facts)
     for fact in facts:
         db.delete(fact)
+    db.flush()
 
     versions = list(db.scalars(select(ResumeVersion).where(ResumeVersion.user_id == user.id)))
     owned_entity_ids.update(version.id for version in versions)
@@ -139,6 +149,40 @@ def _purge_user_data(
         version.review_status = "rejected"
         version.reviewed_by = None
         version.reviewed_at = None
+        version.bundle_id = None
+        version.target_profile_id = None
+        version.quality_report_json = {}
+        version.template_snapshot_json = {}
+        version.content_hash = ""
+    db.flush()
+
+    guides = list(db.scalars(select(InterviewGuide).where(InterviewGuide.user_id == user.id)))
+    for guide in guides:
+        db.delete(guide)
+    db.flush()
+
+    runs = list(db.scalars(select(ResumeBundleRun).where(ResumeBundleRun.user_id == user.id)))
+    for run in runs:
+        db.delete(run)
+    bundles = list(db.scalars(select(ResumeBundle).where(ResumeBundle.user_id == user.id)))
+    owned_entity_ids.update(bundle.id for bundle in bundles)
+    for bundle in bundles:
+        db.delete(bundle)
+    db.flush()
+
+    profiles = list(db.scalars(select(TargetProfile).where(TargetProfile.user_id == user.id)))
+    for profile in profiles:
+        sources = list(
+            db.scalars(
+                select(TargetProfileSource).where(
+                    TargetProfileSource.target_profile_id == profile.id
+                )
+            )
+        )
+        for source in sources:
+            db.delete(source)
+        db.delete(profile)
+    db.flush()
 
     jobs = list(db.scalars(select(Job).where(owned_job_clause(user.id))))
     owned_entity_ids.update(job.id for job in jobs)

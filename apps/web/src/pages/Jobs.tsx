@@ -224,6 +224,7 @@ function MatchActions({ match, versions, channels, setMessage }: {
         <button className="btn-secondary" disabled={generating} onClick={() => generate.mutate('submittable')}>
           生成可投递简历
         </button>
+        <button className="btn-secondary" onClick={() => createTargets.mutate()}>生成学习目标</button>
         <Link className="btn-secondary" to={`/app/capability-targets?job_id=${match.job_id}`}>查看学习目标</Link>
       </div>
       <div className="mt-5 space-y-3">

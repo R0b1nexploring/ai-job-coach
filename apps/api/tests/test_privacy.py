@@ -178,6 +178,10 @@ def test_admin_purge_removes_files_and_personal_content(client, db):
     assert exported_data["interviews"][0]["answers_json"]["q1"] == "私人回答"
     assert "original_file_key" not in exported_data["resumes"][0]
     assert "export_file_key" not in exported_data["resume_versions"][0]
+    assert exported_data["experience_entries"] == []
+    assert exported_data["target_profiles"] == []
+    assert exported_data["resume_bundles"] == []
+    assert exported_data["interview_guides"] == []
     assert client.delete("/api/account").status_code == 202
     db.refresh(user)
     assert user.deletion_requested_at is not None

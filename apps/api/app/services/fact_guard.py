@@ -32,7 +32,12 @@ def guard_content(
     for location, bullet in _iter_bullets(content):
         issues = []
         fact_ids = _source_ids(bullet, "source_fact_ids")
-        target_ids = _source_ids(bullet, "source_target_ids")
+        target_ids = list(
+            dict.fromkeys(
+                _source_ids(bullet, "source_target_ids")
+                + _source_ids(bullet, "requirement_ids")
+            )
+        )
         if not fact_ids and not target_ids:
             issues.append("缺少事实来源")
 

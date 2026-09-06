@@ -20,7 +20,9 @@ from app.models.entities import (
     AuditLog,
     CapabilityTarget,
     CapabilityTargetRun,
+    ExperienceEntry,
     Interview,
+    InterviewGuide,
     Job,
     Match,
     Notification,
@@ -29,20 +31,27 @@ from app.models.entities import (
     QuotaLedger,
     QuotaReservation,
     Resume,
+    ResumeBundle,
     ResumeFact,
     ResumeVersion,
     StorageDeletionTask,
+    TargetProfile,
     User,
     UserProfile,
 )
 from app.providers.llm.schemas import ResumeContentOutput
 from app.providers.storage.local import LocalStorage
+from app.services.bundle_service import dump_bundle
 from app.services.capability_service import build_targets, ensure_match_targets
+from app.services.content_contract import validate_content
 from app.services.experience_service import confirmed_facts_for_generation
+from app.services.interview_guide_service import dump_guide
 from app.services.job_access import owned_job_clause, visible_job
 from app.services.docx_resume_renderer import render_resume_docx
 from app.services.html_resume_renderer import render_resume_html
 from app.services.interview_generator import generate_guarded_interview
+from app.services.quality_service import evaluate_version
+from app.services.target_profile_service import dump_profile, list_profile_sources
 from app.services.quota_service import (
     balance,
     change,
@@ -634,11 +643,12 @@ async def update_version(
             Resume.deleted_at.is_(None),
         )
     )
-    job = visible_job(db, user, row.job_id)
-    if not base_resume or not job:
+    job = visible_job(db, user, row.job_id) if row.job_id else None
+    if not base_resume or (row.job_id and not job):
         raise AppError("RESUME_CONTEXT_MISSING", "定制简历关联的原始简历或岗位不存在。", 409)
     content = data.model_dump()
-    if content.get("content_version", 1) == 2:
+    content_version = int(content.get("content_version") or 1)
+    if content_version >= 2:
         estimated_lines = estimate_resume_lines(content)
         if estimated_lines > MAX_RESUME_LINES:
             raise AppError(
@@ -650,29 +660,68 @@ async def update_version(
                     "max_lines": MAX_RESUME_LINES,
                 },
             )
-    evaluation = evaluate_resume_content(
-        content,
-        confirmed_facts,
-        targets,
-        kind=row.kind,
-        expected_headline=job.title,
-        expected_contact=base_resume.contact_json,
-    )
-    traceability = dict(row.traceability_json or {})
-    traceability.update(
-        {
-            "new_claims": evaluation["issues"],
-            "guard_items": evaluation["items"],
-            "quality_issues": evaluation["quality_issues"],
-            "last_edit_source": "user",
+    if content_version >= 3:
+        content = validate_content(content)
+        facts = confirmed_facts_for_generation(db, user, base_resume)
+        profile = (
+            db.get(TargetProfile, row.target_profile_id) if row.target_profile_id else None
+        )
+        requirements = list((profile.snapshot_json or {}).get("requirements") or []) if profile else []
+        evaluation = evaluate_version(
+            content=content,
+            facts=facts,
+            requirements=requirements,
+            mode=row.kind,
+            expected_headline=(job.title if job else "") or "",
+        )
+        traceability = dict(row.traceability_json or {})
+        traceability.update(
+            {
+                "new_claims": evaluation.get("issues") or [],
+                "guard_items": (evaluation.get("guard") or {}).get("items") or [],
+                "quality_issues": evaluation.get("issues") or [],
+                "last_edit_source": "user",
+            }
+        )
+        row.quality_report_json = {
+            "warnings": evaluation.get("warnings") or [],
+            "status": "passed" if evaluation.get("hard_passed") else "blocked",
+            "hard_passed": evaluation.get("hard_passed"),
+            "issues": evaluation.get("issues") or [],
+            "uncovered_requirements": evaluation.get("uncovered_requirements") or [],
+            "dimensions": evaluation.get("dimensions") or {},
+            "reviewer": evaluation.get("reviewer") or "deterministic",
+            "reviewer_note": evaluation.get("reviewer_note") or "",
         }
-    )
+        row.content_hash = request_fingerprint(content)
+        guard_status = "passed" if evaluation.get("hard_passed") else "blocked"
+        unachieved_count = int(evaluation.get("unachieved_count") or 0)
+    else:
+        evaluation = evaluate_resume_content(
+            content,
+            confirmed_facts,
+            targets,
+            kind=row.kind,
+            expected_headline=job.title if job else "",
+            expected_contact=base_resume.contact_json,
+        )
+        traceability = dict(row.traceability_json or {})
+        traceability.update(
+            {
+                "new_claims": evaluation["issues"],
+                "guard_items": evaluation["items"],
+                "quality_issues": evaluation["quality_issues"],
+                "last_edit_source": "user",
+            }
+        )
+        guard_status = evaluation["status"]
+        unachieved_count = evaluation["unachieved_count"]
     old_export_file_key = row.export_file_key
     row.export_file_key = ""
     row.content_json = content
     row.traceability_json = traceability
-    row.guard_status = evaluation["status"]
-    row.unachieved_count = evaluation["unachieved_count"]
+    row.guard_status = guard_status
+    row.unachieved_count = unachieved_count
     row.review_status = "draft"
     row.reviewed_by = None
     row.reviewed_at = None
@@ -1561,6 +1610,24 @@ async def account_export(user: User = Depends(current_user), db: Session = Depen
         "notifications": [
             dump(row)
             for row in db.scalars(select(Notification).where(Notification.user_id == user.id))
+        ],
+        "experience_entries": [
+            dump(row)
+            for row in db.scalars(
+                select(ExperienceEntry).where(ExperienceEntry.owner_user_id == user.id)
+            )
+        ],
+        "target_profiles": [
+            dump_profile(row, list_profile_sources(db, row.id))
+            for row in db.scalars(select(TargetProfile).where(TargetProfile.user_id == user.id))
+        ],
+        "resume_bundles": [
+            dump_bundle(db, row)
+            for row in db.scalars(select(ResumeBundle).where(ResumeBundle.user_id == user.id))
+        ],
+        "interview_guides": [
+            dump_guide(row)
+            for row in db.scalars(select(InterviewGuide).where(InterviewGuide.user_id == user.id))
         ],
         "audit_logs": [
             dump(row, {"ip_hash"})

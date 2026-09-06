@@ -39,6 +39,8 @@ REVISION_CHAIN = (
     ("0006_add_application_channels", "0005_add_resume_extraction_fields"),
     ("0007_harden_integrity", "0006_add_application_channels"),
     ("0008_add_experience_and_campus_catalog", "0007_harden_integrity"),
+    ("0009_add_target_profiles_and_material_claims", "0008_add_experience_and_campus_catalog"),
+    ("0010_add_resume_bundles_and_interview_guides", "0009_add_target_profiles_and_material_claims"),
 )
 
 
@@ -164,6 +166,29 @@ def _assert_revision_effect(revision: str, database_path: Path) -> None:
             "announcement_id",
             "source_updated_at",
         } <= _column_names(database_path, "jobs")
+    elif revision == "0009_add_target_profiles_and_material_claims":
+        assert "target_profiles" in snapshot
+        assert "target_profile_sources" in snapshot
+        assert {
+            "details_json",
+            "clarifications_json",
+            "completeness_score",
+            "status",
+        } <= _column_names(database_path, "experience_entries")
+        assert {"material_id", "claim_type", "evidence_json"} <= _column_names(
+            database_path, "resume_facts"
+        )
+    elif revision == "0010_add_resume_bundles_and_interview_guides":
+        assert "resume_bundles" in snapshot
+        assert "resume_bundle_runs" in snapshot
+        assert "interview_guides" in snapshot
+        assert {
+            "bundle_id",
+            "target_profile_id",
+            "quality_report_json",
+            "content_hash",
+            "template_snapshot_json",
+        } <= _column_names(database_path, "resume_versions")
 
 
 @pytest.mark.parametrize(("revision", "parent"), REVISION_CHAIN)
