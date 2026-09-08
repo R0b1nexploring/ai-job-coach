@@ -80,7 +80,7 @@ export function CapabilityTargets() {
       <span className="badge">目标 → 练习 → 证据 → 事实</span>
       <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-black">学习目标</h1>
+          <h1 className="page-title">学习目标</h1>
           <p className="mt-2 text-sm text-black/55">完成真实产出并提交证据后，目标才会进入事实库。</p>
         </div>
         <div className="rounded-2xl bg-white px-5 py-3 text-right shadow-sm">

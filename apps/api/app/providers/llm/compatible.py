@@ -74,7 +74,7 @@ class CompatibleLLMProvider:
                 {"role": "user", "content": json.dumps(safe_payload, ensure_ascii=False)},
             ],
         }
-        if settings.llm_thinking_enabled:
+        if settings.llm_thinking_enabled and _supports_thinking(settings.llm_api_base_url):
             body["thinking"] = {"type": "enabled"}
             body["reasoning_effort"] = settings.llm_reasoning_effort or "high"
         max_retries = max(0, settings.llm_max_retries)
@@ -177,6 +177,11 @@ class CompatibleLLMProvider:
                     error_type=last_error_type,
                 )
                 raise provider_error from cause
+
+
+def _supports_thinking(base_url: str) -> bool:
+    """DeepSeek-style thinking fields break other OpenAI-compatible hosts."""
+    return "deepseek" in (base_url or "").lower()
 
 
 def _format_instructions(response_model: type[BaseModel]) -> str:

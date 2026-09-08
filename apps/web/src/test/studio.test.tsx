@@ -151,10 +151,13 @@ test('无旧简历也可生成，并轮询 queued 状态', async () => {
         kind: 'submittable',
         title: '真实能力',
         guard_status: 'passed',
+        content_hash: 'h1',
         quality_report_json: { status: 'passed', reviewer: 'model', reviewer_note: '模型评审（mock）' },
         content_json: {
+          kind: 'submittable',
+          factuality_policy: 'ai_expansion',
           headline: '机械工程师',
-          sections: [{ name: '项目/科研/竞赛', items: [{ bullets: [{ id: 'b-lock', text: '完成装配体', achieved: true, locked: false, source_fact_ids: ['f1'] }] }] }],
+          sections: [{ name: '项目/科研/竞赛', items: [{ bullets: [{ id: 'b-lock', text: '完成装配体', achieved: false, locked: false, source_fact_ids: [], verification_status: 'ai_generated' }] }] }],
         },
       })
     }
@@ -173,6 +176,11 @@ test('无旧简历也可生成，并轮询 queued 状态', async () => {
   await user.click(generateButton)
   expect(await screen.findByText(/已排队生成/)).toBeVisible()
   expect(await screen.findByText('完成装配体', undefined, { timeout: 4000 })).toBeVisible()
+  expect(screen.getByTitle('A4 简历预览')).toHaveAttribute(
+    'src',
+    expect.stringContaining('/api/resume-versions/v1/studio-preview'),
+  )
+  expect(screen.queryByText(/待核验/)).not.toBeInTheDocument()
 })
 
 test('模型降级会显示 degraded，失败可重试', async () => {
@@ -210,6 +218,8 @@ test('模型降级会显示 degraded，失败可重试', async () => {
 })
 
 test('锁定后整份重生成会发出重生成请求，非首条可局部重写', async () => {
+  const lockRequests: Array<Record<string, unknown>> = []
+  const regenerateRequests: Array<Record<string, unknown>> = []
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url.endsWith('/api/jobs')) return json({ items: [{ id: 'j1', title: '机械工程师', company_name: '示例' }], total: 1 })
@@ -232,9 +242,13 @@ test('锁定后整份重生成会发出重生成请求，非首条可局部重�
         guides: { submittable: { id: 'g1', status: 'stale' } },
       })
     }
-    if (url.includes('/studio') && url.includes('/lock')) return json({ id: 'v1', content_json: { headline: '机械工程师', sections: [] } })
+    if (url.includes('/api/resume-versions/v1/lock') && init?.method === 'POST') {
+      lockRequests.push(JSON.parse(String(init.body || '{}')))
+      return json({ id: 'v1', content_json: { headline: '机械工程师', sections: [] } })
+    }
     if (url.includes('/regenerate') && init?.method === 'POST') {
       const body = JSON.parse(String(init.body || '{}'))
+      regenerateRequests.push(body)
       if (body.scope === 'bullet') expect(body.bullet_id).toBe('b-second')
       return json({ id: 'v1', content_json: { headline: '机械工程师', sections: [] }, quality_report_json: { status: 'passed' } })
     }
@@ -277,8 +291,11 @@ test('锁定后整份重生成会发出重生成请求，非首条可局部重�
   const rewriteButtons = screen.getAllByRole('button', { name: '重写本条' })
   await user.click(rewriteButtons[1])
   await user.click(screen.getAllByRole('button', { name: '锁定' })[0])
+  expect(lockRequests[0]).toMatchObject({ bullet_id: 'b-first', locked: true })
+  expect(await screen.findByText('锁定状态已保存并重新校验。')).toBeVisible()
   await user.click(screen.getByRole('button', { name: '整份重生成' }))
   expect(await screen.findByText('已重生成并重新校验。')).toBeVisible()
+  expect(regenerateRequests).toContainEqual({ scope: 'all' })
   await user.click(screen.getByRole('button', { name: '重新生成指南' }))
   expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/interview-guides/g1/regenerate'))).toBe(true)
 })

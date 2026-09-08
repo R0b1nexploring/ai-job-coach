@@ -45,6 +45,14 @@ def provider_status() -> dict:
         }
     return {
         "llm": llm,
+        "resume_quality": {
+            "gate_enabled": settings.resume_quality_gate_active(),
+            "notice": (
+                "质量硬门禁已暂时关闭，仅保留事实来源检查。"
+                if not settings.resume_quality_gate_active()
+                else "质量硬门禁已开启。"
+            ),
+        },
         "jobs": {
             "operational": True,
             "providers": [

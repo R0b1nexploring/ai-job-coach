@@ -10,11 +10,10 @@ from sqlalchemy import select
 from app.models.entities import ResumeFact
 from app.services.content_contract import validate_content, visible_bullets
 from app.services.quality_service import evaluate_version
-from app.services.resume_style import AI_EXPANSION_FOOTER
 from conftest import register
 from test_resume_generation_v3 import (
     _grant_resume_quota, _import_job, _install_compatible_provider,
-    _rewrite_output_from_payload, _structured_llm_response,
+    _pair_rewrite_output, _rewrite_output_from_payload, _structured_llm_response,
     process_created_bundle, setup_bundle,
 )
 
@@ -32,16 +31,22 @@ def test_provider_expansion_survives_delivery_without_confirming_facts(client, d
         if "bullets" in payload:
             return _structured_llm_response({"kind": payload["kind"], "cards": []})
         captured.append(payload)
-        output = _rewrite_output_from_payload(payload)
-        output["sections"][0]["items"][0]["bullets"].append({
+        extra = {
             "text": generated_text,
-            "source_fact_ids": [payload["facts"][0]["id"]],
+            "source_fact_ids": [payload["facts"][0]["id"]] if payload.get("facts") else [],
             "achieved": True,
             "verification_status": "source_based",
             "new_claims": ["自动化分析流程", "处理时间缩短 30%"],
-        })
-        if payload["kind"] == "target":
-            for requirement in payload["requirements"]:
+        }
+        if payload.get("pair"):
+            pair = _pair_rewrite_output(payload)
+            pair["submittable"]["sections"][0]["items"][0]["bullets"].append(extra)
+            pair["target"]["sections"][0]["items"][0]["bullets"].append(extra)
+            return _structured_llm_response(pair)
+        output = _rewrite_output_from_payload(payload)
+        output["sections"][0]["items"][0]["bullets"].append(extra)
+        if payload.get("kind") == "target":
+            for requirement in payload.get("requirements") or []:
                 output["sections"][0]["items"][0]["bullets"].append({
                     "text": requirement["text"], "achieved": False,
                     "requirement_ids": [requirement["id"]],
@@ -66,15 +71,19 @@ def test_provider_expansion_survives_delivery_without_confirming_facts(client, d
         assert detail["quality_report_json"]["warnings"]
         html = client.get(f"/api/resume-versions/{version_id}/studio-preview")
         assert html.status_code == 200
-        assert generated_text in html.text and AI_EXPANSION_FOOTER in html.text
+        assert generated_text in html.text
+        assert "待核验" not in html.text
+        assert f"{generated_text}*" not in html.text
         docx = client.get(f"/api/resume-versions/{version_id}/studio-download?format=docx")
         assert docx.status_code == 200
         text = "\n".join(p.text for p in Document(io.BytesIO(docx.content)).paragraphs)
-        assert generated_text in text and AI_EXPANSION_FOOTER in text
+        assert generated_text in text
+        assert "待核验" not in text
         guide = client.get(f"/api/interview-guides/{bundle['guides'][kind]['id']}").json()
         card = next(c for c in guide["content_json"]["cards"] if c["bullet_id"] == bullet["id"])
         assert card["achieved"] is False
-        assert "尚未核验" in card["honest_boundary"]
+        assert "待核验" not in card["honest_boundary"]
+        assert "尚未核验" not in card["honest_boundary"]
     assert before == {fact.id: fact.verification_status for fact in db.scalars(select(ResumeFact))}
 
 
@@ -120,5 +129,6 @@ def test_expansion_keeps_layout_gate_and_legacy_fact_gate():
     item = content["sections"][0]["items"][0]
     item["bullets"] = [{**deepcopy(item["bullets"][0]), "id": f"long-{i}"} for i in range(100)]
     report = evaluate_version(content=content, facts=[], requirements=[], mode="submittable")
-    assert not report["hard_passed"]
-    assert "超过单页内容预算" in report["issues"]
+    assert report["hard_passed"]
+    assert "超过单页内容预算" in report["layout_warnings"]
+    assert "超过单页内容预算" not in report["issues"]

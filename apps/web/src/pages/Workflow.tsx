@@ -32,7 +32,7 @@ export function Applications() {
   if (query.isLoading || channels.isLoading) return <Loading />
   if (query.error || channels.error) return <ErrorState error={query.error || channels.error} />
   const channelById = new Map((channels.data?.items || []).map((channel: any) => [channel.id, channel]))
-  return <><span className="badge">合法状态机</span><h1 className="mt-3 text-4xl font-black">投递看板</h1>
+  return <><span className="badge">合法状态机</span><h1 className="page-title mt-3">投递看板</h1>
     {(update.error || emailDraft.error) && <div className="mt-4"><ErrorState error={update.error || emailDraft.error} /></div>}
     <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{query.data?.items?.length ? query.data.items.map((item: any) =>
       <article className="card" key={item.id}><p className="badge">{statusNames[item.status] || item.status}</p><p className="mt-3 break-all text-sm text-black/60">记录 {item.id.slice(0, 8)}</p>
@@ -101,7 +101,7 @@ export function Interviews() {
   if (query.isLoading || jobs.isLoading || versions.isLoading) return <Loading />
   if (query.error || jobs.error || versions.error) return <ErrorState error={query.error || jobs.error || versions.error} />
   const approvedVersions = versions.data?.items?.filter((item: any) => item.job_id === jobId && item.guard_status === 'passed' && item.review_status === 'approved') || []
-  return <><span className="badge">JD + 简历真实性追问</span><h1 className="mt-3 text-4xl font-black">模拟面试</h1>
+  return <><span className="badge">JD + 简历真实性追问</span><h1 className="page-title mt-3">模拟面试</h1>
     <form className="card mt-6 grid gap-3 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); create.mutate() }}>
       <label><span className="label">目标岗位</span><select aria-label="目标岗位" className="field" value={jobId} onChange={(event) => { setJobId(event.target.value); setVersionId('') }} required><option value="">请选择岗位</option>{jobs.data?.items?.map((job: any) => <option key={job.id} value={job.id}>{job.company_name} · {job.title}</option>)}</select></label>
       <label><span className="label">已批准定制简历（可选）</span><select aria-label="已批准定制简历" className="field" value={versionId} onChange={(event) => setVersionId(event.target.value)}><option value="">不关联定制版本</option>{approvedVersions.map((version: any) => <option key={version.id} value={version.id}>{version.kind === 'target' ? '蓝图' : '可投递'} · {version.title}</option>)}</select></label>
@@ -188,7 +188,7 @@ export function Orders() {
   const ledger = useQuery({ queryKey: ['quota-ledger'], queryFn: () => api<any>('/api/quotas/ledger') })
   if (packages.isLoading || quotas.isLoading || ledger.isLoading) return <Loading />
   if (packages.error || quotas.error || ledger.error) return <ErrorState error={packages.error || quotas.error || ledger.error} />
-  return <><span className="badge">MVP-1 演示额度</span><h1 className="mt-3 text-4xl font-black">套餐与额度</h1>
+  return <><span className="badge">MVP-1 演示额度</span><h1 className="page-title mt-3">套餐与额度</h1>
     <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800">在线支付尚未开放。当前额度由种子脚本或管理员发放，不代表真实付款。</p>
     <div className="mt-6 grid gap-4 md:grid-cols-4">{packages.data?.items?.map((item: any) => <article className="card" key={item.id}><h2 className="font-bold">{item.name}</h2><p className="my-3 text-3xl font-black">¥{item.price_cents / 100}</p><p className="text-xs text-black/50">简历 {item.resume_quota} · 投递 {item.application_quota} · 面试 {item.interview_quota}</p><p className="mt-4 text-sm">{item.features_json.join(' · ')}</p></article>)}</div>
     <h2 className="mt-10 text-2xl font-bold">当前额度</h2><div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">{Object.entries(quotas.data || {}).map(([key, value]) => <div className="card" key={key}><p className="text-sm text-black/50">{quotaLabels[key] || '其他额度'}</p><b className="text-3xl">{value}</b></div>)}</div>

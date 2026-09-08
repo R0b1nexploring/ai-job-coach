@@ -21,6 +21,26 @@ QUALITY_DIMENSIONS = (
 )
 
 
+def report_guard_passed(report: dict) -> bool:
+    """Return the independent provenance result from a quality report.
+
+    ``hard_passed`` intentionally combines provenance, semantic and layout
+    checks for the normal delivery gate. The local debug switch may bypass
+    the latter, but it must never bypass invalid source IDs or other Fact
+    Guard failures.
+    """
+    return (report.get("guard") or {}).get("status") == "passed"
+
+
+def quality_report_status(report: dict, *, gate_enabled: bool) -> str:
+    """Map a report to a user-visible delivery status."""
+    if not report_guard_passed(report):
+        return "blocked"
+    if report.get("hard_passed") is True:
+        return "passed"
+    return "blocked" if gate_enabled else "bypassed"
+
+
 def evaluate_version(
     *,
     content: dict,
@@ -38,7 +58,8 @@ def evaluate_version(
     hard_issues = list(guard["issues"])
     hard_issues.extend(_kind_issues(content, mode))
     hard_issues.extend(_coverage_issues(content, requirements, mode))
-    hard_issues.extend(_layout_issues(content))
+    hard_issues.extend(_structure_issues(content))
+    layout_warnings = _layout_warnings(content)
     if expected_headline and expected_headline not in str(content.get("headline") or ""):
         # Headline may be specialized around the job title; only flag empty.
         pass
@@ -53,6 +74,7 @@ def evaluate_version(
         "status": status,
         "hard_passed": hard_passed,
         "issues": hard_issues,
+        "layout_warnings": layout_warnings,
         "uncovered_requirements": coverage,
         "dimensions": scores,
         "guard": guard,
@@ -60,7 +82,9 @@ def evaluate_version(
         "content_version": content.get("content_version"),
         "reviewer": "deterministic",
         "reviewer_note": "使用确定性检查",
-        "warnings": guard.get("warnings") or [],
+        "warnings": list(guard.get("warnings") or []) + [
+            {"bullet_id": "", "message": warning} for warning in layout_warnings
+        ],
     }
 
 
@@ -116,6 +140,7 @@ async def evaluate_version_with_critic(
     except (ProviderError, Exception):
         report["reviewer"] = "deterministic"
         report["reviewer_note"] = "模型不可用，使用确定性检查"
+        report["critic_unavailable"] = True
     if not report.get("hard_passed"):
         report["status"] = "blocked"
     return report
@@ -174,7 +199,7 @@ def _expansion_guard(content: dict, facts: list, requirements: list[dict], stric
         if unverified:
             bullet["verification_status"] = "ai_generated"
             bullet["achieved"] = False
-            warnings.append({"bullet_id": bullet["id"], "message": "AI 补充内容，待核验"})
+            warnings.append({"bullet_id": bullet["id"], "message": "AI 扩写内容，未绑定用户事实来源"})
         else:
             bullet["verification_status"] = "source_based"
         result.update(status="blocked" if invalid else "passed", achieved=bullet.get("achieved"), verification_status=bullet["verification_status"])
@@ -221,8 +246,7 @@ def _uncovered_requirements(content: dict, requirements: list[dict], mode: str) 
     return missing
 
 
-def _layout_issues(content: dict) -> list[str]:
-    issues = []
+def _structure_issues(content: dict) -> list[str]:
     names = [
         str(section.get("name") or "")
         for section in content.get("sections") or []
@@ -231,10 +255,14 @@ def _layout_issues(content: dict) -> list[str]:
     ordered = [name for name in SECTION_ORDER if name in names]
     actual = [name for name in names if name in SECTION_ORDER]
     if ordered != actual:
-        issues.append("分区顺序不符合模板")
+        return ["分区顺序不符合模板"]
+    return []
+
+
+def _layout_warnings(content: dict) -> list[str]:
     if estimate_resume_lines(content) > 48:
-        issues.append("超过单页内容预算")
-    return issues
+        return ["超过单页内容预算"]
+    return []
 
 
 def _explanatory_scores(content: dict, requirements: list[dict], mode: str) -> dict:

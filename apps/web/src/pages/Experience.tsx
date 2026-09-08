@@ -80,7 +80,7 @@ export function Experience() {
   return (
     <>
       <span className="badge">实习 · 项目 · 范本</span>
-      <h1 className="mt-3 text-4xl font-black">经历库</h1>
+      <h1 className="page-title mt-3">经历库</h1>
       <p className="mt-2 max-w-2xl text-sm text-black/60">
         实习和项目是生成简历的材料库。可以不先上传文件，直接记下真实经历。全站范本只供对照，不能当成你已经做过的事。
       </p>

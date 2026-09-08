@@ -45,11 +45,14 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_model_cheap: str = ""
     llm_model_strong: str = ""
-    llm_timeout_seconds: int = Field(default=120, gt=0)
-    llm_max_retries: int = Field(default=2, ge=0)
+    llm_timeout_seconds: int = Field(default=300, gt=0)
+    llm_max_retries: int = Field(default=1, ge=0)
     llm_max_output_tokens: int = Field(default=8192, gt=0)
     llm_thinking_enabled: bool = False
     llm_reasoning_effort: Literal["", "high", "max"] = ""
+    # Local debugging escape hatch. Test and production environments always
+    # keep the hard quality gate enabled regardless of this value.
+    resume_quality_gate_enabled: bool = True
     payment_provider: str = "disabled"
     payment_webhook_secret: SecretStr = SecretStr("demo-secret")
     storage_provider: str = "local"
@@ -159,6 +162,17 @@ class Settings(BaseSettings):
             self.llm_model_strong if self.tier_for(task) == "strong" else self.llm_model_cheap
         )
         return tier_model.strip() or self.llm_model.strip()
+
+    def resume_quality_gate_active(self) -> bool:
+        """Whether quality failures may block delivery.
+
+        The local development switch is deliberately unavailable in test and
+        production environments so a developer's .env cannot weaken CI or a
+        deployment by accident.
+        """
+        if self.app_env.strip().lower() in {"test", "production", "prod"}:
+            return True
+        return self.resume_quality_gate_enabled
 
     def allowed_job_source_hosts(self) -> set[str]:
         return {

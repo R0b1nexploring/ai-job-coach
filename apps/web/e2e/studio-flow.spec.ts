@@ -64,11 +64,15 @@ test('新用户从粘贴 JD 走到双轨简历、导出和两份指南', async (
   expect(html.ok()).toBeTruthy()
   expect(docx.ok()).toBeTruthy()
   const pdf = await page.request.get(pdfHref || '')
-  expect([200, 503]).toContain(pdf.status())
-  if (pdf.status() === 200) {
+  const health = await page.request.get('/api/health')
+  expect(health.ok()).toBeTruthy()
+  const pdfAvailable = (await health.json()).pdf_converter_available === true
+  if (pdfAvailable) {
+    expect(pdf.status()).toBe(200)
     expect(pdf.headers()['content-type']).toContain('pdf')
     expect((await pdf.body()).byteLength).toBeGreaterThan(1000)
   } else {
+    expect(pdf.status()).toBe(503)
     const body = await pdf.json()
     expect(body.error.code).toBe('PDF_CONVERTER_UNAVAILABLE')
   }

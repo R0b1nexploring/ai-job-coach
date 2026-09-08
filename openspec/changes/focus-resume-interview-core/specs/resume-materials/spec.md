@@ -27,7 +27,11 @@
 - **THEN** 系统允许指标为空且不生成猜测数字
 
 ### Requirement: Confirmed materials become atomic facts
-素材确认时，系统 MUST 将其拆分为单一主张的原子事实，并为每项事实保存素材关联、主张类型、来源和核验信息。未确认素材不得进入真实能力简历。
+素材确认时，系统 MUST 将其拆分为单一主张的原子事实，并为每项事实保存素材关联、主张类型、来源和核验信息。未确认素材 MUST NOT 作为已确认事实使用，但 SHALL 允许作为 v3 `ai_expansion` 求职版与蓝图的文案参考；没有已确认素材不得阻止草稿生成。生成文案 MUST NOT 自动确认素材或回写已确认事实库，AI 补充保持 `verification_status=ai_generated`、`achieved:false`。素材采集不猜填未知事实与简历文案允许扩写是不同阶段的约束。
+
+#### Scenario: Generate copy from unconfirmed material
+- **WHEN** 用户保存草稿素材但未确认，并基于有效目标画像生成双版本
+- **THEN** 系统允许使用草稿作为参考，保留其未确认来源状态，新增文案保留 AI 来源状态，不创建已确认事实
 
 #### Scenario: Confirm a complete internship
 - **WHEN** 用户确认一条包含真实组织、个人动作和结果的实习素材
@@ -47,4 +51,3 @@
 #### Scenario: Access another user's material
 - **WHEN** 用户请求更新或确认不属于自己的素材
 - **THEN** 系统返回 404 且不修改任何事实
-

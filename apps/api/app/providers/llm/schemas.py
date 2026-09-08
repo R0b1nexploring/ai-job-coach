@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 GroundedJobText = Annotated[str, Field(min_length=1, max_length=5000)]
 
@@ -170,6 +170,28 @@ class ResumeStructuredV3Output(ResumeStructuredV2Output):
     content_version: Literal[3] = 3
     factuality_policy: Literal["ai_expansion"] = "ai_expansion"
     sections: list[ResumeSectionV3Output] = Field(default_factory=list)
+
+
+class ResumePairV3Output(BaseModel):
+    """One writer call returns both resume kinds for local assembly."""
+
+    submittable: ResumeStructuredV3Output
+    target: ResumeStructuredV3Output
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_kinds(cls, value):
+        if not isinstance(value, dict):
+            return value
+        submittable = dict(value.get("submittable") or {})
+        target = dict(value.get("target") or {})
+        submittable["kind"] = "submittable"
+        target["kind"] = "target"
+        submittable.setdefault("content_version", 3)
+        target.setdefault("content_version", 3)
+        submittable.setdefault("factuality_policy", "ai_expansion")
+        target.setdefault("factuality_policy", "ai_expansion")
+        return {"submittable": submittable, "target": target}
 
 
 class ResumeBulletRewriteOutput(BaseModel):

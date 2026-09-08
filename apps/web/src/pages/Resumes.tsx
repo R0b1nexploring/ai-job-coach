@@ -16,7 +16,7 @@ export function Resumes() {
     onSuccess: () => { setMessage('简历已解析，请核对并确认事实库。'); client.invalidateQueries({ queryKey: ['resumes'] }) },
   })
   if (resumes.isLoading || versions.isLoading) return <Loading />
-  return <><div className="flex flex-wrap items-end justify-between gap-4"><div><span className="badge">事实优先</span><h1 className="mt-3 text-4xl font-black">简历与事实库</h1></div><label className="btn cursor-pointer">上传 DOCX / PDF<input className="hidden" type="file" accept=".docx,.pdf" onChange={(event) => event.target.files?.[0] && upload.mutate(event.target.files[0])} /></label></div>
+  return <><div className="flex flex-wrap items-end justify-between gap-4"><div><span className="badge">事实优先</span><h1 className="page-title mt-3">简历与事实库</h1></div><label className="btn cursor-pointer">上传 DOCX / PDF<input className="hidden" type="file" accept=".docx,.pdf" onChange={(event) => event.target.files?.[0] && upload.mutate(event.target.files[0])} /></label></div>
     {(upload.error || resumes.error || versions.error) && <div className="mt-5"><ErrorState error={upload.error || resumes.error || versions.error} /></div>}{message && <p className="mt-5 rounded-xl bg-green-50 p-3 text-green-700">{message}</p>}
     <div className="mt-6 space-y-4">{resumes.data?.items.length ? resumes.data.items.map((resume) => <ResumeCard key={resume.id} resume={resume} />) : <Empty title="还没有简历，上传一份开始分析。" />}</div>
     <section className="mt-10"><h2 className="text-2xl font-bold">定制版本</h2><div className="mt-4 space-y-3">{versions.data?.items?.length ? versions.data.items.map((version: any) => <VersionCard key={version.id} version={version} />) : <Empty title="还没有岗位定制版本。" />}</div></section>

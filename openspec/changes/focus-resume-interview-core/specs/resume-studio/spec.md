@@ -1,4 +1,4 @@
-> **2026-09-05 用户最新裁决：允许 AI 扩写。** 新生成的工作台 v3 简历采用 `factuality_policy=ai_expansion`，允许超出已确认事实补充内容，也允许仅凭目标画像创建草稿。缺少事实支持、新主张和未达成状态不再阻止生成、预览或导出；来源 ID 归属、结构及版面仍需通过检查。AI 补充记录 `verification_status=ai_generated`、`achieved=false`，在工作台、导出和指南标识待核验，不自动写入已确认事实库。`submittable` 的界面名称改为“求职版”。本裁决覆盖本文此前相冲突的事实限制；旧 v1/v2 接口保持兼容。
+> **2026-09-05 用户最新裁决：允许 AI 扩写。** 新生成的工作台 v3 简历采用 `factuality_policy=ai_expansion`，允许超出已确认事实补充内容，也允许仅凭目标画像创建草稿。缺少事实支持、新主张和未达成状态不再阻止生成、预览或导出；来源 ID 归属、结构及版面仍需通过检查。AI 补充记录 `verification_status=ai_generated`、`achieved=false` 作为内部来源状态，但在工作台、导出和指南不显示“待核验”标记，不自动写入已确认事实库。`submittable` 的界面名称改为“求职版”。本裁决覆盖本文此前相冲突的事实限制；旧 v1/v2 接口保持兼容。
 
 ## Purpose
 
@@ -32,7 +32,7 @@
 - **THEN** 锁定要点保持不变，其余内容可更新，质量报告同步刷新
 
 ### Requirement: Automatic delivery does not require advisor approval
-事实与版面硬门禁通过的 ready 或 degraded 版本 SHALL 可由所有者直接预览和导出，不要求顾问批准。degraded 版本 MUST 在工作台显示质量降级提示。
+内容硬门禁通过的 ready 或 degraded 版本 SHALL 可由所有者直接预览，不要求顾问批准；各格式 SHALL 在自身文件门禁通过后独立交付，PDF 故障不得阻止内容预览或其他合格格式。缺少已确认事实不得阻止 v3 AI 扩写交付。degraded 版本 MUST 在工作台显示质量降级提示。
 
 #### Scenario: Export a ready self-service resume
 - **WHEN** 用户的版本通过自动门禁但从未提交顾问审核
@@ -51,3 +51,22 @@
 #### Scenario: Refresh while a bundle is generating
 - **WHEN** 用户在异步生成期间刷新页面
 - **THEN** 工作台从服务端恢复同一 bundle 的进度，不发起重复生成
+
+### Requirement: Invite trial access and task feedback are recoverable
+小范围真实用户试用 SHALL 使用单次、限时邀请码注册，并显示剩余 AI 额度。工作台 MUST 分别展示任务的 queued、running、succeeded、degraded 和 failed 状态、当前阶段、可公开错误及可用重试入口。草稿保存、简历生成、指南和导出 MUST 分别反馈状态，一个交付物失败不得使已完成的其他交付物失效。
+
+#### Scenario: Invite is consumed concurrently
+- **WHEN** 两个注册请求同时核销同一个单次邀请码
+- **THEN** 只有一个请求创建账号，另一个收到邀请码已失效错误
+
+#### Scenario: PDF fails after resumes are ready
+- **WHEN** 两份简历已完成但 PDF 转换或物理检查失败
+- **THEN** 用户仍可查看简历和下载可用格式，并只重试 PDF 任务
+
+#### Scenario: Editing from two browser tabs conflicts
+- **WHEN** 一个标签页基于旧内容版本保存修改
+- **THEN** 系统返回 `409 VERSION_CONFLICT`，页面保留当前输入并提示刷新合并
+
+#### Scenario: Session expires while polling
+- **WHEN** 用户等待任务时登录状态过期
+- **THEN** 页面保留当前任务上下文，重新登录后恢复查询同一任务

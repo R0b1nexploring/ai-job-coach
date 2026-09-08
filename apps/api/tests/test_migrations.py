@@ -41,6 +41,7 @@ REVISION_CHAIN = (
     ("0008_add_experience_and_campus_catalog", "0007_harden_integrity"),
     ("0009_add_target_profiles_and_material_claims", "0008_add_experience_and_campus_catalog"),
     ("0010_add_resume_bundles_and_interview_guides", "0009_add_target_profiles_and_material_claims"),
+    ("0011_add_persistent_resume_task_fields", "0010_add_resume_bundles_and_interview_guides"),
 )
 
 
@@ -189,6 +190,19 @@ def _assert_revision_effect(revision: str, database_path: Path) -> None:
             "content_hash",
             "template_snapshot_json",
         } <= _column_names(database_path, "resume_versions")
+    elif revision == "0011_add_persistent_resume_task_fields":
+        assert {
+            "task_type",
+            "phase",
+            "input_snapshot_json",
+            "result_resources_json",
+            "public_error_code",
+            "attempts",
+            "retry_count",
+            "max_attempts",
+            "lease_expires_at",
+            "heartbeat_at",
+        } <= _column_names(database_path, "resume_bundle_runs")
 
 
 @pytest.mark.parametrize(("revision", "parent"), REVISION_CHAIN)

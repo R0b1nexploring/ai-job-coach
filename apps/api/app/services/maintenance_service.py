@@ -24,26 +24,88 @@ from app.services.storage_cleanup import process_storage_deletions
 # validation and a semantic retry. Keep the crash-recovery window comfortably
 # above that total so maintenance never refunds a request that is still working.
 QUOTA_RESERVATION_TIMEOUT = timedelta(hours=1)
+TASK_LEASE_TIMEOUT = timedelta(seconds=90)
 
 
 def requeue_stale_bundle_runs(db: Session, *, current: datetime) -> int:
-    cutoff = current - timedelta(minutes=15)
+    cutoff = current - TASK_LEASE_TIMEOUT
     runs = list(
         db.scalars(
             select(ResumeBundleRun).where(
                 ResumeBundleRun.status == "generating",
-                ResumeBundleRun.updated_at <= cutoff,
+                or_(
+                    ResumeBundleRun.lease_expires_at <= current,
+                    ResumeBundleRun.updated_at <= cutoff,
+                ),
             )
         )
     )
+    requeued = 0
     for run in runs:
-        run.status = "queued"
         bundle = db.get(ResumeBundle, run.bundle_id)
+        if (run.attempts or 0) >= (run.max_attempts or 3):
+            run.status = "failed"
+            run.phase = "failed"
+            run.public_error_code = "TASK_TIMEOUT"
+            run.last_error = "worker lease expired"
+            if bundle is not None:
+                bundle.status = "failed"
+                bundle.generation_metadata_json = {
+                    **(bundle.generation_metadata_json or {}),
+                    "error": "task_timeout",
+                    "error_message": "生成任务多次中断，请稍后重试。",
+                }
+                _refund_bundle_reservation(db, bundle.id)
+            continue
+        run.status = "queued"
+        run.phase = "queued"
+        run.lease_expires_at = None
+        run.heartbeat_at = None
+        run.last_error = ""
+        run.public_error_code = ""
         if bundle is not None:
             bundle.status = "queued"
+        requeued += 1
     if runs:
         db.commit()
-    return len(runs)
+    return requeued
+
+
+def _refund_bundle_reservation(db: Session, bundle_id: str) -> None:
+    reservation = db.scalar(
+        select(QuotaReservation)
+        .where(
+            QuotaReservation.resource_type == "resume_bundle",
+            QuotaReservation.resource_id == bundle_id,
+            QuotaReservation.status == "pending",
+        )
+        .order_by(QuotaReservation.created_at.desc())
+    )
+    if reservation is None:
+        return
+    ledger = db.get(QuotaLedger, reservation.ledger_id)
+    if ledger is None or ledger.delta >= 0:
+        reservation.status = "refunded"
+        return
+    refund = change(
+        db,
+        user_id=reservation.user_id,
+        quota_type=reservation.quota_type,
+        delta=reservation.amount,
+        reason="生成任务中断退回",
+        idempotency_key=f"quota-refund:{reservation.ledger_id}",
+        reference_type="quota_refund",
+        reference_id=reservation.ledger_id,
+        request_hash=request_fingerprint(
+            {
+                "operation": "quota.refund",
+                "reservation_id": reservation.ledger_id,
+                "delta": reservation.amount,
+            }
+        ),
+    )
+    if refund.reference_id == reservation.ledger_id or not was_created(refund):
+        reservation.status = "refunded"
 
 
 def reconcile_stale_quota_reservations(

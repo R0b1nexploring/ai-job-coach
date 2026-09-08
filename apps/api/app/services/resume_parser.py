@@ -18,13 +18,20 @@ SECTION_CATEGORIES = {
     "教育经历": "education",
     "工作经历": "employment",
     "实习经历": "employment",
+    "实习工作": "employment",
     "项目经历": "projects",
     "项目经验": "projects",
+    "项目科研竞赛": "projects",
     "技能": "skills",
     "专业技能": "skills",
+    "技能证书": "certificates",
     "证书": "certificates",
     "证书资质": "certificates",
+    "奖项证书": "certificates",
+    "奖项": "certificates",
 }
+DUTY_PREFIX = re.compile(r"^(公司需要|公司将|负责|通过分析|提升|针对)")
+CJK_PAIR_SPACE = re.compile(r"(?<=[\u4e00-\u9fff])[ \t]+(?=[\u4e00-\u9fff])")
 DATE_PART = r"(?:19|20)\d{2}(?:[./-](?:0?[1-9]|1[0-2])|年(?:0?[1-9]|1[0-2])月?)"
 DATE_RANGE = re.compile(
     rf"(?P<start>{DATE_PART})\s*(?:至|到|[-–—~～])\s*(?P<end>{DATE_PART}|至今|现在)"
@@ -77,7 +84,14 @@ def parse_resume(content: bytes, media_type: str, filename: str) -> tuple[str, l
         raise AppError("RESUME_PARSE_FAILED", "文件无法解析，请确认文件未损坏。", 422) from exc
     if not text.strip():
         raise AppError("EMPTY_RESUME", "简历中没有可解析的文本。", 422)
+    text = normalize_extracted_text(text)
     return text, extract_facts(text)
+
+
+def normalize_extracted_text(text: str) -> str:
+    """Collapse PDF-extracted spaces between CJK characters without rewriting wording."""
+    collapsed = CJK_PAIR_SPACE.sub("", str(text or ""))
+    return re.sub(r"[ \t]+", " ", collapsed)
 
 
 def preprocess_resume_lines(text: str) -> list[str]:
@@ -135,8 +149,13 @@ def extract_contact(text: str) -> dict:
     phone = PHONE.search(text)
     name_match = re.search(r"(?:姓名|Name)\s*[:：]\s*([^\n|｜]{2,30})", text, re.IGNORECASE)
     city_match = re.search(r"(?:城市|所在地|现居地)\s*[:：]\s*([^\n|｜]{2,30})", text)
+    name = name_match.group(1).strip() if name_match else ""
+    if not name:
+        first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+        inferred = re.match(r"^([\u4e00-\u9fff]{2,4})(?:性别|男|女|电话|邮箱|$)", first)
+        name = inferred.group(1) if inferred else ""
     return {
-        "name": name_match.group(1).strip() if name_match else "",
+        "name": name,
         "phone": phone.group(0).strip() if phone else "",
         "email": email.group(0).strip() if email else "",
         "city": city_match.group(1).strip() if city_match else "",
@@ -225,9 +244,10 @@ def _fact_blocks(lines: list[str]) -> list[tuple[str, str]]:
 
     for line in lines:
         heading = re.sub(r"[：:\s]", "", line)
-        if heading in SECTION_CATEGORIES:
+        heading_category = _heading_category(heading)
+        if heading_category:
             flush()
-            section = SECTION_CATEGORIES[heading]
+            section = heading_category
             continue
         inferred = _infer_category(line, section)
         if current_lines and (
@@ -257,17 +277,41 @@ def _infer_category(line: str, section: str) -> str:
     )
 
 
+def _heading_category(heading: str) -> str | None:
+    if heading in SECTION_CATEGORIES:
+        return SECTION_CATEGORIES[heading]
+    for name, category in sorted(SECTION_CATEGORIES.items(), key=lambda item: -len(item[0])):
+        if heading.startswith(name):
+            return category
+    return None
+
+
 def _starts_new_fact(line: str) -> bool:
-    return bool(DATE_RANGE.search(line) or any(word in line for word in ORGANIZATION_WORDS))
+    if DATE_RANGE.search(line):
+        return True
+    if DUTY_PREFIX.match(line) or len(line) > 40:
+        return False
+    return any(word in line for word in ORGANIZATION_WORDS)
 
 
 def _metadata(source_text: str) -> dict:
     first_line = source_text.splitlines()[0]
     segments = [part.strip() for part in re.split(r"[|｜·•]", first_line) if part.strip()]
     date_match = DATE_RANGE.search(source_text)
-    organization = next(
-        (part for part in segments if any(word in part for word in ORGANIZATION_WORDS)), ""
-    )
+    organization = next((part for part in segments if _looks_like_organization(part)), "")
+    if not organization:
+        organization = next(
+            (
+                part
+                for part in segments
+                if 2 <= len(part) <= 16
+                and not DATE_RANGE.search(part)
+                and not DUTY_PREFIX.match(part)
+                and not re.search(r"使用|完成|进行|负责|参与", part)
+                and not any(word in part for word in ROLE_WORDS)
+            ),
+            "",
+        )
     role_title = next((part for part in segments if any(word in part for word in ROLE_WORDS)), "")
     location = next(
         (
@@ -306,9 +350,22 @@ def _evidenced_date(value, source_text: str) -> str:
     return normalized if normalized in evidenced_dates else ""
 
 
+def _looks_like_organization(part: str) -> bool:
+    text = str(part or "").strip()
+    if not text or len(text) > 40 or DUTY_PREFIX.match(text):
+        return False
+    return any(word in text for word in ORGANIZATION_WORDS)
+
+
 def _evidenced_text(value, source_text: str) -> str:
     text = str(value or "").strip()
-    return text if text and text.casefold() in source_text.casefold() else ""
+    if not text:
+        return ""
+    if text.casefold() in source_text.casefold():
+        return text
+    compact_value = re.sub(r"\s+", "", text).casefold()
+    compact_source = re.sub(r"\s+", "", source_text).casefold()
+    return text if compact_value and compact_value in compact_source else ""
 
 
 def _evidenced_label(value, source_text: str) -> str:

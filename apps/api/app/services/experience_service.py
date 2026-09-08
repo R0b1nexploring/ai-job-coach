@@ -23,6 +23,31 @@ LIBRARY_PARSE_STATUS = "library"
 LIBRARY_DISPLAY_NAME = "经历库"
 
 
+def draft_materials_for_generation(db: Session, user: User) -> list[dict]:
+    """Unconfirmed materials are copy references, not confirmed facts."""
+    rows = list(
+        db.scalars(
+            select(ExperienceEntry).where(
+                ExperienceEntry.owner_user_id == user.id,
+                ExperienceEntry.status == "draft",
+            )
+        )
+    )
+    return [
+        {
+            "id": row.id,
+            "kind": row.kind,
+            "title": row.title,
+            "organization": row.organization,
+            "role_title": row.role_title,
+            "summary": row.summary,
+            "details": row.details_json or {},
+            "status": row.status,
+        }
+        for row in rows
+    ]
+
+
 def confirmed_facts_for_generation(db: Session, user: User, resume: Resume) -> list[ResumeFact]:
     """Use the selected resume facts plus the user's experience-library facts."""
     facts = list(

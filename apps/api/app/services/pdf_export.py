@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from copy import deepcopy
+
 from app.errors import AppError
 from app.services.docx_resume_renderer import render_resume_docx
 from app.services.html_resume_renderer import render_resume_html
@@ -18,25 +20,71 @@ A4_HEIGHT_PT = 841.89
 
 
 async def export_pdf(content: dict, title: str, snapshot: dict | None = None) -> bytes:
-    html = render_resume_html(content, title, snapshot=snapshot)
-    pdf = await _chromium_pdf(html)
-    if pdf is None:
-        pdf = await asyncio.to_thread(_libreoffice_pdf, content, title, snapshot)
+    pdf, qa = await _render_pdf_attempt(content, title, snapshot)
     if pdf is None:
         raise AppError(
             "PDF_CONVERTER_UNAVAILABLE",
             "当前环境没有可用的 Chromium 或 LibreOffice，无法导出 PDF。HTML 和 DOCX 仍可下载。",
             503,
         )
-    qa = inspect_pdf_bytes(pdf, content)
-    if qa["status"] != "passed":
-        raise AppError(
-            "PDF_QA_FAILED",
-            "PDF 未通过单页、裁切、字体或文本层检查，已返回生成修复。",
-            422,
-            details={"issues": qa["issues"]},
-        )
-    return pdf
+    if qa["status"] == "passed":
+        return pdf
+    if _is_page_overflow(qa["issues"]):
+        compact = compact_spacing_snapshot(snapshot)
+        if compact is not None:
+            compact_pdf, compact_qa = await _render_pdf_attempt(content, title, compact)
+            if compact_pdf is not None and compact_qa["status"] == "passed":
+                return compact_pdf
+            if compact_pdf is not None:
+                qa = compact_qa
+    failure_kind = classify_pdf_issues(qa["issues"])
+    message = (
+        "PDF 超出单页，已拒绝该文件。请在内容阶段缩写未锁定要点。"
+        if failure_kind == "content_overflow"
+        else "PDF 未通过字体、Unicode、裁切或文本层检查，请重试导出，不会改写简历正文。"
+    )
+    raise AppError(
+        "PDF_QA_FAILED",
+        message,
+        422,
+        details={"issues": qa["issues"], "failure_kind": failure_kind},
+    )
+
+
+async def _render_pdf_attempt(content: dict, title: str, snapshot: dict | None) -> tuple[bytes | None, dict]:
+    html = render_resume_html(content, title, snapshot=snapshot)
+    pdf = await _chromium_pdf(html)
+    if pdf is None:
+        pdf = await asyncio.to_thread(_libreoffice_pdf, content, title, snapshot)
+    if pdf is None:
+        return None, {"status": "failed", "issues": ["converter_unavailable"]}
+    return pdf, inspect_pdf_bytes(pdf, content)
+
+
+def compact_spacing_snapshot(snapshot: dict | None) -> dict | None:
+    snap = deepcopy(snapshot or {})
+    typography = dict(snap.get("typography") or {})
+    current = float(typography.get("line_spacing") or 1.15)
+    minimum = float(typography.get("line_spacing_min") or 1.0)
+    if current <= minimum:
+        return None
+    typography["line_spacing"] = minimum
+    snap["typography"] = typography
+    return snap
+
+
+def classify_pdf_issues(issues: list[str]) -> str:
+    text = " ".join(str(item) for item in issues)
+    technical_markers = ("fonts:", "crop:", "unicode", "converter")
+    if _is_page_overflow(issues) and not any(marker in text for marker in technical_markers):
+        return "content_overflow"
+    if _is_page_overflow(issues):
+        return "content_overflow"
+    return "technical"
+
+
+def _is_page_overflow(issues: list[str]) -> bool:
+    return any("page_count" in str(item) for item in issues)
 
 
 def converter_available() -> bool:

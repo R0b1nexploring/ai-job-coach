@@ -19,11 +19,13 @@ CLASSIC_NAVY_ATS_V2 = {
     },
     "typography": {
         "cjk_font": "微软雅黑",
+        "heading_cjk_font": "黑体",
         "latin_font": "Calibri",
         "name_size_pt": 22,
         "section_size_pt": 12,
         "body_size_pt": 10.5,
         "line_spacing": 1.15,
+        "line_spacing_min": 1.0,
     },
     "colors": {
         "ink": "1F2933",

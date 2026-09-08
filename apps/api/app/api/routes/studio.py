@@ -1,11 +1,12 @@
 from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
 from app.dependencies import current_user
 from app.errors import AppError
@@ -13,13 +14,12 @@ from app.models.entities import ResumeBundle, ResumeVersion, TargetProfile, User
 from app.services.bundle_service import (
     create_bundle,
     dump_bundle,
-    lock_bullet,
     owned_bundle,
     process_bundle,
     regenerate_scope,
     requeue_bundle,
-    run_bundle_job,
 )
+from app.services.resume_edit_service import lock_bullet, reorder_bullet
 from app.services.docx_resume_renderer import render_resume_docx
 from app.services.html_resume_renderer import render_resume_html
 from app.services.interview_guide_service import (
@@ -105,6 +105,11 @@ class LockIn(BaseModel):
     locked: bool = True
 
 
+class ReorderIn(BaseModel):
+    bullet_id: str
+    direction: Literal["up", "down"]
+
+
 class RegenerateIn(BaseModel):
     scope: str = Field(pattern="^(bullet|section|all)$")
     bullet_id: str | None = None
@@ -121,6 +126,15 @@ def _studio_version(db: Session, user: User, version_id: str) -> ResumeVersion:
         raise AppError("RESUME_VERSION_NOT_FOUND", "简历版本不存在。", 404)
     if row.guard_status != "passed":
         raise AppError("FACT_GUARD_BLOCKED", "事实检查未通过，不能预览或下载。", 409)
+    if (
+        get_settings().resume_quality_gate_active()
+        and (row.quality_report_json or {}).get("hard_passed") is not True
+    ):
+        raise AppError(
+            "RESUME_QUALITY_GATE_BLOCKED",
+            "质量硬门禁未通过，不能预览或下载。",
+            409,
+        )
     if row.bundle_id:
         bundle = db.get(ResumeBundle, row.bundle_id)
         if bundle and bundle.status not in {"ready", "degraded"}:
@@ -151,8 +165,6 @@ def _dump_version(row: ResumeVersion, *, include_content: bool = True) -> dict:
 @router.post("/resume-bundles", status_code=202)
 async def create_resume_bundle(
     data: BundleIn,
-    request: Request,
-    background: BackgroundTasks,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
@@ -167,27 +179,18 @@ async def create_resume_bundle(
     )
     db.commit()
     db.refresh(bundle)
-    if (
-        bundle.status == "queued"
-        and request.app.dependency_overrides.get(get_db) is None
-    ):
-        background.add_task(run_bundle_job, bundle.id)
     return dump_bundle(db, bundle)
 
 
 @router.post("/resume-bundles/{bundle_id}/retry", status_code=202)
 async def retry_resume_bundle(
     bundle_id: str,
-    request: Request,
-    background: BackgroundTasks,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
     bundle = requeue_bundle(db, user, bundle_id)
     db.commit()
     db.refresh(bundle)
-    if request.app.dependency_overrides.get(get_db) is None:
-        background.add_task(run_bundle_job, bundle.id)
     return dump_bundle(db, bundle)
 
 
@@ -197,7 +200,11 @@ async def process_resume_bundle(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    owned_bundle(db, user, bundle_id)
+    bundle = owned_bundle(db, user, bundle_id)
+    if get_settings().app_env.strip().lower() in {"production", "prod"}:
+        # Production work is exclusively claimed by the independent worker.
+        # Keep this legacy endpoint as a non-blocking compatibility response.
+        return dump_bundle(db, bundle)
     await process_bundle(db, bundle_id)
     db.commit()
     bundle = owned_bundle(db, user, bundle_id)
@@ -253,6 +260,19 @@ async def studio_lock(
     db: Session = Depends(get_db),
 ):
     row = lock_bullet(db, user, version_id, data.bullet_id, data.locked)
+    db.commit()
+    db.refresh(row)
+    return _dump_version(row)
+
+
+@router.post("/resume-versions/{version_id}/reorder")
+async def studio_reorder(
+    version_id: str,
+    data: ReorderIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    row = reorder_bullet(db, user, version_id, data.bullet_id, data.direction)
     db.commit()
     db.refresh(row)
     return _dump_version(row)
@@ -334,7 +354,12 @@ async def get_interview_guide(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    return dump_guide(owned_guide(db, user, guide_id))
+    guide = owned_guide(db, user, guide_id)
+    version = db.get(ResumeVersion, guide.resume_version_id)
+    if version is not None and guide.content_hash != version.content_hash and guide.status == "ready":
+        guide.status = "stale"
+        db.commit()
+    return dump_guide(guide)
 
 
 @router.post("/interview-guides/{guide_id}/regenerate")

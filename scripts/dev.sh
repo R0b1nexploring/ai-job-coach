@@ -25,8 +25,9 @@ if ! [[ "$DEV_API_PORT" =~ ^[0-9]+$ ]] || (( DEV_API_PORT < 1 || DEV_API_PORT > 
   echo "错误：API_PORT 必须是 1-65535 的端口号，当前为 '$DEV_API_PORT'。" >&2
   exit 1
 fi
+DEV_WILDCARD_BIND="$(printf '%s.%s.%s.%s' 0 0 0 0)"
 case "$DEV_API_BIND" in
-  0.0.0.0|::|::0) DEV_API_CHECK_HOST="127.0.0.1" ;;
+  "$DEV_WILDCARD_BIND"|::|::0) DEV_API_CHECK_HOST="127.0.0.1" ;;
   *) DEV_API_CHECK_HOST="$DEV_API_BIND" ;;
 esac
 if [[ "$DEV_API_CHECK_HOST" == *:* ]]; then
@@ -61,9 +62,11 @@ then
 fi
 
 API_PID=""
+WORKER_PID=""
 WEB_PID=""
 cleanup() {
   [[ -n "$API_PID" ]] && kill "$API_PID" 2>/dev/null || true
+  [[ -n "$WORKER_PID" ]] && kill "$WORKER_PID" 2>/dev/null || true
   [[ -n "$WEB_PID" ]] && kill "$WEB_PID" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
@@ -73,6 +76,8 @@ apps/api/.venv/bin/python -m pip install -e 'apps/api[dev]'
 (cd apps/api && .venv/bin/python -m alembic upgrade head)
 [[ -f var/app.db ]] && chmod 600 var/app.db
 apps/api/.venv/bin/python scripts/seed_demo.py
+(cd apps/api && .venv/bin/python -m app.worker) &
+WORKER_PID=$!
 (cd apps/api && .venv/bin/python -m uvicorn app.main:app --reload --host "$DEV_API_BIND" --port "$DEV_API_PORT") &
 API_PID=$!
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { Empty, ErrorState, Loading } from '../components/States'
+import { Alert, PageHeader, StepIndex } from '../components/ui'
 import type { ExperienceEntry, Job, ListResponse, Resume } from '../types'
 
 type Profile = {
@@ -17,7 +18,31 @@ type Bundle = {
   can_retry?: boolean
   versions: Record<string, { id: string; kind: string; status: string; content_hash: string }>
   guides: Record<string, { id: string; status: string }>
-  generation_metadata_json?: { degraded?: boolean; writer?: Record<string, string> }
+  run?: { phase?: string; attempts?: number; max_attempts?: number; last_error?: string }
+  generation_metadata_json?: {
+    degraded?: boolean
+    degraded_reason?: string
+    quality_gate_bypassed?: boolean
+    writer?: Record<string, string>
+  }
+}
+type ResumeFact = {
+  id: string
+  label?: string
+  value_json?: { text?: string; [key: string]: unknown }
+  verification_status?: string
+  organization?: string
+  role_title?: string
+}
+type StudioBullet = {
+  id: string
+  text: string
+  achieved?: boolean
+  locked?: boolean
+  source_fact_ids?: string[]
+  source_target_ids?: string[]
+  requirement_ids?: string[]
+  verification_status?: string
 }
 type StudioVersion = {
   id: string
@@ -34,23 +59,28 @@ type StudioVersion = {
     dimensions?: Record<string, { score: number }>
   }
   content_json: {
+    kind?: string
+    factuality_policy?: string
     headline?: string
     sections?: Array<{
       name: string
       items: Array<{
         organization?: string
         role_title?: string
-        bullets?: Array<{
-          id: string
-          text: string
-          achieved?: boolean
-          locked?: boolean
-          source_fact_ids?: string[]
-          verification_status?: string
-        }>
+        bullets?: StudioBullet[]
       }>
     }>
   }
+}
+
+function showsBlueprintMark(content: StudioVersion['content_json'] | undefined, bullet: StudioBullet) {
+  if (!bullet || bullet.achieved !== false) return false
+  return !(
+    content?.factuality_policy === 'ai_expansion'
+    && bullet.verification_status === 'ai_generated'
+    && !bullet.source_target_ids?.length
+    && !bullet.requirement_ids?.length
+  )
 }
 
 export function ResumeStudio() {
@@ -61,13 +91,29 @@ export function ResumeStudio() {
   const [selectedResume, setSelectedResume] = useState('')
   const [bundleId, setBundleId] = useState('')
   const [kind, setKind] = useState<'submittable' | 'target'>('submittable')
+  const [showCompare, setShowCompare] = useState(false)
+  const [previousContent, setPreviousContent] = useState<StudioVersion['content_json'] | null>(null)
   const [message, setMessage] = useState('')
   const [showExperienceForm, setShowExperienceForm] = useState(false)
   const [experienceOrganization, setExperienceOrganization] = useState('')
   const [experienceText, setExperienceText] = useState('')
   const [experienceResult, setExperienceResult] = useState('')
+  const [pageVisible, setPageVisible] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden')
+  const [pollDelay, setPollDelay] = useState(2000)
+  const [factDrafts, setFactDrafts] = useState<Record<string, string>>({})
+  const [clarificationDrafts, setClarificationDrafts] = useState<Record<string, string>>({})
   const jobs = useQuery({ queryKey: ['jobs'], queryFn: () => api<ListResponse<Job>>('/api/jobs') })
   const resumes = useQuery({ queryKey: ['resumes'], queryFn: () => api<ListResponse<Resume>>('/api/resumes') })
+  const selectedResumeDetail = useQuery({
+    queryKey: ['resume-detail', selectedResume],
+    queryFn: () => api<Resume & { missing_information_json?: Array<{ fact_id: string; field: string; question: string }> }>(`/api/resumes/${selectedResume}`),
+    enabled: Boolean(selectedResume),
+  })
+  const resumeFacts = useQuery({
+    queryKey: ['resume-facts', selectedResume],
+    queryFn: () => api<ListResponse<ResumeFact>>(`/api/resumes/${selectedResume}/facts`),
+    enabled: Boolean(selectedResume),
+  })
   const materials = useQuery({ queryKey: ['experience'], queryFn: () => api<ListResponse<ExperienceEntry>>('/api/experience') })
   const profiles = useQuery({ queryKey: ['target-profiles'], queryFn: () => api<ListResponse<Profile>>('/api/target-profiles') })
   const bundles = useQuery({
@@ -80,9 +126,24 @@ export function ResumeStudio() {
     enabled: Boolean(bundleId),
     refetchInterval: (query) => {
       const status = query.state.data?.status
-      return status === 'queued' || status === 'generating' ? 800 : false
+      return pageVisible && (status === 'queued' || status === 'generating') ? pollDelay : false
     },
+    refetchOnWindowFocus: true,
   })
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const updateVisibility = () => setPageVisible(document.visibilityState !== 'hidden')
+    document.addEventListener('visibilitychange', updateVisibility)
+    return () => document.removeEventListener('visibilitychange', updateVisibility)
+  }, [])
+  useEffect(() => {
+    const pending = bundle.data?.status === 'queued' || bundle.data?.status === 'generating'
+    if (!pending) {
+      setPollDelay(2000)
+      return
+    }
+    if (bundle.dataUpdatedAt) setPollDelay((current) => Math.min(current === 2000 ? 2500 : current + 1000, 5000))
+  }, [bundle.dataUpdatedAt, bundle.data?.status])
   useEffect(() => {
     if (!bundleId && bundles.data?.items?.[0]?.id) {
       setBundleId(bundles.data.items[0].id)
@@ -93,11 +154,28 @@ export function ResumeStudio() {
       setSelectedProfile(profiles.data.items[0].id)
     }
   }, [profiles.data, selectedProfile])
+  useEffect(() => {
+    if (!resumeFacts.data?.items) return
+    setFactDrafts((current) => {
+      const next = { ...current }
+      for (const fact of resumeFacts.data.items) {
+        if (!(fact.id in next)) next[fact.id] = fact.value_json?.text || ''
+      }
+      return next
+    })
+  }, [resumeFacts.data])
   const versionId = bundle.data?.versions?.[kind]?.id || ''
   const version = useQuery({
     queryKey: ['studio-version', versionId],
     queryFn: () => api<StudioVersion>(`/api/resume-versions/${versionId}/studio`),
     enabled: Boolean(versionId),
+  })
+  const compareKind = kind === 'submittable' ? 'target' : 'submittable'
+  const compareVersionId = bundle.data?.versions?.[compareKind]?.id || ''
+  const compareVersion = useQuery({
+    queryKey: ['studio-version', compareVersionId],
+    queryFn: () => api<StudioVersion>(`/api/resume-versions/${compareVersionId}/studio`),
+    enabled: showCompare && Boolean(compareVersionId),
   })
   const analyzeTarget = useMutation({
     mutationFn: async (raw: string) => {
@@ -178,6 +256,42 @@ export function ResumeStudio() {
       client.invalidateQueries({ queryKey: ['resumes'] })
     },
   })
+  const editFact = useMutation({
+    mutationFn: (payload: { fact: ResumeFact; text: string }) => api(`/api/resume-facts/${payload.fact.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ value_json: { ...(payload.fact.value_json || {}), text: payload.text } }),
+    }),
+    onSuccess: () => {
+      setMessage('原子事实已保存，仍需重新确认。')
+      client.invalidateQueries({ queryKey: ['resume-facts', selectedResume] })
+      client.invalidateQueries({ queryKey: ['resume-detail', selectedResume] })
+    },
+  })
+  const confirmFact = useMutation({
+    mutationFn: (factId: string) => api(`/api/resume-facts/${factId}/confirm`, { method: 'POST' }),
+    onSuccess: () => {
+      setMessage('这条原子事实已确认。')
+      client.invalidateQueries({ queryKey: ['resume-facts', selectedResume] })
+      client.invalidateQueries({ queryKey: ['resume-detail', selectedResume] })
+      client.invalidateQueries({ queryKey: ['resumes'] })
+    },
+  })
+  const answerClarifications = useMutation({
+    mutationFn: () => api(`/api/resumes/${selectedResume}/answer-clarifications`, {
+      method: 'POST',
+      body: JSON.stringify((selectedResumeDetail.data?.missing_information_json || []).map((item) => ({
+        fact_id: item.fact_id,
+        field: item.field,
+        value: clarificationDrafts[`${item.fact_id}:${item.field}`] || '',
+      })).filter((item) => item.value.trim())),
+    }),
+    onSuccess: () => {
+      setMessage('补充信息已保存，请重新确认事实。')
+      setClarificationDrafts({})
+      client.invalidateQueries({ queryKey: ['resume-facts', selectedResume] })
+      client.invalidateQueries({ queryKey: ['resume-detail', selectedResume] })
+    },
+  })
   const generate = useMutation({
     mutationFn: () => api<Bundle>('/api/resume-bundles', {
       method: 'POST',
@@ -201,16 +315,46 @@ export function ResumeStudio() {
     },
   })
   const lock = useMutation({
-    mutationFn: (bulletId: string) => api(`/api/resume-versions/${versionId}/lock`, { method: 'POST', body: JSON.stringify({ bullet_id: bulletId, locked: true }) }),
-    onSuccess: () => client.invalidateQueries({ queryKey: ['studio-version', versionId] }),
+    mutationFn: (payload: { bulletId: string; locked: boolean }) => api(`/api/resume-versions/${versionId}/lock`, { method: 'POST', body: JSON.stringify({ bullet_id: payload.bulletId, locked: payload.locked }) }),
+    onMutate: () => { if (version.data) setPreviousContent(version.data.content_json) },
+    onSuccess: () => {
+      setMessage('锁定状态已保存并重新校验。')
+      client.invalidateQueries({ queryKey: ['studio-version', versionId] })
+      client.invalidateQueries({ queryKey: ['resume-bundle', bundleId] })
+    },
   })
   const regenerate = useMutation({
-    mutationFn: (payload: { scope: 'all' | 'bullet'; bullet_id?: string }) => api(`/api/resume-versions/${versionId}/regenerate`, {
+    mutationFn: (payload: { scope: 'all' | 'bullet' | 'section'; bullet_id?: string; section_name?: string }) => api(`/api/resume-versions/${versionId}/regenerate`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
     onSuccess: () => {
       setMessage('已重生成并重新校验。')
+      client.invalidateQueries({ queryKey: ['studio-version', versionId] })
+      client.invalidateQueries({ queryKey: ['resume-bundle', bundleId] })
+    },
+    onMutate: () => { if (version.data) setPreviousContent(version.data.content_json) },
+  })
+  const reorder = useMutation({
+    mutationFn: (payload: { bullet_id: string; direction: 'up' | 'down' }) => api(`/api/resume-versions/${versionId}/reorder`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    onMutate: () => { if (version.data) setPreviousContent(version.data.content_json) },
+    onSuccess: () => {
+      setMessage('顺序已保存并重新校验。')
+      client.invalidateQueries({ queryKey: ['studio-version', versionId] })
+      client.invalidateQueries({ queryKey: ['resume-bundle', bundleId] })
+    },
+  })
+  const undo = useMutation({
+    mutationFn: () => api(`/api/resume-versions/${versionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(previousContent),
+    }),
+    onSuccess: () => {
+      setPreviousContent(null)
+      setMessage('已撤销上一次工作台操作，并重新校验。')
       client.invalidateQueries({ queryKey: ['studio-version', versionId] })
       client.invalidateQueries({ queryKey: ['resume-bundle', bundleId] })
     },
@@ -225,31 +369,44 @@ export function ResumeStudio() {
   const ownMaterials = useMemo(() => (materials.data?.items || []).filter((item) => item.is_own), [materials.data?.items])
 
   if (jobs.isLoading || resumes.isLoading) return <Loading />
-  const error = jobs.error || resumes.error || generate.error || createProfile.error || analyzeTarget.error || createMaterial.error || uploadResume.error || retry.error
+  const error = jobs.error || resumes.error || selectedResumeDetail.error || resumeFacts.error || generate.error || createProfile.error || analyzeTarget.error || createMaterial.error || uploadResume.error || confirmResume.error || editFact.error || confirmFact.error || answerClarifications.error || retry.error || lock.error || regenerate.error || reorder.error || undo.error || regenerateGuide.error
   const status = bundle.data?.status
   const degraded = status === 'degraded'
+  const qualityGateBypassed = bundle.data?.generation_metadata_json?.quality_gate_bypassed === true
   const failed = status === 'failed'
   const pending = status === 'queued' || status === 'generating'
   const content = version.data?.content_json
   const reviewerNote = version.data?.quality_report_json.reviewer_note
   return (
     <>
-      <p className="badge">自助简历工作台</p>
-      <h1 className="mt-3 text-4xl font-black">一份求职简历，一份蓝图 Plus</h1>
-      <p className="mt-3 max-w-3xl text-black/60">粘贴招聘要求，AI 会先理解岗位，再为你生成求职版和提升蓝图。上传简历和补充经历都可以稍后再做。</p>
-      {error && <div className="mt-5"><ErrorState error={error} /></div>}
-      {message && <p className="mt-5 rounded-xl bg-green-50 p-3 text-green-700">{message}</p>}
-      {degraded && <p className="mt-5 rounded-xl bg-amber-50 p-3 text-amber-800" role="status">当前是基础降级版本，使用本地基础内容，表达质量可能有限。</p>}
-      {failed && (
-        <p className="mt-5 rounded-xl bg-red-50 p-3 text-red-700" role="alert">
-          生成失败：{bundle.data?.error || '请重试。'}
-        </p>
+      <PageHeader
+        kicker="自助简历工作台"
+        title="一份求职简历，一份蓝图 Plus"
+        lead="粘贴招聘要求，AI 会先理解岗位，再为你生成求职版和提升蓝图。上传简历和补充经历都可以稍后再做。"
+      />
+      {(error || message || degraded || qualityGateBypassed || failed || pending) && (
+        <div className="mt-5 space-y-3">
+          {error && <ErrorState error={error} />}
+          {message && <Alert tone="success">{message}</Alert>}
+          {degraded && <Alert tone="warning" role="status">当前是基础降级版本，使用本地基础内容，表达质量可能有限。</Alert>}
+          {qualityGateBypassed && <Alert tone="warning" role="status">本地调试模式：质量硬门禁已暂时关闭，仅保留事实来源检查。</Alert>}
+          {failed && (
+            <Alert tone="danger" role="alert">
+              生成失败：{bundle.data?.error || '请重试。'}
+            </Alert>
+          )}
+          {pending && (
+            <Alert tone="info">
+              <span className="mr-2 inline-flex align-middle"><span className="spinner text-sage" /></span>
+              状态：{status === 'queued' ? '排队中' : '生成中'}（{bundle.data?.run?.phase || '处理中'}），完成后会自动刷新。
+            </Alert>
+          )}
+        </div>
       )}
-      {pending && <p className="mt-5 rounded-xl bg-slate-50 p-3 text-slate-700">状态：{status === 'queued' ? '排队中' : '生成中'}，完成后会自动刷新。</p>}
 
       <section className="card mt-8">
-        <p className="text-sm font-semibold text-sage">第一步</p>
-        <h2 className="mt-1 text-2xl font-bold">你想申请什么岗位？</h2>
+        <p className="step-kicker"><StepIndex n="1" />第一步</p>
+        <h2 className="mt-3 text-2xl font-bold tracking-tight">你想申请什么岗位？</h2>
         <p className="mt-2 text-sm text-black/55">复制招聘页面里的职位描述，剩下的交给 AI。</p>
         <textarea
           className="field mt-4 min-h-28"
@@ -258,7 +415,7 @@ export function ResumeStudio() {
           value={jdText}
           onChange={(event) => setJdText(event.target.value)}
         />
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           <button className="btn" onClick={() => jdText && analyzeTarget.mutate(jdText)} disabled={!jdText.trim() || analyzeTarget.isPending}>
             {analyzeTarget.isPending ? '正在分析…' : '分析这个岗位'}
           </button>
@@ -290,8 +447,8 @@ export function ResumeStudio() {
       </section>
 
       <section className="card mt-6">
-        <p className="text-sm font-semibold text-sage">可选</p>
-        <h2 className="mt-1 text-2xl font-bold">让结果更像你</h2>
+        <p className="step-kicker"><span className="inline-grid h-8 w-8 place-items-center rounded-full bg-sage/10 text-sm font-bold text-sage">选</span>可选</p>
+        <h2 className="mt-3 text-2xl font-bold tracking-tight">让结果更像你</h2>
         <p className="mt-2 text-sm text-black/55">有现成简历就上传；没有也可以跳过，直接让 AI 先生成一版。</p>
         <div className="mt-4 flex flex-wrap gap-2">
           <label className="btn-secondary cursor-pointer">
@@ -325,6 +482,53 @@ export function ResumeStudio() {
             )}
           </div>
         )}
+        {selectedResume && (
+          <div className="mt-5 rounded-xl border border-black/10 bg-black/[0.02] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-bold">核对这份简历的原子事实</h3>
+                <p className="mt-1 text-sm text-black/55">只确认你本人能核验的内容；AI 不会替你补数字。</p>
+              </div>
+              <button type="button" className="btn-secondary" onClick={() => confirmResume.mutate(selectedResume)} disabled={confirmResume.isPending}>确认全部事实</button>
+            </div>
+            {(resumeFacts.data?.items || []).length > 0 ? (
+              <div className="mt-3 grid gap-3">
+                {(resumeFacts.data?.items || []).map((fact) => (
+                  <div className="rounded-2xl border border-black/5 bg-white p-3" key={fact.id}>
+                    <p className="text-xs text-black/45">{fact.label || fact.role_title || '事实'} · {fact.verification_status === 'user_confirmed' ? '已确认' : '待确认'}</p>
+                    <textarea
+                      className="field mt-2 min-h-16"
+                      aria-label={`事实 ${fact.label || fact.id}`}
+                      value={factDrafts[fact.id] ?? fact.value_json?.text ?? ''}
+                      onChange={(event) => setFactDrafts((current) => ({ ...current, [fact.id]: event.target.value }))}
+                    />
+                    <div className="mt-2 flex gap-3 text-xs">
+                      <button type="button" className="underline" onClick={() => editFact.mutate({ fact, text: factDrafts[fact.id] ?? fact.value_json?.text ?? '' })} disabled={editFact.isPending}>保存事实</button>
+                      {fact.verification_status !== 'user_confirmed' && <button type="button" className="underline" onClick={() => confirmFact.mutate(fact.id)} disabled={confirmFact.isPending}>确认这条</button>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="mt-3 text-sm text-black/55">这份简历还没有解析出事实，可以直接补充一段经历。</p>}
+            {(selectedResumeDetail.data?.missing_information_json || []).length > 0 && (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <h4 className="font-semibold text-amber-900">还需要补充</h4>
+                <div className="mt-2 grid gap-2">
+                  {(selectedResumeDetail.data?.missing_information_json || []).map((item) => {
+                    const key = `${item.fact_id}:${item.field}`
+                    return (
+                      <label className="text-sm text-amber-900" key={key}>
+                        {item.question}
+                        <input className="field mt-1 bg-white" value={clarificationDrafts[key] || ''} onChange={(event) => setClarificationDrafts((current) => ({ ...current, [key]: event.target.value }))} />
+                      </label>
+                    )
+                  })}
+                </div>
+                <button type="button" className="btn-secondary mt-3" onClick={() => answerClarifications.mutate()} disabled={answerClarifications.isPending}>保存补充信息</button>
+              </div>
+            )}
+          </div>
+        )}
         <details className="mt-4 text-sm text-black/55">
           <summary className="cursor-pointer">已保存的经历与素材（{ownMaterials.length}）</summary>
           <div className="mt-2 grid gap-2">
@@ -334,37 +538,57 @@ export function ResumeStudio() {
       </section>
 
       <section className="card mt-6">
-        <p className="text-sm font-semibold text-sage">第二步</p>
-        <h2 className="mt-1 text-2xl font-bold">生成你的两份简历</h2>
-        <button className="btn mt-4" disabled={!selectedProfile || generate.isPending} onClick={() => generate.mutate()}>生成求职版和蓝图 Plus</button>
-        {failed && bundle.data?.can_retry && (
-          <button className="btn-secondary mt-3" onClick={() => retry.mutate()}>重试生成</button>
-        )}
+        <p className="step-kicker"><StepIndex n="2" />第二步</p>
+        <h2 className="mt-3 text-2xl font-bold tracking-tight">生成你的两份简历</h2>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button className="btn" disabled={!selectedProfile || generate.isPending} onClick={() => generate.mutate()}>生成求职版和蓝图 Plus</button>
+          {failed && bundle.data?.can_retry && (
+            <button className="btn-secondary" onClick={() => retry.mutate()}>重试生成</button>
+          )}
+        </div>
         {bundle.data && (
-          <div className="mt-4 flex gap-2">
-            <button className={kind === 'submittable' ? 'btn' : 'btn-secondary'} onClick={() => setKind('submittable')}>求职版</button>
-            <button className={kind === 'target' ? 'btn' : 'btn-secondary'} onClick={() => setKind('target')}>蓝图 Plus</button>
+          <div className="segmented mt-5">
+            <button className={`segmented-item ${kind === 'submittable' ? 'segmented-item-active' : ''}`} onClick={() => setKind('submittable')}>求职版</button>
+            <button className={`segmented-item ${kind === 'target' ? 'segmented-item-active' : ''}`} onClick={() => setKind('target')}>蓝图 Plus</button>
           </div>
         )}
         {version.data && (
           <div className="mt-5">
             <p className="text-sm text-black/50">质量状态：{version.data.quality_report_json.status || version.data.guard_status}{reviewerNote ? ` · ${reviewerNote}` : ''}</p>
-            <div className="mt-3 rounded-xl border bg-white p-4" data-testid="a4-preview">
-              <h3 className="text-xl font-black">{content?.headline}</h3>
+            {!!version.data.quality_report_json.issues?.length && <p className="alert alert-warning mt-2">质量问题：{version.data.quality_report_json.issues.join('；')}</p>}
+            <div className="mt-4 overflow-auto rounded-3xl border border-black/10 bg-[#ece7dc] p-4">
+              <iframe
+                title="A4 简历预览"
+                data-testid="a4-preview"
+                className="mx-auto min-h-[842px] w-[595px] max-w-full rounded-sm bg-white shadow-lift"
+                src={`/api/resume-versions/${versionId}/studio-preview?v=${version.data.content_hash}`}
+              />
+            </div>
+            <div className="soft-panel mt-4" aria-label="编辑要点">
+              <h3 className="text-sm font-semibold">编辑要点</h3>
+              <p className="mt-1 text-xs text-black/50">锁定、排序和局部重写在这里操作；上方预览与导出 HTML 使用同一套本地渲染。</p>
               {(content?.sections || []).map((section) => (
-                <div key={section.name} className="mt-3">
-                  <h4 className="font-bold">{section.name}</h4>
+                <div key={section.name} className="mt-4 border-t border-black/5 pt-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="font-bold">{section.name}</h4>
+                    <button className="btn-ghost" onClick={() => regenerate.mutate({ scope: 'section', section_name: section.name })}>重写此分区</button>
+                  </div>
                   {section.items.map((item, itemIndex) => (
-                    <ul key={`${section.name}-${itemIndex}`} className="mt-1 list-disc pl-5">
-                      {(item.bullets || []).map((bullet) => (
-                        <li key={bullet.id}>
-                          {bullet.text}{bullet.achieved === false ? '*' : ''}
-                          {bullet.verification_status === 'ai_generated' && <span className="ml-2 text-xs text-amber-700">AI 补充 · 待核验</span>}
-                          {bullet.source_fact_ids?.length ? <span className="ml-2 text-xs text-black/40">来源 {bullet.source_fact_ids.join(',')}</span> : null}
-                          <button className="ml-2 text-xs underline" onClick={() => lock.mutate(bullet.id)}>{bullet.locked ? '已锁定' : '锁定'}</button>
-                          {!bullet.locked && (
-                            <button className="ml-2 text-xs underline" onClick={() => regenerate.mutate({ scope: 'bullet', bullet_id: bullet.id })}>重写本条</button>
-                          )}
+                    <ul key={`${section.name}-${itemIndex}`} className="mt-2 space-y-2">
+                      {(item.bullets || []).map((bullet, bulletIndex) => (
+                        <li key={bullet.id} className="rounded-2xl bg-white px-3 py-2.5">
+                          <p className="text-sm leading-6">
+                            {bullet.text}{showsBlueprintMark(content, bullet) ? '*' : ''}
+                            {bullet.source_fact_ids?.length ? <span className="ml-2 text-xs text-black/40">来源 {bullet.source_fact_ids.join(',')}</span> : null}
+                          </p>
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            <button className="btn-ghost" onClick={() => lock.mutate({ bulletId: bullet.id, locked: !bullet.locked })} disabled={lock.isPending}>{bullet.locked ? '解锁' : '锁定'}</button>
+                            {!bullet.locked && (
+                              <button className="btn-ghost" onClick={() => regenerate.mutate({ scope: 'bullet', bullet_id: bullet.id })}>重写本条</button>
+                            )}
+                            <button className="btn-ghost" onClick={() => reorder.mutate({ bullet_id: bullet.id, direction: 'up' })} disabled={bulletIndex === 0 || reorder.isPending}>上移</button>
+                            <button className="btn-ghost" onClick={() => reorder.mutate({ bullet_id: bullet.id, direction: 'down' })} disabled={bulletIndex === (item.bullets || []).length - 1 || reorder.isPending}>下移</button>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -372,39 +596,60 @@ export function ResumeStudio() {
                 </div>
               ))}
             </div>
-            <p className="mt-3 text-xs text-black/50">* 为 AI 补充或目标内容，尚未核验。</p>
-            <button className="btn-secondary mt-4" onClick={() => regenerate.mutate({ scope: 'all' })}>整份重生成</button>
+            {(content?.sections || []).some((section) => section.items.some((item) => (item.bullets || []).some((bullet) => showsBlueprintMark(content, bullet)))) && (
+              <p className="mt-3 text-xs text-black/50">* 为目标蓝图未达成内容，尚未形成可核验经历。</p>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button className="btn-secondary" onClick={() => regenerate.mutate({ scope: 'all' })} disabled={regenerate.isPending}>{regenerate.isPending ? '正在重新校验…' : '整份重生成'}</button>
+              <button className="btn-secondary" onClick={() => setShowCompare((current) => !current)}>{showCompare ? '收起版本对比' : '对比另一版'}</button>
+              {previousContent && <button className="btn-secondary" onClick={() => undo.mutate()} disabled={undo.isPending}>撤销上次操作</button>}
+            </div>
+            {showCompare && compareVersion.data && (
+              <div className="soft-panel mt-4" data-testid="version-compare">
+                <h3 className="font-bold">{compareKind === 'target' ? '蓝图 Plus' : '求职版'}对比</h3>
+                {(compareVersion.data.content_json.sections || []).map((section) => (
+                  <div className="mt-3" key={section.name}>
+                    <h4 className="text-sm font-semibold">{section.name}</h4>
+                      <ul className="list-disc pl-5 text-sm">
+                        {section.items.flatMap((item) => (item.bullets || []).map((bullet) => <li key={bullet.id}>{bullet.text}{showsBlueprintMark(compareVersion.data.content_json, bullet) ? ' *' : ''}</li>))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </section>
 
-      <section className="card mt-6">
-        <h2 className="text-2xl font-bold">导出简历</h2>
-        {versionId && (status === 'ready' || status === 'degraded') ? (
-          <div className="mt-4 flex flex-wrap gap-3">
-            <a className="btn-secondary" href={`/api/resume-versions/${versionId}/studio-preview`} target="_blank" rel="noreferrer">预览 HTML</a>
-            <a className="btn-secondary" href={`/api/resume-versions/${versionId}/studio-download?format=html`}>下载 HTML</a>
-            <a className="btn-secondary" href={`/api/resume-versions/${versionId}/studio-download?format=docx`}>下载 DOCX</a>
-            <a className="btn-secondary" href={`/api/resume-versions/${versionId}/studio-download?format=pdf`}>下载 PDF</a>
-          </div>
-        ) : <p className="mt-3 text-sm text-black/50">生成后可直接导出，不需要顾问批准。</p>}
-      </section>
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <section className="card">
+          <h2 className="text-2xl font-bold tracking-tight">导出简历</h2>
+          {versionId && (status === 'ready' || status === 'degraded') ? (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <a className="btn-secondary" href={`/api/resume-versions/${versionId}/studio-preview`} target="_blank" rel="noreferrer">预览 HTML</a>
+              <a className="btn-secondary" href={`/api/resume-versions/${versionId}/studio-download?format=html`}>下载 HTML</a>
+              <a className="btn-secondary" href={`/api/resume-versions/${versionId}/studio-download?format=docx`}>下载 DOCX</a>
+              <a className="btn-secondary" href={`/api/resume-versions/${versionId}/studio-download?format=pdf`}>下载 PDF</a>
+            </div>
+          ) : <p className="mt-3 text-sm text-black/50">生成后可直接导出，不需要顾问批准。</p>}
+        </section>
 
-      <section className="card mt-6">
-        <h2 className="text-2xl font-bold">准备面试</h2>
-        {bundle.data?.guides && Object.keys(bundle.data.guides).length ? (
-          <div className="mt-4 flex flex-wrap gap-3">
-            {Object.entries(bundle.data.guides).map(([guideKind, guide]) => (
-              <div key={guideKind} className="flex items-center gap-2">
-                <a className="btn-secondary" href={`/app/guides?guide=${guide.id}`}>{guideKind === 'target' ? '蓝图风险指南' : '求职版作战指南'}</a>
-                {guide.status === 'stale' && (
-                  <button className="text-xs underline" onClick={() => regenerateGuide.mutate(guide.id)}>重新生成指南</button>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : <Empty title="简历包完成后会生成两份指南。" />}
-      </section>
+        <section className="card">
+          <h2 className="text-2xl font-bold tracking-tight">准备面试</h2>
+          {bundle.data?.guides && Object.keys(bundle.data.guides).length ? (
+            <div className="mt-4 grid gap-3">
+              {Object.entries(bundle.data.guides).map(([guideKind, guide]) => (
+                <div key={guideKind} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-black/5 bg-black/[0.02] px-4 py-3">
+                  <a className="font-semibold text-sage hover:underline" href={`/app/guides?guide=${guide.id}`}>{guideKind === 'target' ? '蓝图风险指南' : '求职版作战指南'}</a>
+                  {guide.status === 'stale' && (
+                    <button className="btn-ghost" onClick={() => regenerateGuide.mutate(guide.id)}>重新生成指南</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : <div className="mt-4"><Empty title="简历包完成后会生成两份指南。" /></div>}
+        </section>
+      </div>
     </>
   )
 }

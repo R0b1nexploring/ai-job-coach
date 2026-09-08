@@ -16,18 +16,18 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.config import Settings
 from app.database import make_engine
 from app.errors import AppError
-from app.models.entities import InterviewGuide, ResumeBundle, ResumeBundleRun, ResumeVersion, User, now
+from app.models.entities import InterviewGuide, QuotaReservation, ResumeBundle, ResumeBundleRun, ResumeFact, ResumeVersion, User, now
 from app.providers.llm.base import ProviderError
 from app.providers.llm.compatible import CompatibleLLMProvider
 from app.providers.llm.runtime import generate_structured as real_generate_structured
-from app.services.bundle_service import claim_bundle_run
+from app.services.bundle_service import _apply_pair_result, claim_bundle_run
 from app.services.content_contract import normalize_bullet, validate_content
 from app.services.docx_resume_renderer import render_resume_docx
 from app.services.html_resume_renderer import render_resume_html
 from app.services.pdf_export import converter_available, inspect_pdf_bytes
 from app.services.quality_service import apply_critic_cannot_override, evaluate_version
-from app.services.quota_service import change
-from app.services.resume_style import AI_EXPANSION_FOOTER, BLUEPRINT_FOOTER
+from app.services.quota_service import balance, change
+from app.services.resume_style import BLUEPRINT_FOOTER
 from app.services.resume_template import template_snapshot
 
 
@@ -182,11 +182,15 @@ def test_create_bundle_returns_queued_and_is_idempotent(client, db):
     tgt = next(row for row in versions if row.kind == "target")
     assert sub.content_json["content_version"] == 3
     sub_texts = [row["bullet"]["text"] for row in _bullets(sub.content_json)]
-    tgt_future = [row["bullet"] for row in _bullets(tgt.content_json) if row["bullet"].get("achieved") is False]
-    assert all(row["bullet"].get("achieved") is not False for row in _bullets(sub.content_json))
-    if tgt_future:
-        assert all(bullet.get("requirement_ids") for bullet in tgt_future)
-        assert all(bullet["text"] not in sub_texts for bullet in tgt_future)
+    tgt_gaps = [
+        row["bullet"]
+        for row in _bullets(tgt.content_json)
+        if row["bullet"].get("achieved") is False
+        and (row["bullet"].get("requirement_ids") or row["bullet"].get("source_target_ids"))
+    ]
+    if tgt_gaps:
+        assert all(bullet.get("requirement_ids") for bullet in tgt_gaps)
+        assert all(bullet["text"] not in sub_texts for bullet in tgt_gaps)
 
 
 def test_patch_accepts_v3_studio_content_and_keeps_bullet_ids(client, db):
@@ -266,6 +270,42 @@ def _structured_llm_response(payload: dict) -> httpx.Response:
     )
 
 
+def _is_resume_copy_payload(payload: dict) -> bool:
+    if payload.get("pair"):
+        return True
+    if payload.get("kind") not in {"submittable", "target"} or "facts" not in payload:
+        return False
+    if "bullets" in payload or "profile_title" in payload or "hard_passed" in payload:
+        return False
+    return True
+
+
+def _pair_rewrite_output(payload: dict) -> dict:
+    submittable = _rewrite_output_from_payload({**payload, "kind": "submittable"})
+    target = _rewrite_output_from_payload({**payload, "kind": "target"})
+    target["sections"][0]["items"][0]["bullets"].extend(
+        {
+            "text": requirement["text"],
+            "source_fact_ids": [],
+            "source_target_ids": [requirement["id"]],
+            "requirement_ids": [requirement["id"]],
+            "achieved": False,
+            "new_claims": [],
+        }
+        for requirement in payload.get("requirements") or []
+        if requirement.get("id") and requirement.get("text")
+    )
+    return {"submittable": submittable, "target": target}
+
+
+def _resume_copy_response(payload: dict) -> httpx.Response | None:
+    if not _is_resume_copy_payload(payload):
+        return None
+    if payload.get("pair"):
+        return _structured_llm_response(_pair_rewrite_output(payload))
+    return _structured_llm_response(_rewrite_output_from_payload(payload))
+
+
 def _rewrite_output_from_payload(payload: dict) -> dict:
     facts = list(payload.get("facts") or [])
     fact = facts[0] if facts else {}
@@ -309,8 +349,9 @@ def test_real_provider_receives_facts_and_requirements(client, db, monkeypatch):
         body = json.loads(request.content)
         payload = json.loads(body["messages"][1]["content"])
         captured.append(payload)
-        if payload.get("kind") in {"submittable", "target"} and "facts" in payload:
-            return _structured_llm_response(_rewrite_output_from_payload(payload))
+        written = _resume_copy_response(payload)
+        if written is not None:
+            return written
         if "hard_passed" in payload:
             return _structured_llm_response({"dimensions": {}, "summary": "ok"})
         return _structured_llm_response(
@@ -333,17 +374,15 @@ def test_real_provider_receives_facts_and_requirements(client, db, monkeypatch):
         {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
         "bundle-real-provider",
     )
-    rewrite_payloads = [
-        item
-        for item in captured
-        if item.get("kind") in {"submittable", "target"} and "facts" in item
-    ]
+    rewrite_payloads = [item for item in captured if _is_resume_copy_payload(item)]
     assert rewrite_payloads, captured
+    assert len(rewrite_payloads) == 1
     assert processed["status"] in {"ready", "degraded"}
     assert processed["generation_metadata_json"]["writer"]["submittable"] == "model"
+    assert processed["generation_metadata_json"]["writer"]["target"] == "model"
     for payload in rewrite_payloads:
         assert "mock_response" not in payload
-        assert payload != {}
+        assert payload.get("pair") is True
         assert payload["facts"], payload
         assert any(item.get("text") for item in payload["facts"])
         assert payload["requirements"]
@@ -367,6 +406,102 @@ def test_real_provider_failure_is_degraded_not_model_success(client, db, monkeyp
     assert processed["generation_metadata_json"]["degraded"] is True
     assert processed["generation_metadata_json"]["writer"]["submittable"] == "fallback"
     assert processed["generation_metadata_json"]["writer"]["target"] == "fallback"
+
+
+def test_initial_generation_calls_writer_once_for_both_kinds(client, db, monkeypatch):
+    calls = []
+
+    async def capture(*, task, system_prompt, user_payload, response_model):
+        calls.append(task)
+        return await real_generate_structured(
+            task=task,
+            system_prompt=system_prompt,
+            user_payload=user_payload,
+            response_model=response_model,
+        )
+
+    monkeypatch.setattr("app.services.bundle_service.generate_structured", capture)
+    _user, resume, profile = setup_bundle(client, db)
+    _created, processed = process_created_bundle(
+        client,
+        {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+        "bundle-one-write",
+    )
+    assert processed["status"] in {"ready", "degraded"}
+    assert calls.count("resume_rewrite") == 1
+    assert "resume_quality" not in calls
+    assert set(processed["versions"]) == {"submittable", "target"}
+
+
+def test_quality_failure_records_bounded_repair_history(client, db, monkeypatch):
+    from app.services.quality_service import evaluate_version as real_evaluate
+
+    calls = {"count": 0}
+
+    def fail_once_then_evaluate(**kwargs):
+        calls["count"] += 1
+        report = real_evaluate(**kwargs)
+        if calls["count"] == 1:
+            report["hard_passed"] = False
+            report["status"] = "blocked"
+            report["issues"] = ["测试质量问题"]
+        return report
+
+    monkeypatch.setattr("app.services.bundle_service.evaluate_version", fail_once_then_evaluate)
+    _user, resume, profile = setup_bundle(client, db)
+    _created, processed = process_created_bundle(
+        client,
+        {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+        "bundle-quality-repair",
+    )
+    assert processed["status"] == "ready"
+    history = processed["generation_metadata_json"]["repair_history"]
+    assert any(str(item).startswith("repair_submittable:") for item in history)
+    version = client.get(
+        f"/api/resume-versions/{processed['versions']['submittable']['id']}/studio"
+    ).json()
+    assert version["quality_report_json"]["repair_history"] == history
+
+
+def test_quality_repair_that_passes_is_ready_and_keeps_history(client, db, monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        written = _resume_copy_response(payload)
+        if written is not None:
+            return written
+        if "hard_passed" in payload:
+            return _structured_llm_response({"dimensions": {}, "summary": "ok"})
+        if "bullets" in payload:
+            return _structured_llm_response({"kind": payload.get("kind") or "submittable", "cards": []})
+        return _structured_llm_response({"kind": payload.get("kind") or "submittable", "cards": []})
+
+    _install_compatible_provider(monkeypatch, handler)
+    from app.services.quality_service import evaluate_version as real_evaluate
+
+    calls = {"count": 0}
+
+    def fail_once(**kwargs):
+        calls["count"] += 1
+        report = real_evaluate(**kwargs)
+        if calls["count"] == 1:
+            report["hard_passed"] = False
+            report["status"] = "blocked"
+            report["issues"] = ["测试质量问题"]
+        return report
+
+    monkeypatch.setattr("app.services.bundle_service.evaluate_version", fail_once)
+    _user, resume, profile = setup_bundle(client, db)
+    _created, processed = process_created_bundle(
+        client,
+        {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+        "bundle-quality-repair-ready",
+    )
+    assert processed["status"] == "ready"
+    assert calls["count"] == 4
+    history = processed["generation_metadata_json"]["repair_history"]
+    assert len(history) == 1
+    assert history[0].startswith("repair_submittable:")
+    assert processed["generation_metadata_json"]["degraded"] is False
 
 
 def test_changed_materials_create_new_bundle_without_client_key(client, db):
@@ -403,6 +538,83 @@ def test_same_materials_without_key_replay_existing_bundle(client, db):
     assert first.status_code == 202
     assert replay.status_code == 202
     assert replay.json()["id"] == first.json()["id"]
+
+
+def test_worker_uses_the_generation_input_snapshot(client, db):
+    user, resume, profile = setup_bundle(client, db)
+    created = client.post(
+        "/api/resume-bundles",
+        headers={"Idempotency-Key": "bundle-snapshot"},
+        json={"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+    )
+    assert created.status_code == 202
+    fact = db.scalar(
+        select(ResumeFact).where(
+            ResumeFact.user_id == user["id"],
+            ResumeFact.verification_status == "user_confirmed",
+        )
+    )
+    original_text = (fact.value_json or {}).get("text")
+    fact.value_json = {"text": "后来修改的内容，不应进入已经排队的任务"}
+    flag_modified(fact, "value_json")
+    db.commit()
+    processed = client.post(f"/api/resume-bundles/{created.json()['id']}/process")
+    assert processed.status_code == 202
+    version = client.get(
+        f"/api/resume-versions/{processed.json()['versions']['submittable']['id']}/studio"
+    ).json()
+    texts = [row["bullet"]["text"] for row in _bullets(version["content_json"])]
+    assert original_text in texts
+    assert "后来修改的内容" not in texts
+
+
+def test_failed_bundle_releases_reserved_quota(client, db, monkeypatch):
+    user, resume, profile = setup_bundle(client, db)
+    before = balance(db, user["id"], "resume")
+
+    async def hard_failure(_inputs):
+        return {"status": "failed", "error": "hard_gates_failed", "repair_history": []}
+
+    monkeypatch.setattr("app.services.bundle_service._compose_pair", hard_failure)
+    created = client.post(
+        "/api/resume-bundles",
+        headers={"Idempotency-Key": "bundle-refund"},
+        json={"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+    )
+    processed = client.post(f"/api/resume-bundles/{created.json()['id']}/process")
+    assert processed.json()["status"] == "failed"
+    assert balance(db, user["id"], "resume") == before
+    reservation = db.scalar(
+        select(QuotaReservation).where(
+            QuotaReservation.resource_type == "resume_bundle",
+            QuotaReservation.resource_id == created.json()["id"],
+        )
+    )
+    assert reservation is not None
+    assert reservation.status == "refunded"
+
+
+def test_regeneration_provider_failure_is_visible_and_retryable(client, db, monkeypatch):
+    _user, resume, profile = setup_bundle(client, db)
+    _created, processed = process_created_bundle(
+        client,
+        {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+        "bundle-regenerate-error",
+    )
+    version_id = processed["versions"]["submittable"]["id"]
+    detail = client.get(f"/api/resume-versions/{version_id}/studio").json()
+    bullet_id = _bullets(detail["content_json"])[0]["bullet"]["id"]
+
+    async def unavailable(**_kwargs):
+        raise ProviderError("provider unavailable")
+
+    monkeypatch.setattr("app.services.bundle_service.generate_structured", unavailable)
+    response = client.post(
+        f"/api/resume-versions/{version_id}/regenerate",
+        json={"scope": "bullet", "bullet_id": bullet_id},
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "RESUME_REGENERATION_UNAVAILABLE"
 
 
 def test_explicit_idempotency_key_still_rejects_changed_materials(client, db):
@@ -472,6 +684,85 @@ def test_model_failure_delivers_degraded_not_ready(client, db, monkeypatch):
     assert processed["status"] != "ready"
     assert processed["generation_metadata_json"]["degraded"] is True
     assert processed["generation_metadata_json"]["writer"]["submittable"] == "fallback"
+
+
+def test_degraded_version_can_be_previewed_without_leaking_status_to_resume(client, db, monkeypatch):
+    async def fail_writer(*, task, system_prompt, user_payload, response_model):
+        if task == "resume_rewrite":
+            raise ProviderError("model unavailable")
+        return await real_generate_structured(
+            task=task,
+            system_prompt=system_prompt,
+            user_payload=user_payload,
+            response_model=response_model,
+        )
+
+    monkeypatch.setattr("app.services.bundle_service.generate_structured", fail_writer)
+    _user, resume, profile = setup_bundle(client, db)
+    _created, processed = process_created_bundle(
+        client,
+        {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+        "bundle-degraded-preview",
+    )
+    version_id = processed["versions"]["submittable"]["id"]
+    preview = client.get(f"/api/resume-versions/{version_id}/studio-preview")
+    assert preview.status_code == 200
+    assert "基础降级版本" not in preview.text
+    assert client.get(f"/api/resume-versions/{version_id}/studio-download?format=html").status_code == 200
+    assert client.get(f"/api/resume-versions/{version_id}/studio-download?format=docx").status_code == 200
+
+
+def test_quality_hard_gate_blocks_studio_preview_even_when_guard_flag_is_stale(client, db):
+    _user, resume, profile = setup_bundle(client, db)
+    _created, processed = process_created_bundle(
+        client,
+        {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+        "bundle-quality-export-gate",
+    )
+    version = db.get(ResumeVersion, processed["versions"]["submittable"]["id"])
+    version.guard_status = "passed"
+    version.quality_report_json = {"hard_passed": False, "status": "blocked", "issues": ["版面失败"]}
+    db.commit()
+    blocked = client.get(f"/api/resume-versions/{version.id}/studio-preview")
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "RESUME_QUALITY_GATE_BLOCKED"
+
+
+def test_local_quality_gate_bypass_delivers_ready_but_keeps_fact_guard(client, db, monkeypatch):
+    disabled = Settings(
+        _env_file=None,
+        app_env="development",
+        resume_quality_gate_enabled=False,
+    )
+    monkeypatch.setattr("app.services.bundle_service.get_settings", lambda: disabled)
+    monkeypatch.setattr("app.api.routes.studio.get_settings", lambda: disabled)
+    from app.services.quality_service import evaluate_version as real_evaluate
+
+    def fail_quality(**kwargs):
+        report = real_evaluate(**kwargs)
+        report["hard_passed"] = False
+        report["status"] = "blocked"
+        report["issues"] = ["测试质量问题"]
+        return report
+
+    monkeypatch.setattr("app.services.bundle_service.evaluate_version", fail_quality)
+    _user, resume, profile = setup_bundle(client, db)
+    _created, processed = process_created_bundle(
+        client,
+        {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+        "bundle-quality-gate-bypassed",
+    )
+    assert processed["status"] == "ready"
+    assert processed["generation_metadata_json"]["quality_gate_bypassed"] is True
+    assert processed["generation_metadata_json"]["degraded"] is False
+    version_id = processed["versions"]["submittable"]["id"]
+    detail = client.get(f"/api/resume-versions/{version_id}/studio")
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["guard_status"] == "passed"
+    assert body["quality_report_json"]["status"] == "bypassed"
+    assert body["quality_report_json"]["hard_passed"] is False
+    assert client.get(f"/api/resume-versions/{version_id}/studio-preview").status_code == 200
 
 
 def test_scoped_regen_keeps_non_first_bullet_fact_ownership(client, db):
@@ -566,6 +857,56 @@ def test_lock_persists_and_full_regen_keeps_position(client, db):
         assert refreshed.json()["content_hash"] == regenerated.json()["content_hash"]
 
 
+def test_reorder_persists_within_the_same_experience(client, db):
+    from copy import deepcopy
+
+    from app.services.content_contract import new_bullet_id
+
+    _user, resume, profile = setup_bundle(client, db)
+    _created, processed = process_created_bundle(
+        client,
+        {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+        "bundle-reorder",
+    )
+    version_id = processed["versions"]["submittable"]["id"]
+    version = db.get(ResumeVersion, version_id)
+    content = deepcopy(version.content_json or {})
+    item = next(
+        row
+        for section in content.get("sections") or []
+        for row in section.get("items") or []
+        if isinstance(row, dict)
+    )
+    if len(item.get("bullets") or []) < 2:
+        extra = deepcopy(item["bullets"][0])
+        extra["id"] = new_bullet_id()
+        extra["text"] = f"{extra.get('text') or '要点'}（第二条）"
+        extra["locked"] = False
+        item["bullets"].append(extra)
+        version.content_json = content
+        flag_modified(version, "content_json")
+        db.commit()
+    detail = client.get(f"/api/resume-versions/{version_id}/studio").json()
+    groups = {}
+    for row in _bullets(detail["content_json"]):
+        groups.setdefault((row["section"], row["item_index"]), []).append(row)
+    same_item = next(group for group in groups.values() if len(group) >= 2)
+    first, second = same_item[0]["bullet"], same_item[1]["bullet"]
+    moved = client.post(
+        f"/api/resume-versions/{version_id}/reorder",
+        json={"bullet_id": first["id"], "direction": "down"},
+    )
+    assert moved.status_code == 200, moved.text
+    after_groups = {}
+    for row in _bullets(moved.json()["content_json"]):
+        after_groups.setdefault((row["section"], row["item_index"]), []).append(row)
+    after = after_groups[same_item[0]["section"], same_item[0]["item_index"]]
+    assert after[0]["bullet"]["id"] == second["id"]
+    assert after[1]["bullet"]["id"] == first["id"]
+    assert after[0]["bullet"]["text"] == second["text"]
+    assert after[1]["bullet"]["text"] == first["text"]
+
+
 def test_claim_token_is_atomic_and_interrupt_can_reclaim(client, db, monkeypatch):
     _user, resume, profile = setup_bundle(client, db)
     created = client.post(
@@ -586,7 +927,29 @@ def test_claim_token_is_atomic_and_interrupt_can_reclaim(client, db, monkeypatch
     processed = client.post(f"/api/resume-bundles/{bundle_id}/process")
     assert processed.status_code == 202, processed.text
     assert processed.json()["status"] in {"ready", "degraded"}
-    assert processed.json()["run"]["claim_token"] != first
+    assert "claim_token" not in processed.json()["run"]
+
+
+def test_stale_worker_cannot_persist_after_claim_takeover(client, db):
+    _user, resume, profile = setup_bundle(client, db)
+    created = client.post(
+        "/api/resume-bundles",
+        headers={"Idempotency-Key": "bundle-stale-worker"},
+        json={"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+    )
+    assert created.status_code == 202
+    bundle_id = created.json()["id"]
+    first = claim_bundle_run(db, bundle_id)
+    assert first
+    run = db.get(ResumeBundleRun, bundle_id)
+    run.updated_at = now() - timedelta(seconds=1)
+    db.commit()
+    second = claim_bundle_run(db, bundle_id, stale_after=timedelta(0))
+    assert second and second != first
+    stale_result = _apply_pair_result(db, bundle_id, first, {"status": "ready"})
+    assert stale_result is not None
+    assert stale_result.status == "generating"
+    assert not list(db.scalars(select(ResumeVersion).where(ResumeVersion.bundle_id == bundle_id)))
 
 
 def test_content_change_stales_guides_and_allows_regenerate(client, db):
@@ -689,9 +1052,9 @@ def test_studio_export_uses_snapshot_and_marks_blueprint(client, db):
     docx = render_resume_docx(target, "蓝图").decode("latin-1", errors="ignore")
     if any(row["bullet"].get("achieved") is False for row in _bullets(target)):
         assert "*" in rendered
-        assert AI_EXPANSION_FOOTER in rendered
-        assert rendered.count(AI_EXPANSION_FOOTER) == 1
-        assert AI_EXPANSION_FOOTER in docx or "*" in docx
+        assert BLUEPRINT_FOOTER in rendered
+        assert rendered.count(BLUEPRINT_FOOTER) == 1
+        assert BLUEPRINT_FOOTER in docx or "*" in docx
     sub_id = bundle["versions"]["submittable"]["id"]
     sub_html = client.get(f"/api/resume-versions/{sub_id}/studio-preview")
     assert sub_html.status_code == 200
@@ -739,6 +1102,110 @@ def test_guides_cover_visible_bullets_and_omit_practice(client, db):
     assert profile["title"] in first_card["main_question"] or first_card.get("degraded")
     target_guide = client.get(f"/api/interview-guides/{bundle['guides']['target']['id']}").json()
     assert target_guide["content_json"].get("practice_answers") is False
+
+
+def test_guide_model_omission_is_repaired_before_ready(client, db, monkeypatch):
+    user = register(client, email="guide-coverage@example.test")
+    _confirm_material(
+        client,
+        title="装配体课程设计",
+        organization="用户自己的实验室",
+        summary="使用 SolidWorks 完成装配体建模",
+        extra="SolidWorks",
+    )
+    _confirm_material(
+        client,
+        title="PLC 点检练习",
+        organization="用户自己的车间",
+        summary="跟随师傅完成 PLC 点检并记录报警代码",
+        extra="PLC",
+    )
+    _job, profile = _import_job(client)
+    _grant_resume_quota(db, user["id"], key="resume-guide-coverage-grant")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        if _is_resume_copy_payload(payload):
+            if payload.get("pair"):
+                pair = _pair_rewrite_output(payload)
+                for kind in ("submittable", "target"):
+                    pair[kind]["sections"][0]["items"][0]["bullets"] = [
+                        {
+                            "text": fact["text"],
+                            "source_fact_ids": [fact["id"]],
+                            "source_target_ids": [],
+                            "requirement_ids": [],
+                            "achieved": True,
+                            "new_claims": [],
+                        }
+                        for fact in payload.get("facts") or []
+                    ]
+                pair["target"]["sections"][0]["items"][0]["bullets"].extend(
+                    {
+                        "text": requirement["text"],
+                        "source_fact_ids": [],
+                        "source_target_ids": [requirement["id"]],
+                        "requirement_ids": [requirement["id"]],
+                        "achieved": False,
+                        "new_claims": [],
+                    }
+                    for requirement in payload.get("requirements") or []
+                    if requirement.get("id") and requirement.get("text")
+                )
+                return _structured_llm_response(pair)
+            output = _rewrite_output_from_payload(payload)
+            output["sections"][0]["items"][0]["bullets"] = [
+                {
+                    "text": fact["text"],
+                    "source_fact_ids": [fact["id"]],
+                    "source_target_ids": [],
+                    "requirement_ids": [],
+                    "achieved": True,
+                    "new_claims": [],
+                }
+                for fact in payload.get("facts") or []
+            ]
+            if payload.get("kind") == "target":
+                output["sections"][0]["items"][0]["bullets"].extend(
+                    {
+                        "text": requirement["text"],
+                        "source_fact_ids": [],
+                        "source_target_ids": [requirement["id"]],
+                        "requirement_ids": [requirement["id"]],
+                        "achieved": False,
+                        "new_claims": [],
+                    }
+                    for requirement in payload.get("requirements") or []
+                )
+            return _structured_llm_response(output)
+        if "hard_passed" in payload:
+            return _structured_llm_response({"dimensions": {}, "summary": "ok"})
+        if "bullets" in payload:
+            bullets = payload.get("bullets") or []
+            return _structured_llm_response(
+                {
+                    "kind": payload.get("kind") or "submittable",
+                    "cards": ([{"bullet_id": bullets[0]["id"]}] if bullets else []),
+                }
+            )
+        return _structured_llm_response({"kind": payload.get("kind") or "submittable", "cards": []})
+
+    _install_compatible_provider(monkeypatch, handler)
+    _created, processed = process_created_bundle(
+        client,
+        {"target_profile_id": profile["id"]},
+        "bundle-guide-coverage",
+    )
+    guide = client.get(f"/api/interview-guides/{processed['guides']['submittable']['id']}").json()
+    version = client.get(
+        f"/api/resume-versions/{processed['versions']['submittable']['id']}/studio"
+    ).json()
+    expected = {row["bullet"]["id"] for row in _bullets(version["content_json"])}
+    actual = {card["bullet_id"] for card in guide["content_json"]["cards"]}
+    assert actual == expected
+    assert guide["status"] == "ready"
+    assert guide["quality_report_json"]["coverage"] == 1
+    assert guide["quality_report_json"]["issues"] == ["coverage_repaired"]
 
 
 def test_quality_report_omits_prompts_and_labels_reviewer(client, db):
@@ -875,19 +1342,22 @@ def test_unsourced_bullet_rewrite_calls_writer_and_changes_text(client, db, monk
         other = _critic_or_guide_response(payload)
         if other is not None:
             return other
+        orphan = {
+            "id": "ai-orphan",
+            "text": "AI 补充的无来源要点",
+            "source_fact_ids": [],
+            "source_target_ids": [],
+            "requirement_ids": [],
+            "achieved": False,
+            "new_claims": ["无来源扩写"],
+            "verification_status": "ai_generated",
+        }
+        if payload.get("pair"):
+            pair = _pair_rewrite_output(payload)
+            pair["submittable"]["sections"][0]["items"][0]["bullets"].append(orphan)
+            return _structured_llm_response(pair)
         output = _rewrite_output_from_payload(payload)
-        output["sections"][0]["items"][0]["bullets"].append(
-            {
-                "id": "ai-orphan",
-                "text": "AI 补充的无来源要点",
-                "source_fact_ids": [],
-                "source_target_ids": [],
-                "requirement_ids": [],
-                "achieved": False,
-                "new_claims": ["无来源扩写"],
-                "verification_status": "ai_generated",
-            }
-        )
+        output["sections"][0]["items"][0]["bullets"].append(orphan)
         return _structured_llm_response(output)
 
     _install_compatible_provider(monkeypatch, handler)
@@ -930,18 +1400,21 @@ def test_full_regen_keeps_model_expansion_instead_of_fallback_template(client, d
         other = _critic_or_guide_response(payload)
         if other is not None and "facts" not in payload:
             return other
-        if payload.get("kind") in {"submittable", "target"} and "facts" in payload:
+        if _is_resume_copy_payload(payload):
+            text = second_text if payload.get("current_content") or payload.get("current_submittable") else first_text
+            extra = {
+                "text": text,
+                "source_fact_ids": [],
+                "achieved": False,
+                "new_claims": ["自动化分析流程"],
+                "verification_status": "ai_generated",
+            }
+            if payload.get("pair"):
+                pair = _pair_rewrite_output(payload)
+                pair["submittable"]["sections"][0]["items"][0]["bullets"].append(extra)
+                return _structured_llm_response(pair)
             output = _rewrite_output_from_payload(payload)
-            text = second_text if payload.get("current_content") else first_text
-            output["sections"][0]["items"][0]["bullets"].append(
-                {
-                    "text": text,
-                    "source_fact_ids": [],
-                    "achieved": False,
-                    "new_claims": ["自动化分析流程"],
-                    "verification_status": "ai_generated",
-                }
-            )
+            output["sections"][0]["items"][0]["bullets"].append(extra)
             return _structured_llm_response(output)
         return _critic_or_guide_response(payload) or _structured_llm_response(
             {"kind": payload.get("kind") or "submittable", "cards": []}
@@ -972,7 +1445,7 @@ def test_generation_releases_write_lock_before_model_call(client, db, monkeypatc
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(json.loads(request.content)["messages"][1]["content"])
-        if payload.get("kind") in {"submittable", "target"} and "facts" in payload and "status" not in seen:
+        if _is_resume_copy_payload(payload) and "status" not in seen:
             engine = make_engine()
             Other = sessionmaker(bind=engine, expire_on_commit=False)
             with Other() as other:
@@ -983,12 +1456,14 @@ def test_generation_releases_write_lock_before_model_call(client, db, monkeypatc
                 other.commit()
                 seen["wrote"] = True
             engine.dispose()
-            return _structured_llm_response(_rewrite_output_from_payload(payload))
+            written = _resume_copy_response(payload)
+            return written or _structured_llm_response(_rewrite_output_from_payload(payload))
         other = _critic_or_guide_response(payload)
         if other is not None:
             return other
-        if payload.get("kind") in {"submittable", "target"} and "facts" in payload:
-            return _structured_llm_response(_rewrite_output_from_payload(payload))
+        written = _resume_copy_response(payload)
+        if written is not None:
+            return written
         return _structured_llm_response({"kind": payload.get("kind") or "submittable", "cards": []})
 
     user, resume, profile = setup_bundle(client, db)

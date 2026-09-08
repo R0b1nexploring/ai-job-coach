@@ -1,4 +1,5 @@
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -63,10 +64,8 @@ def main() -> int:
         env=environment,
         check=True,
     )
-    os.chdir(API_ROOT)
     port = os.environ.get("E2E_API_PORT", "18000").strip() or "18000"
-    os.execve(
-        sys.executable,
+    api_process = subprocess.Popen(
         [
             sys.executable,
             "-m",
@@ -77,8 +76,31 @@ def main() -> int:
             "--port",
             port,
         ],
-        environment,
+        cwd=API_ROOT,
+        env=environment,
     )
+    worker_process = subprocess.Popen(
+        [sys.executable, "-m", "app.worker", "--limit", "10"],
+        cwd=API_ROOT,
+        env=environment,
+    )
+
+    def stop_children(_signum, _frame):
+        for process in (worker_process, api_process):
+            if process.poll() is None:
+                process.terminate()
+
+    signal.signal(signal.SIGTERM, stop_children)
+    signal.signal(signal.SIGINT, stop_children)
+    try:
+        return api_process.wait()
+    finally:
+        stop_children(0, None)
+        try:
+            worker_process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            worker_process.kill()
+            worker_process.wait()
 
 
 if __name__ == "__main__":

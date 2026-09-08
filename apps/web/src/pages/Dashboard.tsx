@@ -11,7 +11,7 @@ export function Dashboard() {
   return (
     <>
       <p className="badge">本周执行中心</p>
-      <h1 className="mt-3 text-4xl font-black">用真实经历生成一页简历</h1>
+      <h1 className="page-title mt-3">用真实经历生成一页简历</h1>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         <Link to="/app/experience" className="card hover:border-sage">
           <p className="text-sm text-black/50">第一步</p>

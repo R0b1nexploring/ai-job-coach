@@ -136,6 +136,37 @@ def test_compatible_provider_uses_task_model_retries_and_logs_no_sensitive_text(
         assert secret not in caplog.text
 
 
+def test_thinking_fields_are_not_sent_to_xai(monkeypatch):
+    settings = Settings(
+        _env_file=None,
+        llm_api_base_url="https://api.x.ai/v1",
+        llm_api_key="redacted",
+        llm_model_cheap="grok-test",
+        llm_thinking_enabled=True,
+        llm_reasoning_effort="high",
+    )
+    captured = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"value": "ok"}'}}]},
+        )
+
+    monkeypatch.setattr("app.providers.llm.compatible.get_settings", lambda: settings)
+    asyncio.run(
+        CompatibleLLMProvider(transport=httpx.MockTransport(handler)).generate_structured(
+            task="jd_normalize",
+            system_prompt="输出 JSON。",
+            user_payload={},
+            response_model=ExampleOutput,
+        )
+    )
+    assert "thinking" not in captured[0]
+    assert "reasoning_effort" not in captured[0]
+
+
 def test_resume_schema_example_keeps_new_claims_empty():
     instructions = _format_instructions(ResumeStructuredV2Output)
 

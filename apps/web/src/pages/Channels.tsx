@@ -54,7 +54,7 @@ export function Channels() {
   return (
     <>
       <span className="badge">公司级入口 · 不是岗位源</span>
-      <h1 className="mt-3 text-4xl font-black">投递渠道</h1>
+      <h1 className="page-title mt-3">投递渠道</h1>
       <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
         系统只提供运营者自行确认许可后的导入能力，不随产品分发第三方渠道数据；不会自动投递或发送邮件。
       </p>

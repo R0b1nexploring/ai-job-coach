@@ -1,10 +1,10 @@
 # AI Job Coach MVP
 
-> **2026-09-05 用户最新裁决：允许 AI 扩写。** 新生成的工作台 v3 简历采用 `factuality_policy=ai_expansion`，允许超出已确认事实补充内容，也允许仅凭目标画像创建草稿。缺少事实支持、新主张和未达成状态不再阻止生成、预览或导出；来源 ID 归属、结构及版面仍需通过检查。AI 补充记录 `verification_status=ai_generated`、`achieved=false`，在工作台、导出和指南标识待核验，不自动写入已确认事实库。`submittable` 的界面名称改为“求职版”。本裁决覆盖本文此前相冲突的事实限制；旧 v1/v2 接口保持兼容。
+> **2026-09-05 用户最新裁决：允许 AI 扩写。** 新生成的工作台 v3 简历采用 `factuality_policy=ai_expansion`，允许超出已确认事实补充内容，也允许仅凭目标画像创建草稿。缺少事实支持、新主张和未达成状态不再阻止生成、预览或导出；来源 ID 归属、结构及版面仍需通过检查。AI 补充记录 `verification_status=ai_generated`、`achieved=false` 作为内部来源状态，但在工作台、导出和指南不显示“待核验”标记，不自动写入已确认事实库。`submittable` 的界面名称改为“求职版”。本裁决覆盖本文此前相冲突的事实限制；旧 v1/v2 接口保持兼容。
 
 面向理工科本硕学生的本地可运行自助简历 Demo：目标画像、真实素材、同源真实能力简历与蓝图 Plus、HTML/DOCX/PDF 导出，以及两份逐条面试指南。旧的岗位匹配、学习目标、投递和顾问页面仍可通过 URL 打开，但不再出现在普通用户主导航。默认使用 Mock AI、Disabled Payment Provider 和本地私有文件存储，不需要外部密钥、Docker、Redis 或外部数据库。MVP-1 不提供支付、回调或退款接口。产品导出走主应用 API，不要再把根目录 `resume_pdf/` 当作正式入口。
 
-JD 结构化、匹配解释、事实提取、学习目标、定制简历、面试指南和邮件草稿统一通过结构化 LLM Provider。默认 `LLM_PROVIDER=mock`，结果稳定且可离线测试；如需使用 DeepSeek，在被 Git 忽略的 `.env` 中设置 `LLM_PROVIDER=compatible` 与 `LLM_API_KEY`，并按需调整 `LLM_MODEL_CHEAP`、`LLM_MODEL_STRONG`、`LLM_THINKING_ENABLED`、`LLM_REASONING_EFFORT` 和 `LLM_MAX_OUTPUT_TOKENS`。旧的 `LLM_MODEL` 仍可作为两个档位的共同兜底。真实 Provider 配置不完整、超时、返回无效 JSON 或未通过语义安全检查时，会先携带规则问题重试一次，再安全回退到本地结果；确定性评分与 Fact Guard 始终在本地执行。面试中的自我介绍、项目回答、通用回答和风险计数固定由已确认事实确定性生成，AI 文本不会被直接当作已验证事实。不要把密钥写入命令、代码、文档或日志。
+JD 结构化、匹配解释、事实提取、学习目标、定制简历、面试指南和邮件草稿统一通过结构化 LLM Provider。默认 `LLM_PROVIDER=mock`，结果稳定且可离线测试；如需使用 DeepSeek 或 xAI Grok，在被 Git 忽略的 `.env` 中设置 `LLM_PROVIDER=compatible` 与 `LLM_API_KEY`，并按 `.env.example` 调整地址、模型和超时。默认 `LLM_TIMEOUT_SECONDS=300`、`LLM_MAX_RETRIES=1`，结构化 JSON 关闭思考模式。旧的 `LLM_MODEL` 仍可作为两个档位的共同兜底。真实 Provider 配置不完整、超时、返回无效 JSON 或未通过语义安全检查时，超时最多再试一次，无效 JSON 不重试，再安全回退到本地结果；确定性评分与 Fact Guard 始终在本地执行。面试中的自我介绍、项目回答、通用回答和风险计数固定由已确认事实确定性生成，AI 文本不会被直接当作已验证事实。不要把密钥写入命令、代码、文档或日志。
 
 ## 环境
 
@@ -19,7 +19,7 @@ cp .env.example .env
 ./scripts/dev.sh
 ```
 
-脚本会检查并安装缺失依赖、运行迁移和种子数据，然后同时启动 API 与 Web。浏览器访问：
+脚本会检查并安装缺失依赖、运行迁移和种子数据，然后同时启动 API、独立简历 worker 与 Web。浏览器关闭后，排队中的生成任务仍会继续处理。浏览器访问：
 
 - Web：http://localhost:5173
 - API 文档：http://localhost:8000/docs（如设置 `API_PORT`，替换为对应端口）
@@ -35,6 +35,9 @@ pip install -e '.[dev]'
 python -m alembic upgrade head
 python ../../scripts/seed_demo.py
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port "${API_PORT:-8000}"
+
+# 另开一个终端，在 apps/api 目录运行持久 worker
+python -m app.worker
 
 cd apps/web
 npm install

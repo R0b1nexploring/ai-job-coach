@@ -42,6 +42,7 @@ from app.services.job_normalizer import ground_job_output, normalize_job
 from app.services.matcher import score_match
 from app.services.provider_status import provider_status
 from app.services.quota_service import change, request_fingerprint
+from app.services.pdf_export import converter_available
 from app.services.resume_analyzer import analyze_resume
 from app.services.resume_parser import (
     ALLOWED,
@@ -84,6 +85,7 @@ async def health(db: Session = Depends(get_db)):
         "status": "ok",
         "application": "ok",
         "database": "ok",
+        "pdf_converter_available": converter_available(),
         "providers": provider_status(),
     }
 

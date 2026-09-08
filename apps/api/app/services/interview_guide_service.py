@@ -106,11 +106,13 @@ def _upsert_guide(db: Session, bundle: ResumeBundle, version: ResumeVersion) -> 
 
 async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bundle, profile, facts) -> None:
     bullets = visible_bullets(version.content_json or {})
-    needed = bullets if version.kind == "submittable" else [bullet for bullet in bullets if bullet.get("achieved") is False]
+    needed = list(bullets)
     targeted = _targeted_guide(version, bullets, profile=profile, facts=facts, bundle=bundle)
     fallback = _template_guide(version, bullets)
     content = fallback
     source = "fallback"
+    provider_name = ""
+    coverage_repaired = False
     try:
         mock = {
             "kind": version.kind,
@@ -122,7 +124,7 @@ async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bund
             "questions_to_ask": targeted.get("questions_to_ask") or [],
             "checklist": targeted.get("checklist") or [],
         }
-        structured, _provider = await generate_structured(
+        structured, provider_name = await generate_structured(
             task="interview_guide_v2",
             system_prompt=(
                 "为绑定的简历要点生成针对性面试准备材料。只使用输入的事实和目标要求，"
@@ -147,6 +149,8 @@ async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bund
             response_model=InterviewGuideStructuredOutput,
         )
         modeled = structured.model_dump()
+        modeled_ids = {str(card.get("bullet_id") or "") for card in modeled.get("cards") or []}
+        coverage_repaired = any(str(bullet.get("id") or "") not in modeled_ids for bullet in needed)
         modeled["cards"] = _align_cards(
             needed,
             modeled.get("cards") or [],
@@ -159,7 +163,7 @@ async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bund
         modeled["degraded"] = False
         modeled.pop("degraded_reason", None)
         content = modeled
-        source = "model"
+        source = "model" if provider_name == "compatible" and not coverage_repaired else "deterministic"
     except (ProviderError, Exception):
         content = fallback
         source = "fallback"
@@ -174,35 +178,62 @@ async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bund
         missing = [bullet["id"] for bullet in needed if bullet["id"] not in covered]
     if missing:
         guide.status = "queued"
-        guide.quality_report_json = {"hard_passed": False, "issues": ["coverage_incomplete"]}
+        guide.quality_report_json = {
+            "hard_passed": False,
+            "coverage": 0,
+            "issues": ["coverage_incomplete"],
+            "source": source,
+        }
         guide.content_json = content
         return
     unverified = {bullet["id"] for bullet in needed if bullet.get("verification_status") == "ai_generated"}
     for card in content.get("cards") or []:
         if card.get("bullet_id") in unverified:
             card["verification_status"] = "ai_generated"
-            card["honest_boundary"] = "本条为 AI 补充内容，尚未核验。请结合自己的实际情况准备。"
+            card["honest_boundary"] = "本条为 AI 扩写建议，请只陈述自己真正做过的部分，缺少的证据需要补齐。"
             card["achieved"] = False
-    content["degraded"] = source == "fallback"
+            card["source_fact_ids"] = [
+                fact_id
+                for fact_id in (card.get("source_fact_ids") or [])
+                if fact_id in {str(fact.id) for fact in facts or [] if fact is not None}
+            ]
+            if not card["source_fact_ids"]:
+                card.pop("source_fact_ids", None)
+                card["source_fact_ids"] = []
+            card["danger"] = "不要把未完成或未经本人确认的内容说成已有经历。"
+    content["degraded"] = source != "model"
     if source == "fallback":
-        content["degraded_reason"] = "使用通用模板降级方案"
+        content["degraded_reason"] = "模型不可用，使用通用模板降级方案"
+    elif source == "deterministic":
+        content["degraded_reason"] = "未使用外部模型，使用确定性指南内容"
     guide.content_json = content
     guide.status = "ready"
     guide.content_hash = version.content_hash
     guide.quality_report_json = {
         "hard_passed": True,
         "coverage": 1,
-        "issues": [],
+        "issues": ["coverage_repaired"] if coverage_repaired else [],
         "content_hash": version.content_hash,
         "source": source,
+        "reviewer_note": (
+            "使用模型生成"
+            if source == "model"
+            else "模型不可用或未配置，使用确定性指南内容"
+        ),
     }
     guide.updated_at = now()
+
+
+def _guide_card(bullet: dict, *, kind: str, profile=None, facts=None, bundle=None) -> dict:
+    if kind == "target" and bullet.get("achieved") is False:
+        return _risk_card(bullet, profile=profile, bundle=bundle)
+    return _claim_card(bullet, profile=profile, facts=facts, bundle=bundle)
 
 
 def _targeted_guide(version: ResumeVersion, bullets: list[dict], *, profile, facts, bundle) -> dict:
     if version.kind == "submittable":
         cards = [
-            _claim_card(bullet, profile=profile, facts=facts, bundle=bundle)
+            _guide_card(bullet, kind=version.kind, profile=profile, facts=facts, bundle=bundle)
             for bullet in bullets
         ]
         title = getattr(profile, "title", "") or "目标岗位"
@@ -230,11 +261,11 @@ def _targeted_guide(version: ResumeVersion, bullets: list[dict], *, profile, fac
             "practice_answers": False,
             "degraded": False,
         }
-    future = [bullet for bullet in bullets if bullet.get("achieved") is False]
     return {
         "kind": "target",
         "cards": [
-            _risk_card(bullet, profile=profile, bundle=bundle) for bullet in future
+            _guide_card(bullet, kind="target", profile=profile, facts=facts, bundle=bundle)
+            for bullet in bullets
         ],
         "practice_answers": False,
         "degraded": False,
@@ -257,10 +288,12 @@ def _template_guide(version: ResumeVersion, bullets: list[dict]) -> dict:
             "degraded_reason": "使用通用模板降级方案",
             "practice_answers": False,
         }
-    future = [bullet for bullet in bullets if bullet.get("achieved") is False]
     return {
         "kind": "target",
-        "cards": [_generic_risk_card(bullet) for bullet in future],
+        "cards": [
+            _generic_risk_card(bullet) if bullet.get("achieved") is False else _generic_claim_card(bullet)
+            for bullet in bullets
+        ],
         "practice_answers": False,
         "degraded": True,
         "degraded_reason": "使用通用模板降级方案",
@@ -281,10 +314,12 @@ def _align_cards(
     for bullet in needed:
         card = by_id.get(str(bullet.get("id") or ""))
         if card is None:
-            card = (
-                _claim_card(bullet, profile=profile, facts=facts or [], bundle=bundle)
-                if kind == "submittable"
-                else _risk_card(bullet, profile=profile, bundle=bundle)
+            card = _guide_card(
+                bullet,
+                kind=kind,
+                profile=profile,
+                facts=facts or [],
+                bundle=bundle,
             )
             card["degraded"] = True
         card["bullet_id"] = bullet.get("id")

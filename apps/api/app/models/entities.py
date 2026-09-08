@@ -8,6 +8,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -339,15 +340,32 @@ class ResumeBundleRun(Base):
     """Atomic generation claim for one resume bundle."""
 
     __tablename__ = "resume_bundle_runs"
+    __table_args__ = (
+        Index("ix_resume_bundle_runs_status_lease", "status", "lease_expires_at"),
+    )
     bundle_id: Mapped[str] = mapped_column(
         ForeignKey("resume_bundles.id", ondelete="CASCADE"), primary_key=True
     )
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     status: Mapped[str] = mapped_column(String(20), default="queued")
+    task_type: Mapped[str] = mapped_column(String(40), default="resume_generation")
+    phase: Mapped[str] = mapped_column(String(40), default="queued")
     claim_token: Mapped[str] = mapped_column(String(36), default=uid)
     request_hash: Mapped[str] = mapped_column(String(64), default="")
+    input_snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    result_resources_json: Mapped[dict] = mapped_column(JSON, default=dict)
     provider: Mapped[str] = mapped_column(String(50), default="")
     last_error: Mapped[str] = mapped_column(String(200), default="")
+    public_error_code: Mapped[str] = mapped_column(String(60), default="")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 

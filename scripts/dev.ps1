@@ -36,6 +36,7 @@ python -m venv apps/api/.venv
 & apps/api/.venv/Scripts/python.exe -m pip install -e "apps/api[dev]"
 Push-Location apps/api; & .venv/Scripts/python.exe -m alembic upgrade head; Pop-Location
 & apps/api/.venv/Scripts/python.exe scripts/seed_demo.py
+$WorkerProcess = Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root/apps/api'; .venv/Scripts/python.exe -m app.worker" -PassThru
 $ApiProcess = Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root/apps/api'; .venv/Scripts/python.exe -m uvicorn app.main:app --reload --host '$ApiBind' --port $ApiPort" -PassThru
 $ApiReady = $false
 for ($Attempt = 0; $Attempt -lt 30; $Attempt++) {
@@ -63,4 +64,5 @@ try {
 }
 finally {
     if ($ApiProcess -and -not $ApiProcess.HasExited) { Stop-Process -Id $ApiProcess.Id -Force -ErrorAction SilentlyContinue }
+    if ($WorkerProcess -and -not $WorkerProcess.HasExited) { Stop-Process -Id $WorkerProcess.Id -Force -ErrorAction SilentlyContinue }
 }

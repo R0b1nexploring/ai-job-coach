@@ -1,12 +1,12 @@
 # API
 
-> **2026-09-05 用户最新裁决：允许 AI 扩写。** 新生成的工作台 v3 简历采用 `factuality_policy=ai_expansion`，允许超出已确认事实补充内容，也允许仅凭目标画像创建草稿。缺少事实支持、新主张和未达成状态不再阻止生成、预览或导出；来源 ID 归属、结构及版面仍需通过检查。AI 补充记录 `verification_status=ai_generated`、`achieved=false`，在工作台、导出和指南标识待核验，不自动写入已确认事实库。`submittable` 的界面名称改为“求职版”。本裁决覆盖本文此前相冲突的事实限制；旧 v1/v2 接口保持兼容。
+> **2026-09-05 用户最新裁决：允许 AI 扩写。** 新生成的工作台 v3 简历采用 `factuality_policy=ai_expansion`，允许超出已确认事实补充内容，也允许仅凭目标画像创建草稿。缺少事实支持、新主张和未达成状态不再阻止生成、预览或导出；来源 ID 归属、结构及版面仍需通过检查。AI 补充记录 `verification_status=ai_generated`、`achieved=false` 作为内部来源状态，但在工作台、导出和指南不显示“待核验”标记，不自动写入已确认事实库。`submittable` 的界面名称改为“求职版”。本裁决覆盖本文此前相冲突的事实限制；旧 v1/v2 接口保持兼容。
 
 启动后访问 `http://localhost:8000/docs` 查看实时 OpenAPI 文档；如果设置了 `API_PORT`，请替换为对应端口。接口统一使用 `/api` 前缀；错误响应为 `{ "error": { "code", "message", "details", "request_id" } }`。
 
 MVP-1 不暴露订单创建、支付回调或退款接口。`GET /api/packages` 用于展示说明，`GET /api/quotas` 与 `GET /api/quotas/ledger` 用于查询演示额度；管理员通过 `POST /api/admin/quotas/grant` 发放额度。Payment Provider 固定为 Disabled，并返回 `PAYMENT_NOT_AVAILABLE`。
 
-JD 结构化、匹配解释、事实提取、学习目标、双版本简历、面试指南和邮件草稿都通过统一的结构化 LLM Provider。默认使用可重复的 Mock；`LLM_PROVIDER=compatible` 时调用环境变量配置的兼容 Chat Completions 服务，把 Pydantic JSON Schema 和形状示例加入提示，并用 `LLM_MAX_OUTPUT_TOKENS` 控制输出预算。DeepSeek V4 可通过 `LLM_THINKING_ENABLED` 和 `LLM_REASONING_EFFORT` 控制思考模式。配置不完整、请求失败或结构无效时回退到 Mock；简历和面试指南若未通过本地语义安全检查，会携带问题摘要重试一次，仍失败才使用本地结果。响应与审计数据只记录 Provider 名称或错误类别，不记录密钥、完整 Prompt 或完整简历。
+JD 结构化、匹配解释、事实提取、学习目标、双版本简历、面试指南和邮件草稿都通过统一的结构化 LLM Provider。默认使用可重复的 Mock；`LLM_PROVIDER=compatible` 时调用环境变量配置的兼容 Chat Completions 服务，把 Pydantic JSON Schema 和形状示例加入提示，并用 `LLM_MAX_OUTPUT_TOKENS` 控制输出预算。默认单次等待 300 秒、最多再试 1 次；无效 JSON 不重试。DeepSeek 的思考模式仅在地址指向 DeepSeek 且显式打开时发送。配置不完整、请求失败或结构无效时回退到 Mock；简历和面试指南若未通过本地语义安全检查，会携带问题摘要再修一次，仍失败才使用本地结果。回退原因会写入 bundle 修复历史的错误码。响应与审计数据只记录 Provider 名称或错误类别，不记录密钥、完整 Prompt 或完整简历。
 
 ## 简历事实与待补信息
 
@@ -48,7 +48,7 @@ GET  /api/resume-versions/{id}/studio-download?format=html|docx|pdf
 GET  /api/interview-guides/{id}
 ```
 
-`POST /api/resume-bundles` 返回 202，并在进程内生成恰好一份 `submittable` 与一份 `target`。相同 `Idempotency-Key` 复用同一简历包。工作台导出只要求硬门禁通过；`degraded` 可带提示导出。PDF 在没有 Chromium/LibreOffice 时返回 `PDF_CONVERTER_UNAVAILABLE`，不阻断 HTML/DOCX。新面试指南只含准备内容，不含作答或评分入口。旧 `/api/resume-versions` 与 `/api/interviews` 保留兼容。
+`POST /api/resume-bundles` 立即返回 `202 + queued`，由独立 worker 领取并生成恰好一份 `submittable` 与一份 `target`；工作台轮询 `GET /api/resume-bundles/{id}`，不要求浏览器连接保持。`./scripts/dev.sh` 会自动启动本地 worker，`POST /api/resume-bundles/{id}/process` 仅保留给测试环境兼容调用。相同 `Idempotency-Key` 复用同一简历包。工作台导出只要求硬门禁通过；`degraded` 可带提示导出。PDF 在没有 Chromium/LibreOffice 时返回 `PDF_CONVERTER_UNAVAILABLE`，不阻断 HTML/DOCX。新面试指南只含准备内容，不含作答或评分入口。旧 `/api/resume-versions` 与 `/api/interviews` 保留兼容。
 
 ## 蓝图简历与可投递简历
 

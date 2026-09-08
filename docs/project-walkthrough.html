@@ -497,7 +497,7 @@ section{margin-bottom:48px}h2{font-size:27px;border:0;padding:0;margin:0 0 12px;
       </div>
     </div>
 
-    <div class="compare"><div class="compare-col" style="background:#eaf0e8"><h4>求职版：把经历讲清楚</h4><p>围绕目标岗位组织经历与成果，并可由 AI 补充草稿。配套作战指南，逐条准备主问题、追问与个人贡献说明。</p></div><div class="compare-col" style="background:#f3f0e2"><h4>蓝图 Plus：把差距看清楚</h4><p>展示补齐岗位能力后的目标状态。未达成内容以 * 标记，配套风险指南解释还缺什么证据、哪些问题需要准备。</p></div></div><div class="note"><strong>AI 补充 ≠ 已确认事实。</strong> 两个版本都允许 AI 扩写，补充内容保持“待核验”；来源归属、内容结构和版面仍需通过质量检查。内容改变后，旧指南会过期，需要重新生成。</div></section>
+    <div class="compare"><div class="compare-col" style="background:#eaf0e8"><h4>求职版：把经历讲清楚</h4><p>围绕目标岗位组织经历与成果，并可由 AI 补充草稿。配套作战指南，逐条准备主问题、追问与个人贡献说明。</p></div><div class="compare-col" style="background:#f3f0e2"><h4>蓝图 Plus：把差距看清楚</h4><p>展示补齐岗位能力后的目标状态。未达成内容以 * 标记，配套风险指南解释还缺什么证据、哪些问题需要准备。</p></div></div><div class="note"><strong>AI 补充 ≠ 已确认事实。</strong> 两个版本都允许 AI 扩写，保留内部来源状态但不显示“待核验”标记；来源归属、内容结构和版面仍需通过质量检查。内容改变后，旧指南会过期，需要重新生成。</div></section>
 <section id="progress"><div class="section-head"><span class="section-index">02</span><div><h2>已经做了什么，还差什么</h2><p>按当前工作区与任务记录整理；实现情况与最终验收分开看。</p></div></div><div class="status-grid"><div class="status-panel"><span class="badge badge-green">已有实现</span><h3>主流程已搭建</h3><div class="status-item"><strong>目标画像与素材入口</strong><p>已接入 JD 导入、单 / 多 JD 画像、简历上传、空白建档与素材确认。</p></div><div class="status-item"><strong>双版本生成与编辑</strong><p>已有异步生成、状态轮询、重试、锁定与局部重生成接口和工作台交互。</p></div><div class="status-item"><strong>导出与两份指南</strong><p>已有模板快照、HTML / DOCX / PDF 导出链路，以及指南生成、过期与重新生成能力。</p></div><div class="status-item"><strong>工作台与兼容能力</strong><p>主导航收敛为工作台、面试指南和账户设置，旧岗位、投递与顾问入口保留兼容。</p></div></div><div class="status-panel pending"><span class="badge badge-amber">尚未闭环 · 4 项</span><h3>需要继续完成与验收</h3><div class="status-item"><strong>生成失败的修复与降级</strong><p>任务 4.7：两轮定向修复、修复历史和模型不可用时的安全降级仍未勾选完成。</p></div><div class="status-item"><strong>降级交付与 PDF 版面边界</strong><p>任务 5.4：降级提示、硬门禁通过后导出，以及超页 PDF 拒绝交付仍需闭环验收。</p></div><div class="status-item"><strong>指南逐条覆盖率</strong><p>任务 7.4：确保每条必要要点都有指南卡片；漏项修复或回退完成前不能标为 ready。</p></div><div class="status-item"><strong>工作台完整编辑体验</strong><p>任务 8.2：A4 预览、来源展示、排序、撤销、版本对比及锁定重生成的整体验收尚未完成。</p></div></div></div><p class="status-note">依据：<a href="../openspec/changes/focus-resume-interview-core/tasks.md">OpenSpec 任务记录</a>。以上“已有实现”不代表本次重新通过了完整业务验收。</p><div class="card"><h4>已有验证记录</h4><p>任务记录最近一次记载：后端 264 项、前端 35 项、浏览器 E2E 3 项及生产构建通过。真实模型协议使用本地 HTTP 替身验证，未调用收费外部模型。</p><p class="status-note">这是历史记录，本次页面改版不把这些数字当作重新运行结果。人工内容质量和实际部署仍需独立验收。</p></div><h3>后续建设</h3><div class="backlog"><span>人工内容质量验收</span><span>生产部署与对象存储</span><span>邮件通知 Provider</span><span>国内岗位授权来源</span><span>真实支付 · MVP-2</span></div><p class="status-note">扫描版 PDF OCR、视频面试与批量投递属于当前范围外能力，不计入本阶段待完成事项。</p></section>
 <section id="technology"><div class="section-head"><span class="section-index">03</span><div><h2>技术如何支撑业务</h2><p>前后端分层，生成任务独立编排，导出与指南共享同一份内容。</p></div></div><div class="tech-grid"><div class="tech-card"><small>前端体验</small><strong>React + TypeScript</strong><p>Vite 构建 · React Router 路由 · TanStack Query 服务端状态</p></div><div class="tech-card"><small>API 与服务</small><strong>FastAPI + Pydantic</strong><p>SQLAlchemy 数据访问 · Alembic 迁移 · 生成与质量服务</p></div><div class="tech-card"><small>数据与存储</small><strong>SQLite → PostgreSQL</strong><p>开发使用 SQLite；生产要求 PostgreSQL 与对象存储。</p></div><div class="tech-card"><small>模型能力</small><strong>可替换 LLM Provider</strong><p>Mock / Compatible · 本地安全回退 · 按任务选择模型档位</p></div><div class="tech-card"><small>文件交付</small><strong>HTML / DOCX / PDF</strong><p>统一内容与模板快照 · Chromium / LibreOffice · PDF 物理检查</p></div><div class="tech-card"><small>质量验证</small><strong>Pytest + Playwright</strong><p>后端回归 · Vitest 组件测试 · 浏览器完整流程验证</p></div></div><h3>实现细节</h3><p class="section-intro">按需展开，查看架构、数据关系和接口约定。下列细节描述现有设计与实现，未闭环项以第二部分为准。</p><details><summary>系统架构与模块分工</summary><div class="detail-body"><section id="arch">
     <h2>系统架构</h2>
@@ -629,7 +629,7 @@ section{margin-bottom:48px}h2{font-size:27px;border:0;padding:0;margin:0 0 12px;
     <div class="card">
       <p><code>process_bundle()</code> 是核心编排函数，执行以下步骤：</p>
       <ol style="padding-left:20px; font-size:14px; line-height:1.8;">
-        <li><strong>原子 claim</strong>：通过 <code>UPDATE ... WHERE status IN (queued, stale)</code> 原子抢占运行权，返回 claim_token。15 分钟未更新的 generating 任务视为 stale 可被抢占。</li>
+        <li><strong>原子 claim</strong>：通过带租约的数据库更新原子抢占运行权，claim token 只保存在 worker 内部；90 秒未续租的 generating 任务可被恢复。</li>
         <li><strong>LLM 写入双版本</strong>：分别调用 <code>_write_version()</code> 生成 submittable 和 target。系统提示词明确允许 AI 扩写，要求补充内容设 verification_status=ai_generated、achieved=false。</li>
         <li><strong>质量评审</strong>：每份版本调用 <code>evaluate_version_with_critic()</code>（确定性硬门禁 + 可选 LLM 七维评分）。</li>
         <li><strong>修复循环（最多 2 轮）</strong>：硬门禁未通过的版本用确定性 fallback 重写后重新评审。任一回退触发 degraded 标记。</li>
@@ -665,7 +665,7 @@ section{margin-bottom:48px}h2{font-size:27px;border:0;padding:0;margin:0 0 12px;
     <h3>硬门禁（阻止交付）</h3>
     <ul class="gate-list">
       <li class="hard"><strong>来源归属</strong>：bullet 引用的 source_fact_ids / requirement_ids 必须存在于当前生成上下文中，否则「引用了不属于当前生成上下文的来源」。</li>
-      <li class="hard"><strong>kind 一致性</strong>：content.kind 必须与生成模式匹配。旧 strict 模式限制未达成项；当前 ai_expansion 模式允许 AI 待核验内容，仍校验来源 ID 归属与结构。</li>
+      <li class="hard"><strong>kind 一致性</strong>：content.kind 必须与生成模式匹配。旧 strict 模式限制未达成项；当前 ai_expansion 模式允许 AI 扩写内容，仍校验来源 ID 归属与结构。</li>
       <li class="hard"><strong>蓝图覆盖率</strong>：target 模式下，所有 high priority 要求必须被引用或在文本中覆盖，否则「蓝图未覆盖高优先级目标要求」。</li>
       <li class="hard"><strong>分区顺序</strong>：sections 顺序必须符合模板定义（教育背景 → 实习/工作 → 项目/科研/竞赛 → 奖项证书 → 技能）。</li>
       <li class="hard"><strong>单页预算</strong>：估算行数 ≤ 48 行（按字符数估算），超出则「超过单页内容预算」。</li>
@@ -694,7 +694,7 @@ section{margin-bottom:48px}h2{font-size:27px;border:0;padding:0;margin:0 0 12px;
     <p>在 <code>factuality_policy=ai_expansion</code> 时，Fact Guard 的结果不再作为交付否决，而是作为「来源诊断」：</p>
     <ul style="padding-left:20px; font-size:14px;">
       <li>引用了不存在的来源 ID → 仍为硬 issue（阻止交付）</li>
-      <li>缺少事实支持 / 实体不在来源中 / 中文主张无来源 → 降级为 warning，自动将该 bullet 设为 <code>verification_status=ai_generated</code>、<code>achieved=false</code>，并记录「AI 补充内容，待核验」</li>
+      <li>缺少事实支持 / 实体不在来源中 / 中文主张无来源 → 降级为 warning，自动将该 bullet 设为 <code>verification_status=ai_generated</code>、<code>achieved=false</code>，并记录「AI 扩写内容，未绑定用户事实来源」</li>
       <li>经历条目的 header（organization/role_title 等）若不在引用事实中，也触发 ai_generated 标记</li>
     </ul>
   </section></div></details><details><summary>两类指南与覆盖率</summary><div class="detail-body"><section id="interview">
@@ -891,7 +891,7 @@ section{margin-bottom:48px}h2{font-size:27px;border:0;padding:0;margin:0 0 12px;
       <div class="tl-item major">
         <div class="tl-date">2026-09-05 · §28.4 用户裁决</div>
         <div class="tl-title">允许 AI 扩写（factuality_policy=ai_expansion）</div>
-        <div class="tl-desc">新工作台 v3 默认允许 AI 超出已确认事实补充内容。缺少事实支持、新主张和未达成状态不再阻止生成、预览或导出。AI 补充记录 verification_status=ai_generated、achieved=false，标识待核验，不自动写入已确认事实库。submittable 界面名称改为「求职版」。</div>
+        <div class="tl-desc">新工作台 v3 默认允许 AI 超出已确认事实补充内容。缺少事实支持、新主张和未达成状态不再阻止生成、预览或导出。AI 补充记录 verification_status=ai_generated、achieved=false 作为内部来源状态，不显示“待核验”标记，不自动写入已确认事实库。submittable 界面名称改为「求职版」。</div>
       </div>
     </div>
     <div class="note">
@@ -1264,8 +1264,7 @@ function renderVersion(data) {
         html += '<ul>';
         for (const b of item.bullets) {
           let line = (b.text || '').replace(/</g, '&lt;');
-          if (b.achieved === false) line += '<span class="bullet-unachieved">*</span>';
-          if (b.verification_status === 'ai_generated') line += '<span class="bullet-ai">AI补充·待核验</span>';
+          if (b.achieved === false && !(b.verification_status === 'ai_generated' && !(b.source_target_ids || []).length && !(b.requirement_ids || []).length)) line += '<span class="bullet-unachieved">*</span>';
           if (b.source_fact_ids && b.source_fact_ids.length) line += '<span class="bullet-source">来源' + b.source_fact_ids.length + '</span>';
           html += '<li>' + line + '</li>';
         }

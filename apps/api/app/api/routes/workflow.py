@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.config import get_settings
 from app.dependencies import current_user
 from app.errors import AppError
 from app.models.entities import (
@@ -41,7 +42,7 @@ from app.models.entities import (
 )
 from app.providers.llm.schemas import ResumeContentOutput
 from app.providers.storage.local import LocalStorage
-from app.services.bundle_service import dump_bundle
+from app.services.bundle_service import dump_bundle, stale_guides_for_version
 from app.services.capability_service import build_targets, ensure_match_targets
 from app.services.content_contract import validate_content
 from app.services.experience_service import confirmed_facts_for_generation
@@ -50,7 +51,11 @@ from app.services.job_access import owned_job_clause, visible_job
 from app.services.docx_resume_renderer import render_resume_docx
 from app.services.html_resume_renderer import render_resume_html
 from app.services.interview_generator import generate_guarded_interview
-from app.services.quality_service import evaluate_version
+from app.services.quality_service import (
+    evaluate_version,
+    quality_report_status,
+    report_guard_passed,
+)
 from app.services.target_profile_service import dump_profile, list_profile_sources
 from app.services.quota_service import (
     balance,
@@ -607,6 +612,7 @@ async def update_version(
     db: Session = Depends(get_db),
 ):
     row = owned_version(db, user, version_id)
+    old_content_hash = row.content_hash
     if row.review_status == "approved":
         raise AppError(
             "RESUME_ALREADY_APPROVED",
@@ -648,9 +654,9 @@ async def update_version(
         raise AppError("RESUME_CONTEXT_MISSING", "定制简历关联的原始简历或岗位不存在。", 409)
     content = data.model_dump()
     content_version = int(content.get("content_version") or 1)
-    if content_version >= 2:
+    if 2 <= content_version < 3:
         estimated_lines = estimate_resume_lines(content)
-        if estimated_lines > MAX_RESUME_LINES:
+        if estimated_lines > MAX_RESUME_LINES and get_settings().resume_quality_gate_active():
             raise AppError(
                 "RESUME_PAGE_BUDGET_EXCEEDED",
                 "简历内容超过单页预算，请精简后再保存。",
@@ -683,10 +689,20 @@ async def update_version(
                 "last_edit_source": "user",
             }
         )
+        quality_gate_enabled = get_settings().resume_quality_gate_active()
         row.quality_report_json = {
             "warnings": evaluation.get("warnings") or [],
-            "status": "passed" if evaluation.get("hard_passed") else "blocked",
+            "status": quality_report_status(
+                evaluation, gate_enabled=quality_gate_enabled
+            ),
             "hard_passed": evaluation.get("hard_passed"),
+            "guard_status": "passed" if report_guard_passed(evaluation) else "blocked",
+            "quality_gate_enabled": quality_gate_enabled,
+            "quality_gate_bypassed": (
+                not quality_gate_enabled
+                and report_guard_passed(evaluation)
+                and not evaluation.get("hard_passed")
+            ),
             "issues": evaluation.get("issues") or [],
             "uncovered_requirements": evaluation.get("uncovered_requirements") or [],
             "dimensions": evaluation.get("dimensions") or {},
@@ -694,7 +710,7 @@ async def update_version(
             "reviewer_note": evaluation.get("reviewer_note") or "",
         }
         row.content_hash = request_fingerprint(content)
-        guard_status = "passed" if evaluation.get("hard_passed") else "blocked"
+        guard_status = "passed" if report_guard_passed(evaluation) else "blocked"
         unachieved_count = int(evaluation.get("unachieved_count") or 0)
     else:
         evaluation = evaluate_resume_content(
@@ -725,6 +741,8 @@ async def update_version(
     row.review_status = "draft"
     row.reviewed_by = None
     row.reviewed_at = None
+    if row.bundle_id and row.content_hash != old_content_hash:
+        stale_guides_for_version(db, row)
     db.add(
         AuditLog(
             actor_user_id=user.id,
@@ -805,10 +823,11 @@ def html_security_headers(disposition: str) -> dict[str, str]:
         "Content-Disposition": disposition,
         "Content-Security-Policy": (
             "default-src 'none'; style-src 'unsafe-inline'; "
-            "script-src 'unsafe-inline'; img-src data:"
+            "script-src 'unsafe-inline'; img-src data:; frame-ancestors 'self'"
         ),
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "SAMEORIGIN",
     }
 
 

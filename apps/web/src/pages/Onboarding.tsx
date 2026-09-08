@@ -50,7 +50,8 @@ export function Onboarding() {
       navigate('/app/resumes')
     } catch (reason) { setError(reason) }
   }
-  return <><span className="badge">第 {step}/5 步 · 自动保存草稿</span><h1 className="mt-3 text-4xl font-black">建立求职档案</h1>
+  return <><span className="badge">第 {step}/5 步 · 自动保存草稿</span><h1 className="page-title mt-3">建立求职档案</h1>
+    <div className="mt-4 flex max-w-2xl gap-1.5">{[1, 2, 3, 4, 5].map((n) => <span key={n} className={`h-1.5 flex-1 rounded-full ${n <= step ? 'bg-sage' : 'bg-black/10'}`} />)}</div>
     <form noValidate className="card mt-6 max-w-2xl space-y-4" onSubmit={form.handleSubmit(save)}>
       {step === 1 && <><h2 className="text-xl font-bold">基本信息</h2><label><span className="label">学校</span><input className="field" {...form.register('school')} /></label><label><span className="label">专业</span><input className="field" {...form.register('major', { required: true })} /></label><label><span className="label">毕业年份</span><input className="field" type="number" {...form.register('graduation_year', { valueAsNumber: true })} /></label></>}
       {step === 2 && <><h2 className="text-xl font-bold">求职偏好</h2><label><span className="label">目标城市（逗号分隔）</span><input className="field" {...form.register('target_cities')} /></label><label><span className="label">目标岗位（逗号分隔）</span><input className="field" {...form.register('target_roles')} /></label><label><span className="label">目标行业（逗号分隔）</span><input className="field" {...form.register('target_industries')} /></label></>}
