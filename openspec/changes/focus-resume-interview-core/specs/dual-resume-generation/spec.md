@@ -6,6 +6,43 @@
 
 ## ADDED Requirements
 
+### Requirement: Every blueprint project presents a complete STAR story
+新生成的蓝图中每个项目经历 MUST 在项目整体呈现完整背景、本人任务、具体行动和结果。背景 SHALL 说明场景及问题，任务 SHALL 说明个人角色与目标，行动 SHALL 解释具体方法、步骤、关键难点和个人贡献，结果 SHALL 说明交付物及如何验证。四要素 MUST 形成相互支持的项目主线，不能以工具清单、空泛标签或“建议做某项目”代替。成稿 SHALL 自然表达，不要求每条 bullet 重复四要素或显示 STAR 字母。
+
+#### Scenario: Design a project without existing materials
+- **WHEN** 用户只有有效目标画像并生成蓝图项目
+- **THEN** 系统围绕目标要求设计完整 STAR 项目，保留 AI 来源与未达成标识，不把项目和成果加入已确认事实
+
+#### Scenario: Project results have no numeric metric
+- **WHEN** 项目适合以原型、程序、报告或实验材料表达结果
+- **THEN** 系统描述具体产出及验证方式，不为凑结果而虚构百分比；设计指标与已有实测成果明确区分
+
+#### Scenario: STAR exists internally but is lost in resume copy
+- **WHEN** 项目说明包含四要素，但可见项目正文缺失任务或结果
+- **THEN** 系统将缺失定位为文案问题，不以内部说明或指南里有该内容替代简历中的完整表达
+
+### Requirement: Blueprint projects and guides share saved context
+系统 MUST 保存项目说明与该项目可见要点、来源和目标要求的对应关系，供该版本指南复用；项目说明变化 SHALL 影响指南的新旧判断。求职版 MUST NOT 自动把蓝图目标当作本人已确认经历。
+
+#### Scenario: Guide is generated after a blueprint
+- **WHEN** 系统生成蓝图的面试指南
+- **THEN** 指南使用该版本保存的项目背景、任务、行动和结果，不另编项目角色、方法或已取得成果
+
+### Requirement: Writing uses an experience-grounded brief
+系统 SHALL 按经历整理素材及原子事实，保留动作、工具、结果、个人职责、证据和确认状态，并以岗位相关性选材形成 `writing_brief`。简报 MUST 指明经历与要求的映射、事实引用、写作角度和篇幅预算；不得只把全部素材平铺给模型。选材 MUST 保留必要教育资质和锁定内容，并记录未覆盖要求。简报及策略版本 MUST 纳入输入快照和请求哈希。
+
+#### Scenario: Several projects compete for limited space
+- **WHEN** 用户有多段相关程度不同的项目经历
+- **THEN** 本地按稳定相关性排序选择候选，保留必要背景与锁定项，模型围绕选中经历的问题、本人动作、方法和产出写作，未入选原因可追溯
+
+#### Scenario: Regenerate a non-first bullet
+- **WHEN** 用户重生成非首条要点
+- **THEN** 写作简报使用该要点原经历、事实和目标要求，沿用相关参考快照，不把其他项目内容拼入该经历
+
+#### Scenario: No personal materials are available
+- **WHEN** 用户只有有效目标画像
+- **THEN** 简报明确无个人事实，仍允许 AI 扩写双版本，生成结果不回写为已确认事实
+
 ### Requirement: One request creates one paired resume bundle
 系统 SHALL 对每个成功生成请求创建一个 ResumeBundle，并在同一快照下生成恰好一份 `submittable` 和一份 `target` ResumeVersion。重复的幂等请求 MUST 返回同一 bundle。
 
@@ -74,6 +111,8 @@
 - **THEN** 本地基础版本通过内容门禁时简历标为 degraded，否则生成任务失败；各导出格式仍须独立通过文件门禁，并明确显示对应的降级或失败原因
 
 ### Requirement: Users can edit and selectively regenerate
+本要求为未来 TODO，本轮不新增或完善对应用户修改功能；已实现路径保留兼容。恢复开发时遵循以下合同。
+
 用户 SHALL 能按 bullet、section 或整份简历重生成，锁定的 bullet MUST 在全局重生成中保持不变。任何编辑或重生成 MUST 重跑事实和质量门禁，并使旧内容哈希对应的指南过期。
 
 #### Scenario: Regenerate one unlocked bullet

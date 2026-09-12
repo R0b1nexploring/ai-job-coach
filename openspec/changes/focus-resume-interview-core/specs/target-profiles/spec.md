@@ -4,6 +4,17 @@
 
 ## ADDED Requirements
 
+### Requirement: Writing retains actual job context
+系统 MUST 保留用户明确提供或从 JD 原文提取的岗位标题与公司，MUST NOT 用界面占位文案覆盖它们。缺失信息 SHALL 保持未知。生成快照 SHALL 保留 JD 原文以及要求的来源证据、频次、优先级；写作输入 MUST 包含真实岗位信息和必要原文上下文。
+
+#### Scenario: Paste a JD containing a title and company
+- **WHEN** 用户只粘贴包含公司与岗位名称的 JD
+- **THEN** 保存岗位和创建画像后，写作输入包含原文提取的名称、要求证据和上下文，而不是“目标公司/目标岗位”占位值
+
+#### Scenario: Job identity is absent from the source
+- **WHEN** JD 未提供公司名称且用户未补充
+- **THEN** 公司保持未知，系统不编造公司或将显示占位符存为真实值
+
 ### Requirement: Target profile supports exactly two source modes
 系统 SHALL 支持 `single_jd` 和 `multi_jd` 两种目标画像模式，不提供脱离 JD 的自由想象模式。`single_jd` 必须绑定恰好一份 JD，`multi_jd` 必须绑定 2–10 份 JD。
 

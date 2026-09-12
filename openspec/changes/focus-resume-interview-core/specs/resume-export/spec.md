@@ -6,6 +6,24 @@
 
 ## ADDED Requirements
 
+### Requirement: Local density selection is reproducible
+新模板版本 SHALL 提供 `spacious/balanced/compact` 三档受限间距，通过固定 Chromium 与字体的实际布局测量选择可容纳正文的最宽松档位。系统 MUST 保存可复现的模板版本和选定配置，预览与 Chromium PDF 使用同一配置；字号、正文、锁定内容不得因选档改变。旧模板快照 MUST 保持原渲染行为，不补套未定义档位。运行时模型 MUST NOT 输出 HTML/CSS 或排版参数。
+
+#### Scenario: Content needs a denser layout
+- **WHEN** 正文在宽松档无法放入单页而在紧凑档可以
+- **THEN** 本地选择通过测量与物理 QA 的档位，预览与导出同步，正文哈希及指南状态不变
+
+#### Scenario: Content exceeds every allowed density
+- **WHEN** 所有允许档位仍无法容纳正文
+- **THEN** 系统返回可定位的溢出问题，遵循独立内容调整流程，不缩字号、不隐式删改正文
+
+### Requirement: Visual quality is verified on rendered artifacts
+模板发布 SHALL 使用至少 12 份固定虚构正文覆盖短中长、长中英文、联系方式换行、多经历、技能与蓝图页脚，保存人工认可的截图基线。验收 MUST 检查层级、对齐、留白、完整显示及实际 PDF 物理质量，并记录实际转换器。备用转换器通过 MUST NOT 被记录为 Chromium 转换通过。
+
+#### Scenario: PDF is technically valid but visually poor
+- **WHEN** PDF 文本与字体检查通过，但存在不合理空白、标题日期错位或拥挤
+- **THEN** 视觉验收仍不通过，调整本地模板后重新比较截图，不能只凭 HTTP 成功或页数合格勾选完成
+
 ### Requirement: A single versioned template drives every format
 系统 SHALL 使用 `classic-navy-ats-v2` 作为首版唯一模板，并在生成时把模板配置快照保存到版本。历史版本再次导出 MUST 使用原快照，不受之后模板更新影响。
 

@@ -10,9 +10,8 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.errors import AppError
 from app.models.entities import ResumeBundle, ResumeFact, ResumeVersion, User, now
-from app.services.content_contract import iter_bullets, validate_content
+from app.services.content_contract import content_fingerprint, iter_bullets, validate_content
 from app.services.quality_service import evaluate_version, report_guard_passed
-from app.services.quota_service import request_fingerprint
 
 
 def lock_bullet(db: Session, user: User, version_id: str, bullet_id: str, locked: bool) -> ResumeVersion:
@@ -95,9 +94,9 @@ def _persist_local_edit(
     }
     version.quality_report_json = {
         **_public_quality_report(evaluation),
-        "content_hash": request_fingerprint(content),
+        "content_hash": content_fingerprint(content),
     }
-    version.content_hash = request_fingerprint(content)
+    version.content_hash = content_fingerprint(content)
     version.guard_status = "passed" if report_guard_passed(evaluation) else "blocked"
     version.unachieved_count = int(evaluation.get("unachieved_count") or 0)
     flag_modified(version, "content_json")

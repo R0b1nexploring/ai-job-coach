@@ -6,6 +6,32 @@
 
 ## ADDED Requirements
 
+### Requirement: Project guides explain the same STAR story in depth
+蓝图指南 MUST 为每个项目提供与已保存 STAR 说明和正文一致的项目讲解：问题背景、本人任务、行动过程与取舍、结果验证。指南 SHALL 组织项目级主线并关联逐条要点，避免把同一段通用介绍重复到所有卡片。求职版指南 SHALL 以其实际正文和来源为依据，不借用蓝图中的未来成果。
+
+#### Scenario: A project uses a particular method
+- **WHEN** 简历项目描述为解决某问题选择了具体方法或工具
+- **THEN** 指南围绕为什么选它、怎样实施、遇到什么难点、如何验证展开连续追问，并给出回答要点、追问意图、所需证据与常见误区
+
+#### Scenario: A result is a proposed performance target
+- **WHEN** 蓝图项目结果包含尚未验证的性能目标
+- **THEN** 指南解释应如何定义指标、设置条件和验证结果，把缺失实验列为实践准备，不编造已完成的测量、数值或第一人称经历
+
+#### Scenario: User needs to prepare an uncompleted project
+- **WHEN** 用户查看尚未完成的蓝图项目指南
+- **THEN** 指南给出关键知识、可执行实践步骤、应形成的材料和当前诚实表达边界，而不是只提示风险或提供通用问题
+
+### Requirement: Guide quality includes project consistency and specific questions
+指南 MUST 同时覆盖全部可见要点及蓝图项目主线，拒绝跨项目卡片、相互矛盾的角色/方法/结果和重复卡片冒充覆盖。覆盖齐全不等于内容优质；问题与回答要点 SHALL 对应具体项目细节。模型输出缺项后由规则补齐或使用模板回退时，系统 MUST 说明实际降级来源，不将混合或通用内容冒充完整模型评审结果。
+
+#### Scenario: Cards cover every ID but repeat generic questions
+- **WHEN** 指南每个要点都有卡片，却仅重复“你做了什么、结果如何”
+- **THEN** 质量报告指出缺少项目针对性，不以 ID 覆盖齐全证明指南质量，不填充虚假模型评分
+
+#### Scenario: An old resume lacks structured STAR context
+- **WHEN** 用户查看没有项目说明扩展的旧版简历指南
+- **THEN** 系统使用旧正文及其有效来源，把未知项目细节列为准备问题，不改写旧简历或补造本人事实
+
 ### Requirement: Every resume bundle receives two version-bound guides
 系统 SHALL 在两版内容门禁通过、bundle 进入 ready 或可交付 degraded 后，为求职版和蓝图 Plus 分别自动排队生成指南，不等待 PDF 成功，也不要求用户打开指南才开始生成。每份指南 MUST 绑定具体 resume version、目标画像和内容哈希，不得使用同一份泛化指南替代。指南任务的失败 MUST NOT 使已完成的简历失效。
 

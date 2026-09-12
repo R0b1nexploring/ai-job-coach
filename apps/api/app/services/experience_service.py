@@ -104,6 +104,7 @@ KIND_TO_CATEGORY = {
     "skill": "skills",
 }
 DETAIL_FIELDS = (
+    "project_type",
     "background",
     "goal",
     "ownership",
@@ -470,6 +471,8 @@ def _replace_atomic_facts(
         claims.append(("organization", entry.organization))
     if entry.role_title:
         claims.append(("role", entry.role_title))
+    if _claim_text(details.get("project_type")):
+        claims.append(("project_type", _claim_text(details["project_type"])))
     actions = details.get("actions") or "；".join(entry.bullets_json or []) or entry.summary
     if _claim_text(actions):
         claims.append(("action", _claim_text(actions)))
@@ -504,7 +507,11 @@ def _replace_atomic_facts(
             confirmed_at=datetime.now(timezone.utc),
             material_id=entry.id,
             claim_type=claim_type,
-            evidence_json={"material_id": entry.id, "claim_type": claim_type},
+            evidence_json={
+                "material_id": entry.id,
+                "claim_type": claim_type,
+                "source_field": claim_type,
+            },
         )
         db.add(fact)
         created.append(fact)

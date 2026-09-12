@@ -7,13 +7,19 @@ import re
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
-
 from copy import deepcopy
+from pathlib import Path
 
 from app.errors import AppError
 from app.services.docx_resume_renderer import render_resume_docx
 from app.services.html_resume_renderer import render_resume_html
+from app.services.resume_style import (
+    blueprint_footer,
+    format_entry_headline,
+    header_copy,
+    is_education_section,
+    ordered_visible_sections,
+)
 
 A4_WIDTH_PT = 595.28
 A4_HEIGHT_PT = 841.89
@@ -104,15 +110,9 @@ def inspect_pdf_bytes(pdf: bytes, content: dict) -> dict:
         issues.extend(_crop_issues(path, width, height))
         extracted = _pdf_text(path)
         normalized = _normalized(extracted)
-        for section in content.get("sections") or []:
-            name = str(section.get("name") or "")
-            if name and _normalized(name) not in normalized:
-                issues.append(f"section:{name}: not visible in PDF text layer")
-            for item in section.get("items") or []:
-                for bullet in item.get("bullets") or []:
-                    text = str(bullet.get("text") or "")
-                    if text and _normalized(text) not in normalized:
-                        issues.append("bullet: not visible in PDF text layer")
+        for label, value in _expected_visible_text(content):
+            if _normalized(value) not in normalized:
+                issues.append(f"text:{label}: not visible in PDF text layer")
         font_rows = _font_rows(path)
         if not font_rows:
             issues.append("fonts: no fonts detected")
@@ -326,3 +326,48 @@ def _font_rows_from_pdf_objects(path: Path) -> list[dict[str, str]]:
 
 def _normalized(value: str) -> str:
     return "".join(str(value or "").split())
+
+
+def _expected_visible_text(content: dict) -> list[tuple[str, str]]:
+    """Describe every user-visible text fragment without echoing PII in errors."""
+    expected: list[tuple[str, str]] = []
+    header = header_copy(content, "简历")
+    if header.get("display_name"):
+        expected.append(("header_name", str(header["display_name"])))
+    if header.get("subtitle"):
+        expected.append(("header_subtitle", str(header["subtitle"])))
+    for part in header.get("contact_parts") or []:
+        if str(part).strip():
+            expected.append(("contact", str(part)))
+
+    gap = content.get("gap_summary") if isinstance(content.get("gap_summary"), dict) else {}
+    if content.get("kind") == "target" and gap.get("reasons"):
+        expected.append(("gap_title", str(gap.get("title") or "对照岗位还缺什么")))
+        for reason in gap.get("reasons") or []:
+            if str(reason).strip():
+                expected.append(("gap_reason", str(reason)))
+
+    for section in ordered_visible_sections(content):
+        name = str(section.get("name") or "")
+        if name:
+            expected.append(("section", name))
+        education = is_education_section(section)
+        for item in section.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            headline = format_entry_headline(item, education=education)
+            if headline:
+                expected.append(("entry_headline", headline))
+            if isinstance(item.get("bullets"), list):
+                for bullet in item.get("bullets") or []:
+                    value = str((bullet or {}).get("text") or "").strip()
+                    if value:
+                        expected.append(("bullet", value))
+            else:
+                value = str(item.get("text") or "").strip()
+                if value:
+                    expected.append(("item", value))
+    footer = blueprint_footer(content)
+    if footer:
+        expected.append(("blueprint_footer", footer))
+    return expected

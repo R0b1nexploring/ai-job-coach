@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import unicodedata
 from copy import deepcopy
 from datetime import timedelta
 from types import SimpleNamespace
 
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session
-from sqlalchemy.orm.attributes import flag_modified
 
 from app.config import get_settings
 from app.errors import AppError
@@ -23,7 +24,6 @@ from app.models.entities import (
     ResumeBundleRun,
     ResumeFact,
     ResumeVersion,
-    TargetProfile,
     User,
     now,
     uid,
@@ -36,13 +36,14 @@ from app.providers.llm.schemas import (
     ResumeStructuredV3Output,
 )
 from app.services.content_contract import (
+    content_fingerprint,
     iter_bullets,
     new_bullet_id,
     normalize_bullet,
     validate_content,
     visible_bullets,
 )
-from app.services.copy_assembler import assemble_model_copy
+from app.services.copy_assembler import assemble_model_copy, ensure_target_project_stories
 from app.services.experience_service import (
     confirmed_facts_for_generation,
     draft_materials_for_generation,
@@ -81,15 +82,23 @@ RESUME_REWRITE_EXISTING_PROMPT = (
     "scope=bullet 时只改进 focus_bullet_id 对应要点，保留其 id、来源字段和其余要点。"
     "scope=section 时只重写 focus_section_name，其余分区保持原结构。"
     "已有扩写内容和 AI 补充条目可以优化表达，不得整份还原成未改写的事实原文。"
+    "蓝图项目重写时保留并更新其 project_story；项目正文必须仍可自然讲出背景、任务、行动和结果，"
+    "不能只留一个空泛的技能或职责短句。"
 )
 RESUME_REWRITE_PAIR_PROMPT = (
     f"{RESUME_REWRITE_SYSTEM_PROMPT} "
     "一次同时输出求职版和蓝图，顶层只能有 submittable 与 target 两个对象，形状相同。"
     "两份同源：同一段经历的组织、时间和本人贡献不得互相矛盾。"
     "求职版只放可投递内容，分区顺序为教育背景、实习/工作、项目/科研/竞赛、奖项证书、技能。"
-    "蓝图可含未达成目标，achieved=false。"
+    "蓝图可含未达成目标，achieved=false。蓝图中每个项目/科研/竞赛 item 都必须带 project_story："
+    "schema_version=1，且包含 situation（背景和问题）、task（角色、目标、约束）、"
+    "actions（步骤、方法、取舍/难点、个人或计划贡献）和 result（交付物、验证方式、可选指标）。"
+    "project_story 仅是内部结构，resume bullets 仍须自然、简洁地表达项目成果；"
+    "未完成计划必须用 target 指标和 achieved=false，绝不写成已观察到的结果。"
     "contact 直接使用输入 contact。不要输出布局、HTML、字体或持久 ID。"
     "技能区必须写入输入里出现过的工具、语言和证书名称。"
+    "writing_brief 是本次优先展开的已选素材；只依据 facts、draft_materials 和该简报写作，"
+    "不要为了凑篇幅补出未选择的经历。"
     "控制篇幅：每个 item 1 到 3 条要点，整份 JSON 必须一次写完。"
 )
 _TERMINAL_BUNDLE_STATUSES = frozenset({"ready", "degraded", "failed"})
@@ -187,6 +196,8 @@ def _fact_input(fact) -> dict:
         "source_text": getattr(fact, "source_text", "") or "",
         "verification_status": getattr(fact, "verification_status", "") or "",
         "material_id": getattr(fact, "material_id", "") or "",
+        "claim_type": getattr(fact, "claim_type", "") or "",
+        "evidence_json": deepcopy(getattr(fact, "evidence_json", None) or {}),
     }
 
 
@@ -196,7 +207,222 @@ def _requirement_input(requirement: dict) -> dict:
         "text": requirement.get("text"),
         "category": requirement.get("category"),
         "priority": requirement.get("priority"),
+        "frequency": requirement.get("frequency"),
+        "sources": deepcopy(requirement.get("sources") or []),
     }
+
+
+_BRIEF_STOP_TOKENS = frozenset({"负责", "要求", "相关", "岗位", "工作", "能够", "以及", "进行", "完成"})
+
+
+def _semantic_tokens(value: str) -> set[str]:
+    """Small deterministic tokenizer for local relevance ranking.
+
+    It deliberately has no embedding or model dependency: the same snapshot
+    will choose the same evidence on a retry, and its choices are inspectable.
+    """
+    normalized = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    tokens = set(re.findall(r"[a-z][a-z0-9+.#/-]{1,}|[\u4e00-\u9fff]{2,}", normalized))
+    for fragment in re.findall(r"[\u4e00-\u9fff]{2,}", normalized):
+        tokens.update(fragment[index : index + 2] for index in range(len(fragment) - 1))
+    return {token for token in tokens if token not in _BRIEF_STOP_TOKENS}
+
+
+def _brief_material_candidates(facts, draft_materials: list[dict]) -> list[dict]:
+    grouped: dict[str, dict] = {}
+    for fact in facts:
+        key = str(getattr(fact, "material_id", "") or f"fact:{fact.id}")
+        row = grouped.setdefault(
+            key,
+            {
+                "id": key,
+                "source": "confirmed_fact",
+                "kind": getattr(fact, "category", "") or "",
+                "title": getattr(fact, "label", "") or "未命名经历",
+                "organization": getattr(fact, "organization", "") or "",
+                "role_title": getattr(fact, "role_title", "") or "",
+                "details": {},
+                "fact_ids": [],
+                "texts": [],
+            },
+        )
+        row["fact_ids"].append(fact.id)
+        row["texts"].extend(
+            [
+                _fact_text(fact),
+                getattr(fact, "claim_type", "") or "",
+                " ".join(str(value) for value in (getattr(fact, "evidence_json", None) or {}).values()),
+            ]
+        )
+    for material in draft_materials or []:
+        material_id = str(material.get("id") or "")
+        if not material_id:
+            continue
+        grouped[f"draft:{material_id}"] = {
+            "id": material_id,
+            "source": "draft_material",
+            "kind": str(material.get("kind") or ""),
+            "title": str(material.get("title") or "未命名经历"),
+            "organization": str(material.get("organization") or ""),
+            "role_title": str(material.get("role_title") or ""),
+            "details": deepcopy(material.get("details") or {}),
+            "fact_ids": [],
+            "texts": [
+                str(material.get("summary") or ""),
+                *[str(value) for value in (material.get("details") or {}).values()],
+            ],
+        }
+    return [grouped[key] for key in sorted(grouped)]
+
+
+def _rank_brief_materials(candidates: list[dict], requirements: list[dict], *, limit: int = 3) -> list[dict]:
+    weighted_requirements = [
+        (
+            item,
+            {"high": 8, "medium": 4, "low": 1}.get(str(item.get("priority") or ""), 2)
+            * max(1, int(item.get("frequency") or 1)),
+            _semantic_tokens(str(item.get("text") or "")),
+        )
+        for item in requirements
+        if isinstance(item, dict)
+    ]
+    ranked = []
+    for row in candidates:
+        tokens = _semantic_tokens(" ".join([row["title"], row["organization"], row["role_title"], *row["texts"]]))
+        matched = []
+        score = 0
+        for requirement, weight, requirement_tokens in weighted_requirements:
+            overlap = tokens & requirement_tokens
+            if overlap:
+                score += weight * len(overlap)
+                matched.append(str(requirement.get("id") or ""))
+        ranked.append((score, row["source"] != "confirmed_fact", row["id"], row, matched))
+    ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
+    return [
+        {
+            key: value
+            for key, value in row.items()
+            if key not in {"texts"}
+        }
+        | {"relevance_score": score, "matched_requirement_ids": [item for item in matched if item]}
+        for score, _draft, _id, row, matched in ranked[:limit]
+    ]
+
+
+def build_writing_brief(facts, draft_materials: list[dict], requirements: list[dict], job_context: list[dict]) -> dict:
+    """Build a compact, stable evidence brief before calling the writer."""
+    candidates = _brief_material_candidates(facts, draft_materials)
+    jobs = list(job_context or []) or [{"job_id": "", "title": "", "company_name": ""}]
+    per_job = []
+    selected_ids: set[str] = set()
+    for job in jobs:
+        job_id = str(job.get("job_id") or "")
+        scoped_requirements = [
+            item
+            for item in requirements
+            if not job_id
+            or not item.get("sources")
+            or any(str(source.get("job_id") or "") == job_id for source in item.get("sources") or [])
+        ]
+        selected = _rank_brief_materials(candidates, scoped_requirements)
+        selected_ids.update(f"{item['source']}:{item['id']}" for item in selected)
+        per_job.append(
+            {
+                "job_id": job_id,
+                "company_name": str(job.get("company_name") or ""),
+                "title": str(job.get("title") or ""),
+                "selected_materials": selected,
+            }
+        )
+    selected_materials = [
+        material
+        for job in per_job
+        for material in job["selected_materials"]
+        if f"{material['source']}:{material['id']}" in selected_ids
+    ]
+    # Preserve first occurrence (job order then deterministic rank) when the
+    # same material is relevant to more than one JD.
+    deduped_by_key: dict[str, dict] = {}
+    for material in selected_materials:
+        deduped_by_key.setdefault(f"{material['source']}:{material['id']}", material)
+    deduped = list(deduped_by_key.values())
+    selected_fact_ids = {
+        fact_id
+        for material in deduped
+        if material["source"] == "confirmed_fact"
+        for fact_id in material["fact_ids"]
+    }
+    return {
+        "selection_version": 1,
+        "per_job": per_job,
+        "selected_materials": deduped,
+        "selected_fact_ids": sorted(selected_fact_ids),
+    }
+
+
+def build_project_story_inputs(
+    facts,
+    draft_materials: list[dict],
+    requirements: list[dict],
+    job_context: list[dict],
+) -> list[dict]:
+    """Organize isolated material snapshots into writer-ready STAR inputs.
+
+    This remains a local JSON preparation step: it has no job-pool, vector
+    store, or cross-user corpus dependency.  A sparse profile still receives
+    one explicit virtual target project instead of a fabricated past project.
+    """
+    brief = build_writing_brief(facts, draft_materials, requirements, job_context)
+    requirements_by_id = {
+        str(item.get("id") or ""): str(item.get("text") or "")
+        for item in requirements
+        if isinstance(item, dict) and item.get("id")
+    }
+    rows = []
+    for material in brief["selected_materials"]:
+        matched = [
+            requirement_id
+            for requirement_id in material.get("matched_requirement_ids") or []
+            if requirement_id in requirements_by_id
+        ]
+        rows.append(
+            {
+                "id": f"{material.get('source')}:{material.get('id')}",
+                "source": material.get("source"),
+                "title": material.get("title") or "未命名项目",
+                "organization": material.get("organization") or "",
+                "role_title": material.get("role_title") or "",
+                "fact_ids": list(material.get("fact_ids") or []),
+                "requirement_ids": matched,
+                "requirements": [requirements_by_id[item] for item in matched],
+                "story_boundary": (
+                    "可使用已确认事实描述完成部分"
+                    if material.get("source") == "confirmed_fact"
+                    else "仅作为待核验素材或计划，不得写成已完成经历"
+                ),
+            }
+        )
+    if not rows:
+        highest = next(
+            (item for item in requirements if isinstance(item, dict) and item.get("priority") == "high"),
+            next((item for item in requirements if isinstance(item, dict)), {}),
+        )
+        requirement_id = str(highest.get("id") or "") if isinstance(highest, dict) else ""
+        requirement = str(highest.get("text") or "") if isinstance(highest, dict) else ""
+        rows.append(
+            {
+                "id": "virtual:target-project",
+                "source": "virtual_target",
+                "title": "目标实践方案",
+                "organization": "",
+                "role_title": "计划负责人",
+                "fact_ids": [],
+                "requirement_ids": [requirement_id] if requirement_id else [],
+                "requirements": [requirement] if requirement else [],
+                "story_boundary": "这是待完成的蓝图项目；所有结果都是目标，不能陈述为个人既有经历",
+            }
+        )
+    return rows
 
 
 def _generation_request_hash(*, resume_id: str, profile_id: str, profile_version, facts, draft_materials=None) -> str:
@@ -653,6 +879,9 @@ def _detached_fact(fact: ResumeFact) -> SimpleNamespace:
         value_json=deepcopy(fact.value_json or {}),
         source_text=getattr(fact, "source_text", "") or "",
         verification_status=getattr(fact, "verification_status", "") or "",
+        material_id=getattr(fact, "material_id", "") or "",
+        claim_type=getattr(fact, "claim_type", "") or "",
+        evidence_json=deepcopy(getattr(fact, "evidence_json", None) or {}),
     )
 
 
@@ -675,6 +904,7 @@ def _generation_inputs(db: Session, bundle: ResumeBundle) -> dict:
         "headline": snapshot.get("headline") or task_snapshot.get("headline") or target_snapshot.get("title") or "目标岗位",
         "contact": deepcopy(snapshot.get("contact") or task_snapshot.get("contact") or {}),
         "job_id": snapshot.get("job_id") or task_snapshot.get("job_id"),
+        "job_context": list(target_snapshot.get("job_context") or []),
         "snapshot": deepcopy(bundle.template_snapshot_json or template_snapshot()),
     }
 
@@ -693,6 +923,8 @@ def _fact_from_snapshot(payload: dict) -> SimpleNamespace:
         source_text=str(payload.get("source_text") or ""),
         verification_status=str(payload.get("verification_status") or ""),
         material_id=str(payload.get("material_id") or ""),
+        claim_type=str(payload.get("claim_type") or ""),
+        evidence_json=deepcopy(payload.get("evidence_json") or {}),
     )
 
 
@@ -709,11 +941,12 @@ def _mark_bundle_failed(db: Session, bundle_id: str, token: str, exc: Exception)
     run.status = "failed"
     run.phase = "failed"
     run.public_error_code = "GENERATION_FAILED"
-    run.last_error = _safe_error(f"{type(exc).__name__}")
+    public_message = "生成服务暂时不可用，请重试。"
+    run.last_error = public_message
     bundle.generation_metadata_json = {
         **(bundle.generation_metadata_json or {}),
         "error": "generation_failed",
-        "error_message": _safe_error(type(exc).__name__),
+        "error_message": public_message,
     }
     _refund_bundle_reservation(db, bundle.id)
     run.updated_at = now()
@@ -770,10 +1003,36 @@ def _refund_bundle_reservation(db: Session, bundle_id: str) -> None:
         reservation.updated_at = now()
 
 
+async def _evaluate_with_critic(*, content: dict, facts, requirements: list[dict], mode: str) -> dict:
+    """Keep local delivery gates authoritative while attaching model review."""
+    report = evaluate_version(content=content, facts=facts, requirements=requirements, mode=mode)
+    critic_report = await evaluate_version_with_critic(
+        content=content, facts=facts, requirements=requirements, mode=mode
+    )
+    for key in (
+        "dimensions",
+        "reviewer",
+        "reviewer_note",
+        "critic_summary",
+        "critic_unavailable",
+        "recommendations",
+        "project_reviews",
+        "star_diagnostics",
+    ):
+        if key in critic_report:
+            report[key] = critic_report[key]
+    return report
+
+
 async def _compose_pair(inputs: dict) -> dict:
     facts = inputs["facts"]
     draft_materials = inputs.get("draft_materials") or []
     requirements = inputs["requirements"]
+    job_context = inputs.get("job_context") or []
+    writing_brief = build_writing_brief(facts, draft_materials, requirements, job_context)
+    project_story_inputs = build_project_story_inputs(
+        facts, draft_materials, requirements, job_context
+    )
     headline = inputs["headline"]
     contact = inputs["contact"]
     quality_gate_enabled = get_settings().resume_quality_gate_active()
@@ -785,6 +1044,9 @@ async def _compose_pair(inputs: dict) -> dict:
         headline=headline,
         contact=contact,
         draft_materials=draft_materials,
+        job_context=job_context,
+        writing_brief=writing_brief,
+        project_story_inputs=project_story_inputs,
     )
     if sub_source == "fallback" or tgt_source == "fallback":
         degraded = True
@@ -800,12 +1062,15 @@ async def _compose_pair(inputs: dict) -> dict:
             f"model_unavailable_local_fallback:{detail}" if detail else "model_unavailable_local_fallback"
         )
 
-    sub_report = evaluate_version(
+    sub_report = await _evaluate_with_critic(
         content=submittable, facts=facts, requirements=requirements, mode="submittable"
     )
-    tgt_report = evaluate_version(
+    tgt_report = await _evaluate_with_critic(
         content=target, facts=facts, requirements=requirements, mode="target"
     )
+    if sub_report.get("critic_unavailable") or tgt_report.get("critic_unavailable"):
+        degraded = True
+        repair_history.append("critic_unavailable_deterministic_fallback")
     if quality_gate_enabled:
         need_sub_repair = not sub_report["hard_passed"]
         need_tgt_repair = not tgt_report["hard_passed"]
@@ -825,6 +1090,9 @@ async def _compose_pair(inputs: dict) -> dict:
                 headline=headline,
                 contact=contact,
                 draft_materials=draft_materials,
+                job_context=job_context,
+                writing_brief=writing_brief,
+                project_story_inputs=project_story_inputs,
                 current_submittable=submittable,
                 current_target=target,
                 repair_issues=repair_issues,
@@ -839,18 +1107,21 @@ async def _compose_pair(inputs: dict) -> dict:
                 degraded = True
                 if repair_error:
                     repair_history.append(f"repair_target_fallback:{repair_error}")
-            sub_report = evaluate_version(
+            sub_report = await _evaluate_with_critic(
                 content=submittable, facts=facts, requirements=requirements, mode="submittable"
             )
-            tgt_report = evaluate_version(
+            tgt_report = await _evaluate_with_critic(
                 content=target, facts=facts, requirements=requirements, mode="target"
             )
+            if sub_report.get("critic_unavailable") or tgt_report.get("critic_unavailable"):
+                degraded = True
+                repair_history.append("critic_unavailable_deterministic_fallback")
 
         if not sub_report["hard_passed"]:
             submittable = _fallback_version(
                 facts, requirements, kind="submittable", headline=headline, contact=contact
             )
-            sub_report = evaluate_version(
+            sub_report = await _evaluate_with_critic(
                 content=submittable, facts=facts, requirements=requirements, mode="submittable"
             )
             degraded = True
@@ -859,7 +1130,7 @@ async def _compose_pair(inputs: dict) -> dict:
             target = _fallback_version(
                 facts, requirements, kind="target", headline=headline, contact=contact
             )
-            tgt_report = evaluate_version(
+            tgt_report = await _evaluate_with_critic(
                 content=target, facts=facts, requirements=requirements, mode="target"
             )
             degraded = True
@@ -1035,6 +1306,9 @@ async def _write_pair(
     headline: str,
     contact: dict,
     draft_materials: list | None = None,
+    job_context: list | None = None,
+    writing_brief: dict | None = None,
+    project_story_inputs: list[dict] | None = None,
     current_submittable: dict | None = None,
     current_target: dict | None = None,
     repair_issues: list | None = None,
@@ -1073,6 +1347,12 @@ async def _write_pair(
                 "requirements": [
                     _requirement_input(item) for item in requirements if isinstance(item, dict)
                 ],
+                # Preserve the exact JD text and identity fields that produced
+                # this snapshot.  The writer can use context without treating
+                # an unknown company/title as a real requirement.
+                "job_context": deepcopy(job_context or []),
+                "writing_brief": deepcopy(writing_brief or {}),
+                "project_story_inputs": deepcopy(project_story_inputs or []),
                 "current_submittable": current_submittable,
                 "current_target": current_target,
                 "repair_issues": list(repair_issues or []),
@@ -1158,6 +1438,7 @@ async def _write_version(
     focus_bullet_id: str | None = None,
     focus_section_name: str | None = None,
     draft_materials: list | None = None,
+    project_story_inputs: list[dict] | None = None,
     repair_issues: list | None = None,
 ) -> tuple[dict, str, str]:
     fallback = _fallback_version(
@@ -1182,6 +1463,7 @@ async def _write_version(
                 "contact": contact or {},
                 "facts": [_fact_input(fact) for fact in facts],
                 "draft_materials": list(draft_materials or []),
+                "project_story_inputs": deepcopy(project_story_inputs or []),
                 "requirements": [
                     _requirement_input(item) for item in requirements if isinstance(item, dict)
                 ],
@@ -1360,17 +1642,19 @@ def _fallback_version(facts, requirements, *, kind: str, headline: str, contact:
         for name in SECTION_ORDER
         if grouped.get(name)
     ]
-    return validate_content(
-        {
-            "content_version": 3,
-            "factuality_policy": "ai_expansion",
-            "kind": kind,
-            "headline": headline,
-            "contact": contact or {},
-            "sections": sections,
-            "excluded_gaps": excluded,
-        }
-    )
+    content = {
+        "content_version": 3,
+        "factuality_policy": "ai_expansion",
+        "kind": kind,
+        "headline": headline,
+        "contact": contact or {},
+        "sections": sections,
+        "excluded_gaps": excluded,
+    }
+    if kind == "target":
+        content["project_story_contract_version"] = 1
+        ensure_target_project_stories(content, requirements)
+    return validate_content(content)
 
 
 def _omit_ungrounded_future(content: dict) -> dict:
@@ -1403,7 +1687,7 @@ def _upsert_version(
     repair_history: list[str],
 ) -> ResumeVersion:
     content = validate_content(content)
-    digest = request_fingerprint(content)
+    digest = content_fingerprint(content)
     report = {
         **report,
         "repair_history": repair_history,
@@ -1465,6 +1749,11 @@ def _public_quality_report(report: dict, *, quality_gate_enabled: bool | None = 
         "unachieved_count": report.get("unachieved_count") or 0,
         "reviewer": report.get("reviewer") or "deterministic",
         "reviewer_note": report.get("reviewer_note") or "",
+        "critic_summary": report.get("critic_summary") or "",
+        "critic_unavailable": bool(report.get("critic_unavailable")),
+        "recommendations": report.get("recommendations") or [],
+        "project_reviews": report.get("project_reviews") or [],
+        "star_diagnostics": report.get("star_diagnostics") or [],
     }
 
 
@@ -1496,6 +1785,7 @@ async def regenerate_scope(
     facts = [fact for fact in facts if fact is not None]
     requirements = list((bundle.target_snapshot_json or {}).get("requirements") or [])
     draft_materials = list((bundle.facts_snapshot_json or {}).get("draft_materials") or [])
+    project_story_inputs = build_project_story_inputs(facts, draft_materials, requirements, [])
     locked_ids = {
         bullet.get("id")
         for _s, _i, bullet in iter_bullets(content)
@@ -1533,6 +1823,7 @@ async def regenerate_scope(
             scope="section",
             focus_section_name=section_name,
             draft_materials=draft_materials,
+            project_story_inputs=project_story_inputs,
         )
         if source == "fallback":
             raise AppError(
@@ -1552,6 +1843,7 @@ async def regenerate_scope(
             current_content=content,
             scope="all",
             draft_materials=draft_materials,
+            project_story_inputs=project_story_inputs,
         )
         if source == "fallback":
             raise AppError(

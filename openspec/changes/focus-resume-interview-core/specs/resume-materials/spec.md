@@ -4,6 +4,19 @@
 
 ## ADDED Requirements
 
+### Requirement: Project archetypes are independently sourced references
+本原型库实验在 2026-09-12 本轮暂缓，不是蓝图 STAR 项目生成的前置依赖；本轮直接使用现有目标画像与可选素材。
+
+项目原型实验 SHALL 使用 12–24 条版本化本地原型，包含岗位方向、问题、任务步骤、工具、产物、指标槽位、核验材料、表达示例和来源说明。检索结果 MUST 与用户素材和事实分开记录，并保存命中内容及版本；原型 ID MUST NOT 用作用户事实 ID。衍生扩写 SHALL 保留既有 AI 来源与未达成状态。数据库化、大规模收集和向量检索 SHALL 延后到对照实验确认收益后另行规划。
+
+#### Scenario: A relevant archetype is retrieved
+- **WHEN** 实验链路为某段经历选中相关原型
+- **THEN** 写作使用其技术步骤和表达范式作为参考，最多选入 2 条，不将示例公司、日期、指标或成果自动确认为用户事实
+
+#### Scenario: Archetypes do not improve writing
+- **WHEN** 加入原型的对照组未显示明确质量或编辑量收益
+- **THEN** 默认链路保留简报与用户素材选材，记录实验结论，不以扩大数据库替代质量验证
+
 ### Requirement: Users can build materials from upload or blank state
 系统 SHALL 支持从 DOCX、文本型 PDF 解析素材，也 SHALL 允许用户不上传文件直接建立素材库。素材类型 MUST 覆盖教育、实习、工作、项目、科研、竞赛、奖项、证书和技能，且流程不得按年级分叉。
 

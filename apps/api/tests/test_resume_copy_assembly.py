@@ -4,7 +4,7 @@ from copy import deepcopy
 from types import SimpleNamespace
 
 from app.errors import AppError
-from app.services.content_contract import validate_content, visible_bullets
+from app.services.content_contract import content_fingerprint, iter_project_stories, validate_content, visible_bullets
 from app.services.copy_assembler import assemble_model_copy
 from app.services.html_resume_renderer import render_resume_html
 from app.services.pdf_export import classify_pdf_issues, compact_spacing_snapshot
@@ -85,6 +85,138 @@ def test_assembler_assigns_local_ids_and_drops_layout():
     assert bullet["locked"] is False
     assert "html" not in assembled
     assert assembled["sections"][0]["name"] == "项目/科研/竞赛"
+
+
+def test_target_project_star_is_versioned_mapped_and_marks_future_metrics():
+    requirements = [{"id": "r-cad", "text": "能用 SolidWorks 输出装配体", "priority": "high"}]
+    assembled = assemble_model_copy(
+        _model_copy(
+            {
+                "text": "完成装配方案、工程图与验收记录",
+                "source_target_ids": ["r-cad"],
+                "requirement_ids": ["r-cad"],
+                "achieved": False,
+                "project_story": {
+                    "schema_version": 1,
+                    "situation": {"context": "课程项目", "problem": "需要完成设计"},
+                    "task": {"role": "成员", "goal": "交付装配体"},
+                    "actions": [{"step": "建模", "method": "SolidWorks"}],
+                    "result": {"metrics": [{"name": "通过率", "value": "95%", "kind": "observed"}]},
+                },
+            },
+            kind="target",
+        ),
+        facts=[],
+        requirements=requirements,
+        kind="target",
+        headline="机械设计工程师",
+        contact={},
+    )
+    assert assembled["project_story_contract_version"] == 1
+    _section, _item, story = next(iter_project_stories(assembled))
+    bullet = visible_bullets(assembled)[0]
+    assert story["schema_version"] == 1
+    assert story["bullet_ids"] == [bullet["id"]]
+    assert story["requirement_ids"] == ["r-cad"]
+    assert story["achieved"] is False
+    assert all(metric["kind"] == "target" for metric in story["result"]["metrics"])
+    assert story["actions"][0]["step"] and story["actions"][0]["method"]
+    report = evaluate_version(content=assembled, facts=[], requirements=requirements, mode="target")
+    assert report["hard_passed"] is True, report["issues"]
+
+
+def test_target_star_quality_rejects_missing_structure_and_observed_future_result():
+    content = {
+        "content_version": 3,
+        "factuality_policy": "ai_expansion",
+        "project_story_contract_version": 1,
+        "kind": "target",
+        "headline": "机械设计工程师",
+        "sections": [{
+            "name": "项目/科研/竞赛",
+            "items": [{
+                "organization": "目标实践",
+                "bullets": [{
+                    "id": "b-target", "text": "完成目标项目", "source_fact_ids": [],
+                    "source_target_ids": ["r-cad"], "requirement_ids": ["r-cad"],
+                    "achieved": False, "locked": False, "new_claims": [], "verification_status": "ai_generated",
+                }],
+                "project_story": {
+                    "schema_version": 1, "project_id": "p-target", "title": "目标实践",
+                    "situation": {"context": "相关内容", "problem": ""},
+                    "task": {"role": "", "goal": "完成项目"},
+                    "actions": [{"step": "", "method": "", "contribution": ""}],
+                    "result": {"deliverables": [], "verification_method": "", "metrics": [{"kind": "observed"}]},
+                    "bullet_ids": ["b-target"], "source_fact_ids": [], "source_target_ids": ["r-cad"],
+                    "requirement_ids": ["r-cad"], "achieved": False,
+                },
+            }],
+        }],
+    }
+    report = evaluate_version(
+        content=content,
+        facts=[],
+        requirements=[{"id": "r-cad", "text": "SolidWorks", "priority": "high"}],
+        mode="target",
+    )
+    assert report["hard_passed"] is False
+    assert any("S（背景/问题）" in item for item in report["issues"])
+    assert any("A（行动/方法/贡献）" in item for item in report["issues"])
+    assert any("未达成结果不能标为已观察指标" in item for item in report["issues"])
+
+
+def test_star_review_diagnoses_action_result_disconnect_without_auto_rewrite():
+    content = {
+        "content_version": 3,
+        "factuality_policy": "ai_expansion",
+        "project_story_contract_version": 1,
+        "kind": "target",
+        "headline": "机械设计工程师",
+        "sections": [{
+            "name": "项目/科研/竞赛",
+            "items": [{
+                "organization": "目标实践",
+                "bullets": [{
+                    "id": "b-target", "text": "完成可演示的装配验证", "source_fact_ids": [],
+                    "source_target_ids": ["r-cad"], "requirement_ids": ["r-cad"],
+                    "achieved": False, "locked": False, "new_claims": [], "verification_status": "ai_generated",
+                }],
+                "project_story": {
+                    "schema_version": 1, "project_id": "p-target", "title": "目标实践",
+                    "situation": {"context": "为目标岗位准备项目", "problem": "需要形成可验证交付"},
+                    "task": {"role": "计划负责人", "goal": "完成装配验证"},
+                    "actions": [{"step": "拆分装配任务", "method": "先定义输入输出", "contribution": "计划负责验证记录"}],
+                    "result": {"deliverables": ["装配工程图"], "verification_method": "按验收清单检查", "metrics": [{"name": "验收完成", "value": "待记录", "kind": "target"}]},
+                    "bullet_ids": ["b-target"], "source_fact_ids": [], "source_target_ids": ["r-cad"],
+                    "requirement_ids": ["r-cad"], "achieved": False,
+                },
+            }],
+        }],
+    }
+    report = evaluate_version(
+        content=content,
+        facts=[],
+        requirements=[{"id": "r-cad", "text": "SolidWorks", "priority": "high"}],
+        mode="target",
+    )
+    assert report["hard_passed"] is True
+    messages = [item["message"] for item in report["star_diagnostics"]]
+    assert "行动缺少为什么这样做的取舍说明" in messages
+    assert "行动缺少可追问的难点或风险" in messages
+
+
+def test_story_fingerprint_is_semantic_and_keeps_legacy_hash_compatible():
+    legacy = {"content_version": 3, "kind": "submittable", "headline": "工程师", "sections": []}
+    assert content_fingerprint(legacy) == request_fingerprint(legacy)
+    content = {
+        "content_version": 3, "kind": "target", "headline": "工程师",
+        "project_story_contract_version": 1,
+        "sections": [{"name": "项目/科研/竞赛", "items": [{"bullets": [], "project_story": {"project_id": "p1", "task": {"goal": "完成验证"}}}]}],
+    }
+    before = content_fingerprint(content)
+    changed = deepcopy(content)
+    changed["sections"][0]["items"][0]["project_story"]["task"]["goal"] = "完成另一套验证"
+    assert content_fingerprint(changed) != before
 
 
 def test_assembler_keeps_existing_ids_on_regenerate():
@@ -385,6 +517,34 @@ def test_target_guide_covers_all_visible_bullets(client, db):
     bullet_ids = [bullet["id"] for bullet in visible_bullets(version["content_json"])]
     card_ids = [card["bullet_id"] for card in guide["content_json"]["cards"]]
     assert set(card_ids) == set(bullet_ids)
+
+
+def test_target_guide_uses_saved_star_story_with_project_follow_up_chains(client, db):
+    _user, resume, profile = setup_bundle(client, db)
+    _created, bundle = process_created_bundle(
+        client,
+        {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+        "bundle-target-star-guide",
+    )
+    target = client.get(f"/api/resume-versions/{bundle['versions']['target']['id']}/studio").json()
+    guide = client.get(f"/api/interview-guides/{bundle['guides']['target']['id']}").json()
+    stories = [story for _section, _item, story in iter_project_stories(target["content_json"])]
+    project_cards = guide["content_json"].get("project_cards") or []
+    assert stories
+    assert {card["project_id"] for card in project_cards} == {story["project_id"] for story in stories}
+    for story in stories:
+        card = next(card for card in project_cards if card["project_id"] == story["project_id"])
+        assert card["bullet_ids"] == story["bullet_ids"]
+        assert card["star_outline"]["situation"] == story["situation"]
+        assert card["star_outline"]["task"] == story["task"]
+        assert card["follow_up_chains"]
+        assert card["result_verification"]
+        assert card["knowledge_preparation"] and card["practice_steps"]
+        if story["achieved"] is False:
+            assert card["honest_boundary"]
+    page = client.get(f"/api/interview-guides/{guide['id']}/download")
+    assert page.status_code == 200
+    assert "STAR 讲述" in page.text
 
 
 def test_download_does_not_change_content_hash(client, db):

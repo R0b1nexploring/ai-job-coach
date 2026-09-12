@@ -44,7 +44,7 @@ from app.providers.llm.schemas import ResumeContentOutput
 from app.providers.storage.local import LocalStorage
 from app.services.bundle_service import dump_bundle, stale_guides_for_version
 from app.services.capability_service import build_targets, ensure_match_targets
-from app.services.content_contract import validate_content
+from app.services.content_contract import content_fingerprint, validate_content
 from app.services.experience_service import confirmed_facts_for_generation
 from app.services.interview_guide_service import dump_guide
 from app.services.job_access import owned_job_clause, visible_job
@@ -709,7 +709,7 @@ async def update_version(
             "reviewer": evaluation.get("reviewer") or "deterministic",
             "reviewer_note": evaluation.get("reviewer_note") or "",
         }
-        row.content_hash = request_fingerprint(content)
+        row.content_hash = content_fingerprint(content)
         guard_status = "passed" if report_guard_passed(evaluation) else "blocked"
         unachieved_count = int(evaluation.get("unachieved_count") or 0)
     else:

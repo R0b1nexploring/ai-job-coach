@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+from copy import deepcopy
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -188,17 +189,41 @@ async def _optional_model_requirements(jobs: list[Job]) -> list[dict]:
 def _title_for(mode: str, jobs: list[Job]) -> str:
     if mode == SINGLE_JD:
         job = jobs[0]
-        return f"{job.company_name} · {job.title}"[:200]
+        identity = " · ".join(part for part in (job.company_name, job.title) if part)
+        return identity[:200] or "单 JD 岗位画像"
     return f"{len(jobs)} 份 JD 聚合画像"[:200]
 
 
+def _job_context(jobs: list[Job]) -> list[dict]:
+    """Immutable, source-grounded JD context used by a later resume run."""
+    return [
+        {
+            "job_id": job.id,
+            "title": job.title,
+            "company_name": job.company_name,
+            "city": job.city,
+            "raw_jd": job.raw_jd,
+        }
+        for job in jobs
+    ]
+
+
+def _profile_snapshot(requirements: list[dict], jobs: list[Job]) -> dict:
+    return {"requirements": requirements, "job_context": _job_context(jobs)}
+
+
 def dump_profile(profile: TargetProfile, sources: list[TargetProfileSource] | None = None) -> dict:
+    snapshot = deepcopy(profile.snapshot_json or {})
+    # The saved raw JD remains available to the owner through the Job resource
+    # and is needed internally for generation, but it is not duplicated in
+    # every profile-list response.
+    snapshot.pop("job_context", None)
     return {
         "id": profile.id,
         "user_id": profile.user_id,
         "mode": profile.mode,
         "title": profile.title,
-        "snapshot_json": profile.snapshot_json,
+        "snapshot_json": snapshot,
         "input_hash": profile.input_hash,
         "quality_metadata_json": profile.quality_metadata_json,
         "version": profile.version,
@@ -234,7 +259,7 @@ def refresh_profile_if_sources_changed(db: Session, profile: TargetProfile) -> T
     sources = list_profile_sources(db, profile.id)
     jobs = [db.get(Job, source.job_id) for source in sources]
     jobs = [job for job in jobs if job is not None]
-    changed = False
+    changed = "job_context" not in (profile.snapshot_json or {})
     for source in sources:
         job = db.get(Job, source.job_id)
         if job is None:
@@ -245,7 +270,7 @@ def refresh_profile_if_sources_changed(db: Session, profile: TargetProfile) -> T
     if not changed:
         return profile
     requirements, rejected = aggregate_jobs(jobs)
-    profile.snapshot_json = {"requirements": requirements}
+    profile.snapshot_json = _profile_snapshot(requirements, jobs)
     profile.quality_metadata_json = {"rejected": rejected}
     profile.input_hash = request_fingerprint(
         {"mode": profile.mode, "job_ids": [job.id for job in jobs], "raw": [job.raw_jd for job in jobs]}
@@ -290,7 +315,7 @@ async def create_target_profile(db: Session, user: User, *, mode: str, job_ids: 
         user_id=user.id,
         mode=mode,
         title=_title_for(mode, jobs),
-        snapshot_json={"requirements": requirements},
+        snapshot_json=_profile_snapshot(requirements, jobs),
         input_hash=input_hash,
         quality_metadata_json={"rejected": rejected},
         version=1,

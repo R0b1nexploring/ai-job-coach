@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { Empty, ErrorState, Loading } from '../components/States'
@@ -33,6 +33,15 @@ type ResumeFact = {
   verification_status?: string
   organization?: string
   role_title?: string
+  material_id?: string
+  claim_type?: string
+}
+type MaterialDraft = {
+  organization: string
+  role_title: string
+  summary: string
+  skills: string
+  details: Record<string, string>
 }
 type StudioBullet = {
   id: string
@@ -56,7 +65,8 @@ type StudioVersion = {
     issues?: string[]
     reviewer?: string
     reviewer_note?: string
-    dimensions?: Record<string, { score: number }>
+    dimensions?: Record<string, { score: number | null; assessed?: boolean }>
+    recommendations?: Array<{ bullet_id?: string; suggestion: string }>
   }
   content_json: {
     kind?: string
@@ -73,6 +83,26 @@ type StudioVersion = {
   }
 }
 
+const A4_PREVIEW_WIDTH = 794
+const A4_PREVIEW_HEIGHT = 1123
+
+export function a4PreviewScale(containerWidth: number) {
+  if (!Number.isFinite(containerWidth) || containerWidth <= 0) return 1
+  return Math.min(1, Math.max(0.1, containerWidth / A4_PREVIEW_WIDTH))
+}
+
+export function bundleStageLabel(phase?: string) {
+  return ({
+    queued: '等待处理',
+    writing: '正在组织内容',
+    quality_check: '正在质量检查',
+    layout: '正在排版',
+    guides: '正在生成指南',
+    completed: '已完成',
+    failed: '处理失败',
+  } as Record<string, string>)[phase || ''] || '处理中'
+}
+
 function showsBlueprintMark(content: StudioVersion['content_json'] | undefined, bullet: StudioBullet) {
   if (!bullet || bullet.achieved !== false) return false
   return !(
@@ -81,6 +111,23 @@ function showsBlueprintMark(content: StudioVersion['content_json'] | undefined, 
     && !bullet.source_target_ids?.length
     && !bullet.requirement_ids?.length
   )
+}
+
+function materialDraft(entry: ExperienceEntry): MaterialDraft {
+  return {
+    organization: entry.organization || '',
+    role_title: entry.role_title || '',
+    summary: entry.summary || '',
+    skills: (entry.skills_json || []).join('、'),
+    details: {
+      ...(entry.details_json || {}),
+      project_type: entry.details_json?.project_type || '课程设计',
+      actions: entry.details_json?.actions || entry.summary || '',
+      tools: entry.details_json?.tools || (entry.skills_json || []).join('、'),
+      results: entry.details_json?.results || '',
+      ownership: entry.details_json?.ownership || '',
+    },
+  }
 }
 
 export function ResumeStudio() {
@@ -96,12 +143,18 @@ export function ResumeStudio() {
   const [message, setMessage] = useState('')
   const [showExperienceForm, setShowExperienceForm] = useState(false)
   const [experienceOrganization, setExperienceOrganization] = useState('')
+  const [experienceProjectType, setExperienceProjectType] = useState('课程设计')
+  const [experienceRole, setExperienceRole] = useState('')
   const [experienceText, setExperienceText] = useState('')
+  const [experienceTools, setExperienceTools] = useState('')
   const [experienceResult, setExperienceResult] = useState('')
   const [pageVisible, setPageVisible] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden')
   const [pollDelay, setPollDelay] = useState(2000)
   const [factDrafts, setFactDrafts] = useState<Record<string, string>>({})
   const [clarificationDrafts, setClarificationDrafts] = useState<Record<string, string>>({})
+  const [materialDrafts, setMaterialDrafts] = useState<Record<string, MaterialDraft>>({})
+  const [previewScale, setPreviewScale] = useState(1)
+  const previewContainerRef = useRef<HTMLDivElement>(null)
   const jobs = useQuery({ queryKey: ['jobs'], queryFn: () => api<ListResponse<Job>>('/api/jobs') })
   const resumes = useQuery({ queryKey: ['resumes'], queryFn: () => api<ListResponse<Resume>>('/api/resumes') })
   const selectedResumeDetail = useQuery({
@@ -115,6 +168,7 @@ export function ResumeStudio() {
     enabled: Boolean(selectedResume),
   })
   const materials = useQuery({ queryKey: ['experience'], queryFn: () => api<ListResponse<ExperienceEntry>>('/api/experience') })
+  const materialFacts = useQuery({ queryKey: ['experience-facts'], queryFn: () => api<ListResponse<ResumeFact>>('/api/experience-facts') })
   const profiles = useQuery({ queryKey: ['target-profiles'], queryFn: () => api<ListResponse<Profile>>('/api/target-profiles') })
   const bundles = useQuery({
     queryKey: ['resume-bundles'],
@@ -164,12 +218,42 @@ export function ResumeStudio() {
       return next
     })
   }, [resumeFacts.data])
+  useEffect(() => {
+    const own = (materials.data?.items || []).filter((item) => item.is_own)
+    if (!own.length) return
+    setMaterialDrafts((current) => {
+      const next = { ...current }
+      for (const item of own) {
+        if (!next[item.id]) next[item.id] = materialDraft(item)
+      }
+      return next
+    })
+  }, [materials.data?.items])
   const versionId = bundle.data?.versions?.[kind]?.id || ''
   const version = useQuery({
     queryKey: ['studio-version', versionId],
     queryFn: () => api<StudioVersion>(`/api/resume-versions/${versionId}/studio`),
     enabled: Boolean(versionId),
   })
+  useEffect(() => {
+    const container = previewContainerRef.current
+    if (!container) return
+    const updateScale = () => {
+      // A grid/card may retain a desktop min-content width while its viewport
+      // is already narrow.  Cap by the visible viewport as well, so the A4
+      // canvas cannot remain 794px wide on a phone.
+      const viewportWidth = Math.max(0, window.innerWidth - 48)
+      setPreviewScale(a4PreviewScale(Math.min(container.clientWidth, viewportWidth)))
+    }
+    updateScale()
+    window.addEventListener('resize', updateScale)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateScale)
+    observer?.observe(container)
+    return () => {
+      window.removeEventListener('resize', updateScale)
+      observer?.disconnect()
+    }
+  }, [version.data?.content_hash])
   const compareKind = kind === 'submittable' ? 'target' : 'submittable'
   const compareVersionId = bundle.data?.versions?.[compareKind]?.id || ''
   const compareVersion = useQuery({
@@ -181,7 +265,9 @@ export function ResumeStudio() {
     mutationFn: async (raw: string) => {
       const job = await api<Job>('/api/jobs/import-text', {
         method: 'POST',
-        body: JSON.stringify({ company_name: '目标公司', title: '目标岗位', raw_jd: raw }),
+        // Let the server extract only identities that occur in the pasted JD.
+        // Supplying generic labels here used to turn them into fake job facts.
+        body: JSON.stringify({ raw_jd: raw }),
       })
       const profile = await api<Profile>('/api/target-profiles', {
         method: 'POST',
@@ -213,28 +299,69 @@ export function ResumeStudio() {
   })
   const createMaterial = useMutation({
     mutationFn: async () => {
-      const row = await api<ExperienceEntry>('/api/experience', {
+      return api<ExperienceEntry>('/api/experience', {
         method: 'POST',
         body: JSON.stringify({
           kind: 'project',
           title: experienceText.trim().slice(0, 40) || '补充经历',
           organization: experienceOrganization.trim(),
+          role_title: experienceRole.trim(),
           summary: experienceText.trim(),
+          skills_json: experienceTools.split(/[，,、]/).map((item) => item.trim()).filter(Boolean),
           details_json: {
+            project_type: experienceProjectType,
             actions: experienceText.trim(),
+            tools: experienceTools.trim(),
             results: experienceResult.trim(),
           },
         }),
       })
-      return api<ExperienceEntry>(`/api/experience/${row.id}/confirm`, { method: 'POST' })
     },
-    onSuccess: () => {
+    onSuccess: (row) => {
+      setMaterialDrafts((current) => ({ ...current, [row.id]: materialDraft(row) }))
       setExperienceOrganization('')
+      setExperienceProjectType('课程设计')
+      setExperienceRole('')
       setExperienceText('')
+      setExperienceTools('')
       setExperienceResult('')
       setShowExperienceForm(false)
-      setMessage('这段经历已加入生成参考。')
+      setMessage('空白素材已保存。你可以继续编辑、查看缺口并确认原子事实，也可以先用草稿生成。')
       client.invalidateQueries({ queryKey: ['experience'] })
+    },
+  })
+  const saveMaterial = useMutation({
+    mutationFn: ({ item, draft }: { item: ExperienceEntry; draft: MaterialDraft }) => api<ExperienceEntry>(`/api/experience/${item.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        organization: draft.organization,
+        role_title: draft.role_title,
+        summary: draft.summary,
+        skills_json: (draft.details.tools || draft.skills).split(/[，,、]/).map((value) => value.trim()).filter(Boolean),
+        details_json: { ...draft.details, actions: draft.summary, tools: draft.details.tools || draft.skills },
+      }),
+    }),
+    onSuccess: (row) => {
+      setMaterialDrafts((current) => ({ ...current, [row.id]: materialDraft(row) }))
+      setMessage('素材修改已保存；如曾确认，相关事实已恢复为待确认。')
+      client.invalidateQueries({ queryKey: ['experience'] })
+      client.invalidateQueries({ queryKey: ['experience-facts'] })
+      client.invalidateQueries({ queryKey: ['resume-bundles'] })
+    },
+  })
+  const clarifyMaterial = useMutation({
+    mutationFn: (entryId: string) => api<ExperienceEntry>(`/api/experience/${entryId}/clarifications`, { method: 'POST' }),
+    onSuccess: () => {
+      setMessage('缺口追问已生成；不知道的内容可以留空，不需要猜。')
+      client.invalidateQueries({ queryKey: ['experience'] })
+    },
+  })
+  const confirmMaterial = useMutation({
+    mutationFn: (entryId: string) => api<ExperienceEntry>(`/api/experience/${entryId}/confirm`, { method: 'POST' }),
+    onSuccess: () => {
+      setMessage('素材已拆成原子事实并确认。')
+      client.invalidateQueries({ queryKey: ['experience'] })
+      client.invalidateQueries({ queryKey: ['experience-facts'] })
     },
   })
   const uploadResume = useMutation({
@@ -368,8 +495,24 @@ export function ResumeStudio() {
   })
   const ownMaterials = useMemo(() => (materials.data?.items || []).filter((item) => item.is_own), [materials.data?.items])
 
+  const changeMaterialDraft = (entry: ExperienceEntry, field: string, value: string) => {
+    setMaterialDrafts((current) => {
+      const draft = current[entry.id] || materialDraft(entry)
+      if (field.startsWith('details.')) {
+        return {
+          ...current,
+          [entry.id]: {
+            ...draft,
+            details: { ...draft.details, [field.slice('details.'.length)]: value },
+          },
+        }
+      }
+      return { ...current, [entry.id]: { ...draft, [field]: value } }
+    })
+  }
+
   if (jobs.isLoading || resumes.isLoading) return <Loading />
-  const error = jobs.error || resumes.error || selectedResumeDetail.error || resumeFacts.error || generate.error || createProfile.error || analyzeTarget.error || createMaterial.error || uploadResume.error || confirmResume.error || editFact.error || confirmFact.error || answerClarifications.error || retry.error || lock.error || regenerate.error || reorder.error || undo.error || regenerateGuide.error
+  const error = jobs.error || resumes.error || selectedResumeDetail.error || resumeFacts.error || materialFacts.error || generate.error || createProfile.error || analyzeTarget.error || createMaterial.error || saveMaterial.error || clarifyMaterial.error || confirmMaterial.error || uploadResume.error || confirmResume.error || editFact.error || confirmFact.error || answerClarifications.error || retry.error || lock.error || regenerate.error || reorder.error || undo.error || regenerateGuide.error
   const status = bundle.data?.status
   const degraded = status === 'degraded'
   const qualityGateBypassed = bundle.data?.generation_metadata_json?.quality_gate_bypassed === true
@@ -388,7 +531,7 @@ export function ResumeStudio() {
         <div className="mt-5 space-y-3">
           {error && <ErrorState error={error} />}
           {message && <Alert tone="success">{message}</Alert>}
-          {degraded && <Alert tone="warning" role="status">当前是基础降级版本，使用本地基础内容，表达质量可能有限。</Alert>}
+          {degraded && <Alert tone="warning" role="status">当前为降级版本：{bundle.data?.generation_metadata_json?.degraded_reason || '模型不可用，使用已通过硬门禁的本地基础内容。'}</Alert>}
           {qualityGateBypassed && <Alert tone="warning" role="status">本地调试模式：质量硬门禁已暂时关闭，仅保留事实来源检查。</Alert>}
           {failed && (
             <Alert tone="danger" role="alert">
@@ -398,7 +541,7 @@ export function ResumeStudio() {
           {pending && (
             <Alert tone="info">
               <span className="mr-2 inline-flex align-middle"><span className="spinner text-sage" /></span>
-              状态：{status === 'queued' ? '排队中' : '生成中'}（{bundle.data?.run?.phase || '处理中'}），完成后会自动刷新。
+              状态：{status === 'queued' ? '排队中' : '生成中'}（{bundleStageLabel(bundle.data?.run?.phase)}），完成后会自动刷新。
             </Alert>
           )}
         </div>
@@ -461,10 +604,22 @@ export function ResumeStudio() {
         </div>
         {showExperienceForm && (
           <div className="mt-4 rounded-xl border border-sage/30 bg-sage/5 p-4">
+            <label className="block text-sm font-semibold" htmlFor="experience-project-type">项目类型</label>
+            <select id="experience-project-type" className="field mt-1" value={experienceProjectType} onChange={(event) => setExperienceProjectType(event.target.value)}>
+              <option>课程设计</option>
+              <option>个人项目</option>
+              <option>科研项目</option>
+              <option>竞赛项目</option>
+              <option>实习项目</option>
+            </select>
             <label className="block text-sm font-semibold">在哪里完成的？</label>
             <input className="field mt-1" value={experienceOrganization} onChange={(event) => setExperienceOrganization(event.target.value)} placeholder="例如：学校实验室、某公司或个人项目" />
+            <label className="mt-4 block text-sm font-semibold">你的角色 <span className="font-normal text-black/45">选填</span></label>
+            <input className="field mt-1" value={experienceRole} onChange={(event) => setExperienceRole(event.target.value)} placeholder="例如：结构设计负责人、项目成员" />
             <label className="mt-4 block text-sm font-semibold">你具体做了什么？</label>
             <textarea className="field mt-1 min-h-24" value={experienceText} onChange={(event) => setExperienceText(event.target.value)} placeholder="用自己的话描述即可，例如：我用 SolidWorks 完成了装配体建模和工程图。" />
+            <label className="mt-4 block text-sm font-semibold">实际使用的工具 <span className="font-normal text-black/45">选填</span></label>
+            <input className="field mt-1" value={experienceTools} onChange={(event) => setExperienceTools(event.target.value)} placeholder="例如：SolidWorks、Excel、Python" />
             <label className="mt-4 block text-sm font-semibold">有什么结果？ <span className="font-normal text-black/45">选填</span></label>
             <input className="field mt-1" value={experienceResult} onChange={(event) => setExperienceResult(event.target.value)} placeholder="例如：完成答辩、交付报告或效率提升" />
             <button className="btn mt-4" onClick={() => createMaterial.mutate()} disabled={!experienceOrganization.trim() || !experienceText.trim() || createMaterial.isPending}>保存这段经历</button>
@@ -529,12 +684,84 @@ export function ResumeStudio() {
             )}
           </div>
         )}
-        <details className="mt-4 text-sm text-black/55">
-          <summary className="cursor-pointer">已保存的经历与素材（{ownMaterials.length}）</summary>
-          <div className="mt-2 grid gap-2">
-            {ownMaterials.map((item) => <p key={item.id} className="rounded-lg bg-black/[0.03] px-3 py-2">{item.title}</p>)}
+        {ownMaterials.length > 0 && (
+          <div className="mt-5">
+            <h3 className="font-bold">已保存的经历与素材（{ownMaterials.length}）</h3>
+            <p className="mt-1 text-sm text-black/55">空白建档的素材可以在这里反复修改、补齐追问并确认，不需要跳到旧页面。</p>
+            <div className="mt-3 grid gap-3">
+              {ownMaterials.map((item) => {
+                const draft = materialDrafts[item.id] || materialDraft(item)
+                const facts = (materialFacts.data?.items || []).filter((fact) => fact.material_id === item.id && fact.verification_status !== 'user_rejected')
+                return (
+                  <details className="rounded-2xl border border-black/10 bg-black/[0.02] p-4" key={item.id} open={item.status === 'draft'}>
+                    <summary className="cursor-pointer font-semibold">
+                      {item.title} · {item.status === 'confirmed' ? '已确认' : '待确认'}
+                    </summary>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <label className="text-sm font-semibold">
+                        组织或场景
+                        <input className="field mt-1" aria-label={`${item.title} 组织`} value={draft.organization} onChange={(event) => changeMaterialDraft(item, 'organization', event.target.value)} />
+                      </label>
+                      <label className="text-sm font-semibold">
+                        你的角色
+                        <input className="field mt-1" aria-label={`${item.title} 角色`} value={draft.role_title} onChange={(event) => changeMaterialDraft(item, 'role_title', event.target.value)} />
+                      </label>
+                      <label className="text-sm font-semibold md:col-span-2">
+                        你具体做了什么
+                        <textarea className="field mt-1 min-h-20" aria-label={`${item.title} 行动`} value={draft.summary} onChange={(event) => changeMaterialDraft(item, 'summary', event.target.value)} />
+                      </label>
+                      <label className="text-sm font-semibold">
+                        实际使用的工具
+                        <input className="field mt-1" aria-label={`${item.title} 工具`} value={draft.details.tools || draft.skills} onChange={(event) => changeMaterialDraft(item, 'details.tools', event.target.value)} />
+                      </label>
+                      <label className="text-sm font-semibold">
+                        可核验结果
+                        <input className="field mt-1" aria-label={`${item.title} 结果`} value={draft.details.results || ''} onChange={(event) => changeMaterialDraft(item, 'details.results', event.target.value)} />
+                      </label>
+                      <label className="text-sm font-semibold md:col-span-2">
+                        本人贡献边界
+                        <input className="field mt-1" aria-label={`${item.title} 个人贡献`} value={draft.details.ownership || ''} onChange={(event) => changeMaterialDraft(item, 'details.ownership', event.target.value)} placeholder="例如：本人负责建模与工程图，测试由同组同学完成" />
+                      </label>
+                    </div>
+                    {!!item.clarifications_json?.length && (
+                      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <h4 className="font-semibold text-amber-900">缺口追问</h4>
+                        <div className="mt-2 grid gap-2">
+                          {item.clarifications_json.map((question) => (
+                            <label className="text-sm text-amber-900" key={`${item.id}-${question.field}`}>
+                              {question.question}
+                              <input
+                                className="field mt-1 bg-white"
+                                aria-label={`${item.title} ${question.question}`}
+                                value={draft.details[question.field] || ''}
+                                onChange={(event) => changeMaterialDraft(item, `details.${question.field}`, event.target.value)}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button type="button" className="btn-secondary" onClick={() => saveMaterial.mutate({ item, draft })} disabled={saveMaterial.isPending}>保存修改</button>
+                      <button type="button" className="btn-secondary" onClick={() => clarifyMaterial.mutate(item.id)} disabled={clarifyMaterial.isPending}>查看缺口追问</button>
+                      {item.status !== 'confirmed' && <button type="button" className="btn" onClick={() => confirmMaterial.mutate(item.id)} disabled={confirmMaterial.isPending}>确认并生成原子事实</button>}
+                    </div>
+                    {facts.length > 0 && (
+                      <div className="mt-4 rounded-xl bg-white p-3">
+                        <h4 className="text-sm font-semibold">已拆分的原子事实</h4>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-black/65">
+                          {facts.map((fact) => (
+                            <li key={fact.id}>{fact.value_json?.text || fact.label} · {fact.verification_status === 'user_confirmed' ? '已确认' : '待确认'}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </details>
+                )
+              })}
+            </div>
           </div>
-        </details>
+        )}
       </section>
 
       <section className="card mt-6">
@@ -556,13 +783,37 @@ export function ResumeStudio() {
           <div className="mt-5">
             <p className="text-sm text-black/50">质量状态：{version.data.quality_report_json.status || version.data.guard_status}{reviewerNote ? ` · ${reviewerNote}` : ''}</p>
             {!!version.data.quality_report_json.issues?.length && <p className="alert alert-warning mt-2">质量问题：{version.data.quality_report_json.issues.join('；')}</p>}
+            {!!version.data.quality_report_json.recommendations?.length && (
+              <div className="mt-2 rounded-lg bg-sage/5 px-3 py-2 text-sm text-black/65">
+                <p className="font-semibold">可改进之处</p>
+                <ul className="mt-1 list-disc pl-5">
+                  {version.data.quality_report_json.recommendations.map((item, index) => <li key={`${item.bullet_id || 'general'}-${index}`}>{item.suggestion}</li>)}
+                </ul>
+              </div>
+            )}
             <div className="mt-4 overflow-auto rounded-3xl border border-black/10 bg-[#ece7dc] p-4">
-              <iframe
-                title="A4 简历预览"
-                data-testid="a4-preview"
-                className="mx-auto min-h-[842px] w-[595px] max-w-full rounded-sm bg-white shadow-lift"
-                src={`/api/resume-versions/${versionId}/studio-preview?v=${version.data.content_hash}`}
-              />
+              <div ref={previewContainerRef} className="w-full">
+                <div
+                  className="relative mx-auto"
+                  style={{
+                    width: `${A4_PREVIEW_WIDTH * previewScale}px`,
+                    height: `${A4_PREVIEW_HEIGHT * previewScale}px`,
+                  }}
+                >
+                  <iframe
+                    title="A4 简历预览"
+                    data-testid="a4-preview"
+                    className="absolute left-0 top-0 rounded-sm bg-white shadow-lift"
+                    style={{
+                      width: `${A4_PREVIEW_WIDTH}px`,
+                      height: `${A4_PREVIEW_HEIGHT}px`,
+                      transform: `scale(${previewScale})`,
+                      transformOrigin: 'top left',
+                    }}
+                    src={`/api/resume-versions/${versionId}/studio-preview?v=${version.data.content_hash}`}
+                  />
+                </div>
+              </div>
             </div>
             <div className="soft-panel mt-4" aria-label="编辑要点">
               <h3 className="text-sm font-semibold">编辑要点</h3>

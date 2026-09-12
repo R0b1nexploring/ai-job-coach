@@ -3,8 +3,10 @@ import io
 import json
 import shutil
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
+from threading import Barrier
 from types import SimpleNamespace
 
 import httpx
@@ -20,8 +22,8 @@ from app.models.entities import InterviewGuide, QuotaReservation, ResumeBundle, 
 from app.providers.llm.base import ProviderError
 from app.providers.llm.compatible import CompatibleLLMProvider
 from app.providers.llm.runtime import generate_structured as real_generate_structured
-from app.services.bundle_service import _apply_pair_result, claim_bundle_run
-from app.services.content_contract import normalize_bullet, validate_content
+from app.services.bundle_service import _apply_pair_result, build_project_story_inputs, build_writing_brief, claim_bundle_run
+from app.services.content_contract import iter_project_stories, normalize_bullet, validate_content
 from app.services.docx_resume_renderer import render_resume_docx
 from app.services.html_resume_renderer import render_resume_html
 from app.services.pdf_export import converter_available, inspect_pdf_bytes
@@ -141,6 +143,63 @@ def _bullets(content):
                     }
                 )
     return rows
+
+
+def test_writing_brief_selects_three_relevant_materials_stably():
+    facts = [
+        SimpleNamespace(id="f-a", material_id="material-a", category="projects", label="CAD 图纸", organization="实验室", role_title="成员", value_json={"text": "使用 CAD 输出工程图"}, source_text="", claim_type="tool", evidence_json={}),
+        SimpleNamespace(id="f-b", material_id="material-b", category="projects", label="装配体", organization="实验室", role_title="成员", value_json={"text": "使用 SolidWorks 完成装配体建模"}, source_text="", claim_type="tool", evidence_json={}),
+        SimpleNamespace(id="f-c", material_id="material-c", category="projects", label="数据分析", organization="实验室", role_title="成员", value_json={"text": "使用 Python 清洗实验数据"}, source_text="", claim_type="tool", evidence_json={}),
+        SimpleNamespace(id="f-d", material_id="material-d", category="projects", label="夹具设计", organization="实验室", role_title="成员", value_json={"text": "用 SolidWorks 绘制夹具模型"}, source_text="", claim_type="tool", evidence_json={}),
+    ]
+    requirements = [
+        {"id": "r-solidworks", "text": "熟悉 SolidWorks", "priority": "high", "frequency": 1, "sources": [{"job_id": "j1", "evidence": "熟悉 SolidWorks"}]}
+    ]
+    brief = build_writing_brief(facts, [], requirements, [{"job_id": "j1", "company_name": "示例公司", "title": "机械设计工程师"}])
+    assert [item["id"] for item in brief["selected_materials"]] == ["material-b", "material-d", "material-a"]
+    assert brief["per_job"][0]["selected_materials"][0]["matched_requirement_ids"] == ["r-solidworks"]
+    assert brief["selected_fact_ids"] == ["f-a", "f-b", "f-d"]
+
+
+def test_writing_brief_keeps_experience_claims_isolated_and_handles_empty_materials():
+    facts = [
+        SimpleNamespace(id="f-one-action", material_id="material-one", category="projects", label="项目一", organization="实验室甲", role_title="成员", value_json={"text": "使用 SolidWorks 建模"}, source_text="", claim_type="action", evidence_json={"source_field": "action"}),
+        SimpleNamespace(id="f-one-result", material_id="material-one", category="projects", label="项目一", organization="实验室甲", role_title="成员", value_json={"text": "输出工程图"}, source_text="", claim_type="result", evidence_json={"source_field": "result"}),
+        SimpleNamespace(id="f-two", material_id="material-two", category="projects", label="项目二", organization="实验室乙", role_title="成员", value_json={"text": "使用 Python 分析数据"}, source_text="", claim_type="tool", evidence_json={"source_field": "tool"}),
+    ]
+    requirements = [{"id": "r", "text": "熟悉 SolidWorks", "priority": "high", "frequency": 1, "sources": []}]
+    brief = build_writing_brief(
+        facts,
+        [{"id": "draft-one", "kind": "project", "title": "待确认项目", "organization": "个人", "role_title": "", "summary": "尝试 SolidWorks", "details": {"tools": "SolidWorks"}}],
+        requirements,
+        [],
+    )
+    confirmed = next(item for item in brief["selected_materials"] if item["id"] == "material-one")
+    assert confirmed["fact_ids"] == ["f-one-action", "f-one-result"]
+    assert confirmed["organization"] == "实验室甲"
+    assert any(item["source"] == "draft_material" and item["id"] == "draft-one" for item in brief["selected_materials"])
+    assert build_writing_brief([], [], requirements, [])["selected_materials"] == []
+
+
+def test_project_story_inputs_handle_multiple_and_blank_materials_without_cross_project_facts():
+    facts = [
+        SimpleNamespace(id="f-one", material_id="m-one", category="projects", label="项目甲", organization="实验室甲", role_title="成员", value_json={"text": "用 SolidWorks 输出装配图"}, source_text="", claim_type="action", evidence_json={}),
+        SimpleNamespace(id="f-two", material_id="m-two", category="projects", label="项目乙", organization="实验室乙", role_title="成员", value_json={"text": "用 Python 整理实验数据"}, source_text="", claim_type="action", evidence_json={}),
+    ]
+    requirements = [
+        {"id": "r-cad", "text": "SolidWorks 装配设计", "priority": "high", "frequency": 1, "sources": []},
+        {"id": "r-data", "text": "Python 数据处理", "priority": "medium", "frequency": 1, "sources": []},
+    ]
+    rows = build_project_story_inputs(facts, [], requirements, [])
+    assert {tuple(row["fact_ids"]) for row in rows} >= {("f-one",), ("f-two",)}
+    assert all(len(row["fact_ids"]) <= 1 for row in rows)
+    blank = build_project_story_inputs([], [], requirements, [])
+    assert blank == [{
+        "id": "virtual:target-project", "source": "virtual_target", "title": "目标实践方案",
+        "organization": "", "role_title": "计划负责人", "fact_ids": [],
+        "requirement_ids": ["r-cad"], "requirements": ["SolidWorks 装配设计"],
+        "story_boundary": "这是待完成的蓝图项目；所有结果都是目标，不能陈述为个人既有经历",
+    }]
 
 
 def test_v3_bullet_contract_preserves_new_claims():
@@ -387,6 +446,13 @@ def test_real_provider_receives_facts_and_requirements(client, db, monkeypatch):
         assert any(item.get("text") for item in payload["facts"])
         assert payload["requirements"]
         assert any(item.get("text") for item in payload["requirements"])
+        assert all("frequency" in item and "sources" in item for item in payload["requirements"])
+        assert payload["job_context"]
+        assert payload["job_context"][0]["raw_jd"] == "负责机械结构设计。\n要求熟悉 SolidWorks 并能输出装配体。"
+        assert payload["job_context"][0]["company_name"] == "示例制造公司"
+        assert payload["writing_brief"]["selection_version"] == 1
+        assert payload["writing_brief"]["selected_materials"]
+        assert all("claim_type" in item and "evidence_json" in item for item in payload["facts"])
         assert payload["headline"]
 
 
@@ -406,6 +472,33 @@ def test_real_provider_failure_is_degraded_not_model_success(client, db, monkeyp
     assert processed["generation_metadata_json"]["degraded"] is True
     assert processed["generation_metadata_json"]["writer"]["submittable"] == "fallback"
     assert processed["generation_metadata_json"]["writer"]["target"] == "fallback"
+    report = client.get(
+        f"/api/resume-versions/{processed['versions']['submittable']['id']}/studio"
+    ).json()["quality_report_json"]
+    assert report["reviewer"] == "deterministic"
+    assert report["critic_unavailable"] is True
+    assert "确定性检查" in report["reviewer_note"]
+
+
+def test_initial_critic_failure_is_explicitly_degraded(client, db, monkeypatch):
+    async def fail_critic(*, task, system_prompt, user_payload, response_model):
+        assert task == "resume_quality"
+        raise ProviderError("critic unavailable")
+
+    monkeypatch.setattr("app.services.quality_service.generate_structured", fail_critic)
+    _user, resume, profile = setup_bundle(client, db)
+    _created, processed = process_created_bundle(
+        client,
+        {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+        "bundle-critic-failure",
+    )
+    assert processed["status"] == "degraded"
+    assert "critic_unavailable_deterministic_fallback" in processed["generation_metadata_json"]["repair_history"]
+    report = client.get(
+        f"/api/resume-versions/{processed['versions']['submittable']['id']}/studio"
+    ).json()["quality_report_json"]
+    assert report["reviewer"] == "deterministic"
+    assert report["critic_unavailable"] is True
 
 
 def test_initial_generation_calls_writer_once_for_both_kinds(client, db, monkeypatch):
@@ -421,6 +514,7 @@ def test_initial_generation_calls_writer_once_for_both_kinds(client, db, monkeyp
         )
 
     monkeypatch.setattr("app.services.bundle_service.generate_structured", capture)
+    monkeypatch.setattr("app.services.quality_service.generate_structured", capture)
     _user, resume, profile = setup_bundle(client, db)
     _created, processed = process_created_bundle(
         client,
@@ -429,7 +523,7 @@ def test_initial_generation_calls_writer_once_for_both_kinds(client, db, monkeyp
     )
     assert processed["status"] in {"ready", "degraded"}
     assert calls.count("resume_rewrite") == 1
-    assert "resume_quality" not in calls
+    assert calls.count("resume_quality") == 2
     assert set(processed["versions"]) == {"submittable", "target"}
 
 
@@ -454,7 +548,7 @@ def test_quality_failure_records_bounded_repair_history(client, db, monkeypatch)
         {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
         "bundle-quality-repair",
     )
-    assert processed["status"] == "ready"
+    assert processed["status"] == "degraded"
     history = processed["generation_metadata_json"]["repair_history"]
     assert any(str(item).startswith("repair_submittable:") for item in history)
     version = client.get(
@@ -728,7 +822,7 @@ def test_quality_hard_gate_blocks_studio_preview_even_when_guard_flag_is_stale(c
     assert blocked.json()["error"]["code"] == "RESUME_QUALITY_GATE_BLOCKED"
 
 
-def test_local_quality_gate_bypass_delivers_ready_but_keeps_fact_guard(client, db, monkeypatch):
+def test_local_quality_gate_bypass_is_degraded_and_keeps_fact_guard(client, db, monkeypatch):
     disabled = Settings(
         _env_file=None,
         app_env="development",
@@ -752,9 +846,9 @@ def test_local_quality_gate_bypass_delivers_ready_but_keeps_fact_guard(client, d
         {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
         "bundle-quality-gate-bypassed",
     )
-    assert processed["status"] == "ready"
+    assert processed["status"] == "degraded"
     assert processed["generation_metadata_json"]["quality_gate_bypassed"] is True
-    assert processed["generation_metadata_json"]["degraded"] is False
+    assert processed["generation_metadata_json"]["degraded"] is True
     version_id = processed["versions"]["submittable"]["id"]
     detail = client.get(f"/api/resume-versions/{version_id}/studio")
     assert detail.status_code == 200, detail.text
@@ -930,6 +1024,42 @@ def test_claim_token_is_atomic_and_interrupt_can_reclaim(client, db, monkeypatch
     assert "claim_token" not in processed.json()["run"]
 
 
+def test_concurrent_workers_only_one_claims_a_queued_bundle(client, db):
+    _user, resume, profile = setup_bundle(client, db)
+    created = client.post(
+        "/api/resume-bundles",
+        headers={"Idempotency-Key": "bundle-concurrent-claim"},
+        json={"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+    )
+    assert created.status_code == 202
+    bundle_id = created.json()["id"]
+    db.commit()
+
+    worker_engine = make_engine()
+    WorkerSession = sessionmaker(bind=worker_engine, expire_on_commit=False)
+    start = Barrier(2)
+
+    def attempt_claim():
+        with WorkerSession() as worker_db:
+            start.wait()
+            token = claim_bundle_run(worker_db, bundle_id)
+            worker_db.commit()
+            return token
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            tokens = list(pool.map(lambda _index: attempt_claim(), range(2)))
+    finally:
+        worker_engine.dispose()
+
+    assert sum(token is not None for token in tokens) == 1
+    db.expire_all()
+    run = db.get(ResumeBundleRun, bundle_id)
+    assert run.status == "generating"
+    assert run.attempts == 1
+    assert run.claim_token == next(token for token in tokens if token is not None)
+
+
 def test_stale_worker_cannot_persist_after_claim_takeover(client, db):
     _user, resume, profile = setup_bundle(client, db)
     created = client.post(
@@ -980,6 +1110,35 @@ def test_content_change_stales_guides_and_allows_regenerate(client, db):
     assert any(guide.status == "stale" for guide in guides)
     stale = next(guide for guide in guides if guide.status == "stale")
     refreshed = client.post(f"/api/interview-guides/{stale.id}/regenerate")
+    assert refreshed.status_code == 200, refreshed.text
+    assert refreshed.json()["status"] == "ready"
+
+
+def test_star_story_change_uses_new_fingerprint_and_stales_only_bound_target_guide(client, db):
+    _user, resume, profile = setup_bundle(client, db)
+    _created, bundle = process_created_bundle(
+        client,
+        {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+        "bundle-star-story-stale",
+    )
+    target_id = bundle["versions"]["target"]["id"]
+    target = client.get(f"/api/resume-versions/{target_id}/studio").json()
+    content = target["content_json"]
+    story = next(
+        item["project_story"]
+        for section in content["sections"]
+        for item in section.get("items") or []
+        if item.get("project_story")
+    )
+    story["task"]["goal"] = f"{story['task']['goal']}，并补齐可复核的验收记录"
+    changed = client.patch(f"/api/resume-versions/{target_id}", json=content)
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["content_hash"] != target["content_hash"]
+    target_guide = client.get(f"/api/interview-guides/{bundle['guides']['target']['id']}").json()
+    submittable_guide = client.get(f"/api/interview-guides/{bundle['guides']['submittable']['id']}").json()
+    assert target_guide["status"] == "stale"
+    assert submittable_guide["status"] == "ready"
+    refreshed = client.post(f"/api/interview-guides/{target_guide['id']}/regenerate")
     assert refreshed.status_code == 200, refreshed.text
     assert refreshed.json()["status"] == "ready"
 

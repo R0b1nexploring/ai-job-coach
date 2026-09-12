@@ -2,11 +2,12 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import current_user
-from app.models.entities import User
+from app.models.entities import ResumeFact, User
 from app.services.experience_service import (
     ALLOWED_KINDS,
     confirm_experience,
@@ -15,6 +16,7 @@ from app.services.experience_service import (
     delete_user_experience,
     generate_material_clarifications,
     list_experience,
+    owned_experience,
     update_user_experience,
     visible_experience,
 )
@@ -106,6 +108,50 @@ async def experience_detail(
     db: Session = Depends(get_db),
 ):
     return _dump_entry(visible_experience(db, user, entry_id), user.id)
+
+
+@router.get("/experience-facts")
+async def experience_facts(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the current user's material-linked atomic claims.
+
+    The blank-profile workflow has no uploaded resume id, so its confirmed
+    claims need a first-class owner-scoped read surface instead of relying on
+    the legacy ``/resumes/{id}/facts`` route.
+    """
+    rows = list(
+        db.scalars(
+            select(ResumeFact)
+            .where(
+                ResumeFact.user_id == user.id,
+                ResumeFact.material_id.is_not(None),
+            )
+            .order_by(ResumeFact.created_at, ResumeFact.id)
+        )
+    )
+    return listed([dump(row) for row in rows], page_size=500)
+
+
+@router.get("/experience/{entry_id}/facts")
+async def experience_entry_facts(
+    entry_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    owned_experience(db, user, entry_id)
+    rows = list(
+        db.scalars(
+            select(ResumeFact)
+            .where(
+                ResumeFact.user_id == user.id,
+                ResumeFact.material_id == entry_id,
+            )
+            .order_by(ResumeFact.created_at, ResumeFact.id)
+        )
+    )
+    return listed([dump(row) for row in rows], page_size=100)
 
 
 @router.patch("/experience/{entry_id}")

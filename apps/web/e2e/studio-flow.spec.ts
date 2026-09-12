@@ -44,10 +44,21 @@ test('新用户从粘贴 JD 走到双轨简历、导出和两份指南', async (
   await page.getByPlaceholder(/用自己的话描述/).fill('我使用 SolidWorks 完成装配体建模并输出工程图。')
   await page.getByPlaceholder(/完成答辩/).fill('输出工程图并完成答辩')
   await page.getByRole('button', { name: '保存这段经历' }).click()
-  await expect(page.getByText('这段经历已加入生成参考。')).toBeVisible()
+  await expect(page.getByText(/空白素材已保存/)).toBeVisible()
+  await page.getByRole('button', { name: '查看缺口追问' }).click()
+  await expect(page.getByRole('heading', { name: '缺口追问' })).toBeVisible()
+  await page.getByLabel(/本人具体负责哪一段/).fill('本人负责装配体建模与工程图输出')
+  await page.getByRole('button', { name: '保存修改' }).click()
+  await expect(page.getByText(/素材修改已保存/)).toBeVisible()
+  await page.getByRole('button', { name: '确认并生成原子事实' }).click()
+  await expect(page.getByText('素材已拆成原子事实并确认。')).toBeVisible()
+  await page.locator('summary').filter({ hasText: '· 已确认' }).click()
+  await expect(page.getByText('已拆分的原子事实')).toBeVisible()
 
   await page.getByRole('button', { name: '生成求职版和蓝图 Plus' }).click()
   await expect(page.getByTestId('a4-preview')).toBeVisible({ timeout: 60_000 })
+  const desktopPreview = await page.getByTestId('a4-preview').boundingBox()
+  expect(desktopPreview?.width).toBeLessThanOrEqual(794)
   await expect(page.getByRole('button', { name: '求职版', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '蓝图 Plus', exact: true })).toBeVisible()
 
@@ -63,6 +74,18 @@ test('新用户从粘贴 JD 走到双轨简历、导出和两份指南', async (
   const docx = await page.request.get(docxHref || '')
   expect(html.ok()).toBeTruthy()
   expect(docx.ok()).toBeTruthy()
+  const [htmlDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    htmlLink.click(),
+  ])
+  expect(htmlDownload.suggestedFilename()).toBe('resume.html')
+  expect(await htmlDownload.path()).toBeTruthy()
+  const [docxDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    docxLink.click(),
+  ])
+  expect(docxDownload.suggestedFilename()).toBe('resume.docx')
+  expect(await docxDownload.path()).toBeTruthy()
   const pdf = await page.request.get(pdfHref || '')
   const health = await page.request.get('/api/health')
   expect(health.ok()).toBeTruthy()
@@ -71,6 +94,12 @@ test('新用户从粘贴 JD 走到双轨简历、导出和两份指南', async (
     expect(pdf.status()).toBe(200)
     expect(pdf.headers()['content-type']).toContain('pdf')
     expect((await pdf.body()).byteLength).toBeGreaterThan(1000)
+    const [pdfDownload] = await Promise.all([
+      page.waitForEvent('download'),
+      pdfLink.click(),
+    ])
+    expect(pdfDownload.suggestedFilename()).toBe('resume.pdf')
+    expect(await pdfDownload.path()).toBeTruthy()
   } else {
     expect(pdf.status()).toBe(503)
     const body = await pdf.json()
@@ -80,9 +109,25 @@ test('新用户从粘贴 JD 走到双轨简历、导出和两份指南', async (
   await page.getByRole('link', { name: '求职版作战指南' }).click()
   await expect(page.getByRole('heading', { name: '面试指南' })).toBeVisible()
   await expect(page.locator('article.card').first()).toBeVisible()
+  await expect(page.getByText(/面向单 JD 岗位画像/).first()).toBeVisible()
+  await expect(page.getByText(/SolidWorks|装配体建模/).first()).toBeVisible()
   await page.goto('/app/resume-studio')
   await expect(page.getByRole('button', { name: '蓝图 Plus', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '蓝图 Plus', exact: true }).click()
   await page.getByRole('link', { name: '蓝图风险指南' }).click()
   await expect(page.getByRole('heading', { name: '面试指南' })).toBeVisible()
+  await expect(page.locator('article.card').first()).toBeVisible()
+  await expect(page.getByText('项目 STAR 讲述').first()).toBeVisible()
+  await expect(page.getByText('项目连续追问').first()).toBeVisible()
+  await expect(page.getByText(/面向单 JD 岗位画像/).first()).toBeVisible()
+  await expect(page.getByText(/SolidWorks|装配体建模/).first()).toBeVisible()
+
+  await page.goto('/app/resume-studio')
+  await page.setViewportSize({ width: 390, height: 844 })
+  const narrowPreview = page.getByTestId('a4-preview')
+  await expect(narrowPreview).toBeVisible()
+  await expect.poll(async () => (await narrowPreview.boundingBox())?.width || 0).toBeLessThan(390)
+  const narrowBox = await narrowPreview.boundingBox()
+  expect(narrowBox?.height && narrowBox?.width).toBeTruthy()
+  expect((narrowBox?.height || 0) / (narrowBox?.width || 1)).toBeCloseTo(1123 / 794, 1)
 })

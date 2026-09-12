@@ -52,8 +52,11 @@ class CapabilityPlanOutput(BaseModel):
 
 
 class JobStructuredOutput(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
-    company_name: str = Field(min_length=1, max_length=200)
+    # A pasted JD often does not identify the employer or the exact role.  An
+    # empty value is meaningful here: callers must keep it uncertain instead
+    # of substituting a plausible-looking placeholder.
+    title: str = Field(default="", max_length=200)
+    company_name: str = Field(default="", max_length=200)
     city: str = Field(default="", max_length=100)
     responsibilities: list[GroundedJobText] = Field(default_factory=list, max_length=30)
     must_have: list[GroundedJobText] = Field(default_factory=list, max_length=30)
@@ -158,8 +161,48 @@ class ResumeBulletV3Output(ResumeBulletV2Output):
     achieved: bool = Field(default=False, description="仅有事实支持时为 true；AI 补充和蓝图目标为 false")
 
 
+class ProjectStarActionOutput(BaseModel):
+    step: str = ""
+    method: str = ""
+    rationale: str = ""
+    difficulty: str = ""
+    contribution: str = ""
+
+
+class ProjectStarMetricOutput(BaseModel):
+    name: str = ""
+    value: str = ""
+    kind: Literal["target", "observed"] = "target"
+    conditions: str = ""
+
+
+class ProjectStarResultOutput(BaseModel):
+    deliverables: list[str] = Field(default_factory=list)
+    verification_method: str = ""
+    metrics: list[ProjectStarMetricOutput] = Field(default_factory=list)
+
+
+class ProjectStoryOutput(BaseModel):
+    """Versioned internal STAR structure for one blueprint project entry."""
+
+    schema_version: Literal[1] = 1
+    project_id: str = ""
+    title: str = ""
+    situation: dict[str, str] = Field(default_factory=dict)
+    task: dict[str, object] = Field(default_factory=dict)
+    actions: list[ProjectStarActionOutput] = Field(default_factory=list)
+    result: ProjectStarResultOutput = Field(default_factory=ProjectStarResultOutput)
+    bullet_ids: list[str] = Field(default_factory=list)
+    source_fact_ids: list[str] = Field(default_factory=list)
+    source_target_ids: list[str] = Field(default_factory=list)
+    requirement_ids: list[str] = Field(default_factory=list)
+    verification_status: Literal["source_based", "ai_generated"] = "ai_generated"
+    achieved: bool = False
+
+
 class ResumeEntryV3Output(ResumeEntryV2Output):
     bullets: list[ResumeBulletV3Output] = Field(default_factory=list)
+    project_story: ProjectStoryOutput | None = None
 
 
 class ResumeSectionV3Output(ResumeSectionV2Output):
@@ -212,9 +255,25 @@ class QualityDimensionOutput(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+
+class QualityRecommendationOutput(BaseModel):
+    bullet_id: str = ""
+    project_id: str = ""
+    suggestion: str = Field(min_length=1, max_length=500)
+
+
+class ProjectStoryReviewOutput(BaseModel):
+    project_id: str = ""
+    bullet_ids: list[str] = Field(default_factory=list)
+    diagnosis: str = Field(min_length=1, max_length=500)
+    suggestions: list[str] = Field(default_factory=list, max_length=5)
+
+
 class QualityCriticOutput(BaseModel):
     dimensions: dict[str, QualityDimensionOutput] = Field(default_factory=dict)
     summary: str = ""
+    recommendations: list[QualityRecommendationOutput] = Field(default_factory=list, max_length=30)
+    project_reviews: list[ProjectStoryReviewOutput] = Field(default_factory=list, max_length=20)
 
 
 class GuideCardOutput(BaseModel):
@@ -233,9 +292,24 @@ class GuideCardOutput(BaseModel):
     requirement_ids: list[str] = Field(default_factory=list)
 
 
+class ProjectGuideCardOutput(BaseModel):
+    project_id: str
+    title: str = ""
+    bullet_ids: list[str] = Field(default_factory=list)
+    star_outline: dict[str, object] = Field(default_factory=dict)
+    main_question: str = ""
+    follow_up_chains: list[dict[str, object]] = Field(default_factory=list)
+    result_verification: str = ""
+    knowledge_preparation: list[str] = Field(default_factory=list)
+    practice_steps: list[str] = Field(default_factory=list)
+    achieved: bool = False
+    honest_boundary: str = ""
+
+
 class InterviewGuideStructuredOutput(BaseModel):
     kind: Literal["submittable", "target"]
     cards: list[GuideCardOutput] = Field(default_factory=list)
+    project_cards: list[ProjectGuideCardOutput] = Field(default_factory=list)
     self_intro_60s: str = ""
     self_intro_90s: str = ""
     jd_questions: list[str] = Field(default_factory=list)

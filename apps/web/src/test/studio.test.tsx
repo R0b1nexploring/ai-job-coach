@@ -6,13 +6,25 @@ import { vi } from 'vitest'
 import App from '../app/App'
 import { AuthProvider } from '../app/AuthContext'
 import { InterviewGuides } from '../pages/InterviewGuides'
-import { ResumeStudio } from '../pages/ResumeStudio'
+import { a4PreviewScale, bundleStageLabel, ResumeStudio } from '../pages/ResumeStudio'
 
 const currentUser = { id: 'u1', email: 'a@example.test', display_name: '用户A', role: 'user', status: 'active' }
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
+
+test('A4 预览只按容器缩小，不改变 A4 画布比例', () => {
+  expect(a4PreviewScale(1200)).toBe(1)
+  expect(a4PreviewScale(397)).toBeCloseTo(0.5)
+  expect(a4PreviewScale(0)).toBe(1)
+})
+
+test('异步阶段使用用户可理解的名称', () => {
+  expect(bundleStageLabel('writing')).toBe('正在组织内容')
+  expect(bundleStageLabel('quality_check')).toBe('正在质量检查')
+  expect(bundleStageLabel('unknown')).toBe('处理中')
+})
 
 function renderPath(path: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -78,7 +90,10 @@ test('工作台默认只展示必要输入，附加素材按需展开', async ()
   expect(screen.queryByText('示例生物工程')).not.toBeInTheDocument()
   const user = userEvent.setup()
   await user.click(screen.getByRole('button', { name: '补充一段经历' }))
+  expect(screen.getByLabelText('项目类型')).toBeVisible()
   expect(screen.getByPlaceholderText(/学校实验室/)).toBeVisible()
+  expect(screen.getByPlaceholderText(/结构设计负责人/)).toBeVisible()
+  expect(screen.getByPlaceholderText(/SolidWorks、Excel/)).toBeVisible()
   expect(screen.getByPlaceholderText(/用自己的话描述/)).toBeVisible()
 })
 
@@ -89,6 +104,8 @@ test('保存 JD 不会把原文写进画像 job_ids', async () => {
       return json({ id: 'job-saved', title: '目标岗位', company_name: '目标公司' }, 201)
     }
     if (url.endsWith('/api/jobs/import-text')) {
+      const body = JSON.parse(String(init?.body || '{}'))
+      expect(body).toEqual({ raw_jd: '负责机械结构设计。\n要求熟悉 SolidWorks。' })
       return json({ id: 'job-saved', title: '目标岗位', company_name: '目标公司', raw_jd: '负责机械结构设计' }, 201)
     }
     if (url.endsWith('/api/target-profiles') && init?.method === 'POST') {
@@ -115,6 +132,85 @@ test('保存 JD 不会把原文写进画像 job_ids', async () => {
   await user.type(await screen.findByPlaceholderText(/粘贴职位描述/), '负责机械结构设计。\n要求熟悉 SolidWorks。')
   await user.click(screen.getByRole('button', { name: '分析这个岗位' }))
   expect(await screen.findByText('岗位已分析，可以直接生成简历。')).toBeVisible()
+})
+
+test('空白建档可编辑素材、查看缺口并确认原子事实', async () => {
+  let material = {
+    id: 'e-blank',
+    title: '装配体课程设计',
+    kind: 'project',
+    status: 'draft',
+    is_own: true,
+    is_template: false,
+    linked_to_facts: false,
+    organization: '校内实验室',
+    role_title: '',
+    summary: '完成装配体建模',
+    bullets_json: [],
+    skills_json: ['SolidWorks'],
+    source: 'user_added',
+    location: '',
+    start_date: '',
+    end_date: '',
+    details_json: { project_type: '课程设计', actions: '完成装配体建模', tools: 'SolidWorks', results: '' },
+    clarifications_json: [] as Array<{ field: string; question: string }>,
+  }
+  let confirmed = false
+  const patches: Array<Record<string, unknown>> = []
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.endsWith('/api/jobs')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/resumes')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/target-profiles')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/resume-bundles')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/experience-facts')) {
+      return json({
+        items: confirmed ? [{ id: 'f-action', material_id: material.id, claim_type: 'action', label: material.title, value_json: { text: material.summary }, verification_status: 'user_confirmed' }] : [],
+        total: confirmed ? 1 : 0,
+      })
+    }
+    if (url.endsWith(`/api/experience/${material.id}`) && init?.method === 'PATCH') {
+      const body = JSON.parse(String(init.body || '{}'))
+      patches.push(body)
+      material = { ...material, ...body, details_json: { ...material.details_json, ...(body.details_json || {}) }, status: 'draft' }
+      return json(material)
+    }
+    if (url.endsWith(`/api/experience/${material.id}/clarifications`) && init?.method === 'POST') {
+      material = { ...material, clarifications_json: [{ field: 'ownership', question: '这件事里你本人具体负责哪一段？' }] }
+      return json(material)
+    }
+    if (url.endsWith(`/api/experience/${material.id}/confirm`) && init?.method === 'POST') {
+      confirmed = true
+      material = { ...material, status: 'confirmed', linked_to_facts: true }
+      return json(material)
+    }
+    if (url.endsWith('/api/experience')) return json({ items: [material], total: 1 })
+    return json({ items: [], total: 0 })
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <ResumeStudio />
+    </QueryClientProvider>,
+  )
+  const user = userEvent.setup()
+  const result = await screen.findByLabelText('装配体课程设计 结果')
+  await user.type(result, '完成答辩并交付工程图')
+  await user.click(screen.getByRole('button', { name: '保存修改' }))
+  await waitFor(() => expect(patches[0]).toMatchObject({ details_json: { results: '完成答辩并交付工程图' } }))
+  await user.click(screen.getByRole('button', { name: '查看缺口追问' }))
+  expect(await screen.findByText('缺口追问')).toBeVisible()
+  const ownership = screen.getByLabelText(/本人具体负责哪一段/)
+  await user.type(ownership, '本人负责建模与工程图')
+  await user.click(screen.getByRole('button', { name: '保存修改' }))
+  await waitFor(() => expect(patches.at(-1)).toMatchObject({ details_json: { ownership: '本人负责建模与工程图' } }))
+  await user.click(screen.getByRole('button', { name: '确认并生成原子事实' }))
+  expect(await screen.findByText('素材已拆成原子事实并确认。')).toBeVisible()
+  const confirmedSummary = await screen.findByText('装配体课程设计 · 已确认')
+  await user.click(confirmedSummary)
+  expect(await screen.findByText('已拆分的原子事实')).toBeVisible()
+  expect(screen.getByText(/完成装配体建模 · 已确认/)).toBeVisible()
 })
 
 test('无旧简历也可生成，并轮询 queued 状态', async () => {
@@ -183,7 +279,40 @@ test('无旧简历也可生成，并轮询 queued 状态', async () => {
   expect(screen.queryByText(/待核验/)).not.toBeInTheDocument()
 })
 
-test('模型降级会显示 degraded，失败可重试', async () => {
+test('模型异常后的 degraded 会显示确定性降级原因', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.endsWith('/api/jobs')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/resumes')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/experience')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/experience-facts')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/target-profiles')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/resume-bundles')) return json({ items: [{ id: 'b-degraded', status: 'degraded' }], total: 1 })
+    if (url.endsWith('/api/resume-bundles/b-degraded')) {
+      return json({
+        id: 'b-degraded',
+        status: 'degraded',
+        versions: {},
+        guides: {},
+        generation_metadata_json: {
+          degraded: true,
+          degraded_reason: '模型不可用，已使用确定性检查并通过硬门禁。',
+        },
+      })
+    }
+    return json({ items: [], total: 0 })
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <ResumeStudio />
+    </QueryClientProvider>,
+  )
+  expect(await screen.findByText(/模型不可用，已使用确定性检查并通过硬门禁/)).toBeVisible()
+})
+
+test('生成失败会显示原因并可重试', async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url.endsWith('/api/jobs')) return json({ items: [], total: 0 })
@@ -321,6 +450,21 @@ test('面试指南展示追问、六段式并提供下载', async () => {
             six_part_story: { context: '课程设计', action: '建模' },
             verification: '工程图',
           }],
+          project_cards: [{
+            project_id: 'p1',
+            title: '装配体课程设计',
+            star_outline: {
+              situation: { context: '课程设计', problem: '需要完成装配验证' },
+              task: { role: '负责人', goal: '输出工程图' },
+              actions: [{ step: '拆分装配', method: 'SolidWorks', rationale: '便于校核', difficulty: '尺寸配合' }],
+              result: { deliverables: ['工程图'], verification_method: '装配检查' },
+            },
+            main_question: '请用 STAR 说明装配体课程设计。',
+            follow_up_chains: [{ question: '为什么选择 SolidWorks？', follow_ups: ['如何校核尺寸？'], intent: '确认技术取舍', required_evidence: '工程图', common_mistakes: '只报工具名' }],
+            result_verification: '用工程图与装配检查核验。',
+            knowledge_preparation: ['复盘配合公差'],
+            practice_steps: ['90 秒完整讲述'],
+          }],
         },
       })
     }
@@ -339,5 +483,10 @@ test('面试指南展示追问、六段式并提供下载', async () => {
   expect(screen.getByText('六段式讲法')).toBeVisible()
   expect(screen.getByText('90 秒自我介绍')).toBeVisible()
   expect(screen.getByText(/核验材料/)).toBeVisible()
+  expect(screen.getByText('项目 STAR 讲述')).toBeVisible()
+  expect(screen.getByText('装配体课程设计')).toBeVisible()
+  expect(screen.getByText('项目连续追问')).toBeVisible()
+  expect(screen.getByText('知识准备')).toBeVisible()
+  expect(screen.queryByText('p1')).not.toBeInTheDocument()
   expect(screen.getByRole('link', { name: '下载指南' })).toHaveAttribute('href', '/api/interview-guides/g1/download')
 })

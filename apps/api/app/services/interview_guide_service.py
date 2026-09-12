@@ -20,7 +20,7 @@ from app.models.entities import (
 from app.providers.llm.base import ProviderError
 from app.providers.llm.runtime import generate_structured
 from app.providers.llm.schemas import InterviewGuideStructuredOutput
-from app.services.content_contract import visible_bullets
+from app.services.content_contract import has_star_contract, iter_project_stories, visible_bullets
 
 
 def queue_guides_for_bundle(db: Session, bundle: ResumeBundle) -> list[InterviewGuide]:
@@ -108,7 +108,8 @@ async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bund
     bullets = visible_bullets(version.content_json or {})
     needed = list(bullets)
     targeted = _targeted_guide(version, bullets, profile=profile, facts=facts, bundle=bundle)
-    fallback = _template_guide(version, bullets)
+    needed_projects = list(iter_project_stories(version.content_json or {}))
+    fallback = _template_guide(version, bullets, profile=profile, facts=facts, bundle=bundle)
     content = fallback
     source = "fallback"
     provider_name = ""
@@ -117,6 +118,7 @@ async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bund
         mock = {
             "kind": version.kind,
             "cards": targeted.get("cards") or [],
+            "project_cards": targeted.get("project_cards") or [],
             "self_intro_60s": targeted.get("self_intro_60s") or "",
             "self_intro_90s": targeted.get("self_intro_90s") or "",
             "jd_questions": targeted.get("jd_questions") or [],
@@ -144,13 +146,36 @@ async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bund
                     for fact in facts
                 ],
                 "bullets": needed,
+                "project_stories": [
+                    {
+                        "project_id": story.get("project_id"),
+                        "title": story.get("title"),
+                        "bullet_ids": story.get("bullet_ids") or [],
+                        "situation": story.get("situation") or {},
+                        "task": story.get("task") or {},
+                        "actions": story.get("actions") or [],
+                        "result": story.get("result") or {},
+                        "achieved": story.get("achieved") is True,
+                    }
+                    for _section, _item, story in needed_projects
+                ],
                 "mock_response": mock,
             },
             response_model=InterviewGuideStructuredOutput,
         )
         modeled = structured.model_dump()
         modeled_ids = {str(card.get("bullet_id") or "") for card in modeled.get("cards") or []}
-        coverage_repaired = any(str(bullet.get("id") or "") not in modeled_ids for bullet in needed)
+        modeled_project_ids = {
+            str(card.get("project_id") or "") for card in modeled.get("project_cards") or []
+        }
+        malformed_projects = _missing_project_cards(
+            needed_projects, modeled.get("project_cards") or []
+        )
+        coverage_repaired = (
+            any(str(bullet.get("id") or "") not in modeled_ids for bullet in needed)
+            or any(str(story.get("project_id") or "") not in modeled_project_ids for _section, _item, story in needed_projects)
+            or bool(malformed_projects)
+        )
         modeled["cards"] = _align_cards(
             needed,
             modeled.get("cards") or [],
@@ -158,6 +183,12 @@ async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bund
             profile=profile,
             facts=facts,
             bundle=bundle,
+        )
+        modeled["project_cards"] = _align_project_cards(
+            needed_projects,
+            modeled.get("project_cards") or [],
+            version.kind,
+            profile=profile,
         )
         modeled["practice_answers"] = False
         modeled["degraded"] = False
@@ -176,12 +207,13 @@ async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bund
         cards = content.get("cards") or []
         covered = {card.get("bullet_id") for card in cards}
         missing = [bullet["id"] for bullet in needed if bullet["id"] not in covered]
-    if missing:
+    missing_projects = _missing_project_cards(needed_projects, content.get("project_cards") or [])
+    if missing or missing_projects:
         guide.status = "queued"
         guide.quality_report_json = {
             "hard_passed": False,
             "coverage": 0,
-            "issues": ["coverage_incomplete"],
+            "issues": ["coverage_incomplete"] + (["project_coverage_incomplete"] if missing_projects else []),
             "source": source,
         }
         guide.content_json = content
@@ -213,6 +245,8 @@ async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bund
         "hard_passed": True,
         "coverage": 1,
         "issues": ["coverage_repaired"] if coverage_repaired else [],
+        "project_coverage": 1 if needed_projects else None,
+        "star_contract_version": 1 if has_star_contract(version.content_json or {}) else None,
         "content_hash": version.content_hash,
         "source": source,
         "reviewer_note": (
@@ -245,6 +279,7 @@ def _targeted_guide(version: ResumeVersion, bullets: list[dict], *, profile, fac
         return {
             "kind": "submittable",
             "cards": cards,
+            "project_cards": [],
             "self_intro_60s": (
                 f"用 60 秒说明你为什么适合{title}，并点到已确认事实：{fact_line or '已确认项目经历'}。"
             ),
@@ -267,17 +302,19 @@ def _targeted_guide(version: ResumeVersion, bullets: list[dict], *, profile, fac
             _guide_card(bullet, kind="target", profile=profile, facts=facts, bundle=bundle)
             for bullet in bullets
         ],
+        "project_cards": _project_cards_for_version(version, profile=profile),
         "practice_answers": False,
         "degraded": False,
     }
 
 
-def _template_guide(version: ResumeVersion, bullets: list[dict]) -> dict:
+def _template_guide(version: ResumeVersion, bullets: list[dict], *, profile=None, facts=None, bundle=None) -> dict:
     if version.kind == "submittable":
         cards = [_generic_claim_card(bullet) for bullet in bullets]
         return {
             "kind": "submittable",
             "cards": cards,
+            "project_cards": [],
             "self_intro_60s": "用 60 秒说明求职方向、最能证明能力的一段经历，以及你能为岗位立刻承担的工作。",
             "self_intro_90s": "用 90 秒补上教育背景、一段项目或实习的个人边界，以及你希望在岗位上验证的方向。",
             "jd_questions": ["结合岗位职责说明你做过的最接近工作。", "讲一次你独立排查问题的过程。"],
@@ -294,10 +331,164 @@ def _template_guide(version: ResumeVersion, bullets: list[dict]) -> dict:
             _generic_risk_card(bullet) if bullet.get("achieved") is False else _generic_claim_card(bullet)
             for bullet in bullets
         ],
+        "project_cards": _project_cards_for_version(version, profile=profile),
         "practice_answers": False,
         "degraded": True,
         "degraded_reason": "使用通用模板降级方案",
     }
+
+
+def _project_cards_for_version(version: ResumeVersion, *, profile=None) -> list[dict]:
+    return [
+        _project_card(story, item=item, profile=profile)
+        for _section, item, story in iter_project_stories(version.content_json or {})
+    ]
+
+
+def _align_project_cards(projects, cards: list[dict], kind: str, *, profile=None) -> list[dict]:
+    """Keep one complete, correctly linked project card per saved STAR story."""
+    by_id = {str(card.get("project_id") or ""): card for card in cards if isinstance(card, dict)}
+    aligned = []
+    for _section, item, story in projects:
+        base = _project_card(story, item=item, profile=profile)
+        modeled = by_id.get(str(story.get("project_id") or ""), {})
+        if modeled.get("main_question"):
+            base["main_question"] = str(modeled["main_question"])
+        modeled_chains = modeled.get("follow_up_chains")
+        if _valid_follow_up_chains(modeled_chains):
+            base["follow_up_chains"] = modeled_chains
+        if modeled.get("result_verification"):
+            base["result_verification"] = str(modeled["result_verification"])
+        if _nonempty_strings(modeled.get("knowledge_preparation")):
+            base["knowledge_preparation"] = _nonempty_strings(modeled.get("knowledge_preparation"))
+        if _nonempty_strings(modeled.get("practice_steps")):
+            base["practice_steps"] = _nonempty_strings(modeled.get("practice_steps"))
+        # The id, story outline, evidence links and honest boundary always
+        # come from the saved resume version, never from a guide model call.
+        aligned.append(base)
+    return aligned
+
+
+def _missing_project_cards(projects, cards: list[dict]) -> list[str]:
+    by_id = {str(card.get("project_id") or ""): card for card in cards if isinstance(card, dict)}
+    missing = []
+    for _section, _item, story in projects:
+        project_id = str(story.get("project_id") or "")
+        card = by_id.get(project_id)
+        expected_bullet_ids = [str(value) for value in story.get("bullet_ids") or []]
+        if not card or [str(value) for value in card.get("bullet_ids") or []] != expected_bullet_ids:
+            missing.append(project_id)
+            continue
+        if not _valid_project_card(card):
+            missing.append(project_id)
+    return missing
+
+
+def _project_card(story: dict, *, item: dict, profile=None) -> dict:
+    title = str(story.get("title") or item.get("organization") or item.get("role_title") or "项目故事")
+    situation = story.get("situation") or {}
+    task = story.get("task") or {}
+    actions = [action for action in story.get("actions") or [] if isinstance(action, dict)]
+    result = story.get("result") or {}
+    target_title = getattr(profile, "title", "") or "目标岗位"
+    action_chains = []
+    for index, action in enumerate(actions, start=1):
+        step = str(action.get("step") or "这一步")
+        method = str(action.get("method") or "所选方法")
+        action_chains.append(
+            {
+                "anchor": f"行动 {index}",
+                "question": f"在「{title}」里，你会怎样展开「{step}」？",
+                "follow_ups": [
+                    f"为什么选用「{method}」，而不是其他做法？",
+                    f"遇到「{action.get('difficulty') or '约束与风险'}」时如何取舍？",
+                    f"你本人/计划负责的边界「{action.get('contribution') or '待确认'}」如何证明？",
+                ],
+                "intent": "确认方法选择、技术判断和个人贡献边界。",
+                "answer_points": [
+                    step,
+                    method,
+                    str(action.get("rationale") or "说明方法与目标的关系"),
+                ],
+                "required_evidence": "过程记录、版本差异、设计说明或可演示交付物。",
+                "common_mistakes": "只报工具名或团队结论，却说不清自己的步骤和取舍。",
+            }
+        )
+    metrics = [metric for metric in result.get("metrics") or [] if isinstance(metric, dict)]
+    metric_note = "；".join(
+        f"{metric.get('name') or '指标'}：{metric.get('value') or '待记录'}（{metric.get('conditions') or '需说明口径'}）"
+        for metric in metrics
+    )
+    achieved = story.get("achieved") is True
+    boundary = ""
+    if not achieved:
+        boundary = "这是蓝图项目的准备方案；只能说明计划、验证方法与待补证据，不能说成自己已经完成。"
+    return {
+        "project_id": story.get("project_id"),
+        "title": title,
+        "bullet_ids": list(story.get("bullet_ids") or []),
+        "star_outline": {
+            "situation": situation,
+            "task": task,
+            "actions": actions,
+            "result": result,
+        },
+        "main_question": f"请用 STAR 讲清楚「{title}」如何证明你适合{target_title}。",
+        "follow_up_chains": action_chains or [
+            {
+                "anchor": "项目方案",
+                "question": "你会如何把目标拆成可验证的执行步骤？",
+                "follow_ups": ["先验证哪个假设？", "如何留下过程证据？"],
+                "intent": "确认是否有可执行的项目推进逻辑。",
+                "answer_points": ["说明输入、输出、方法与验收条件"],
+                "required_evidence": "过程记录与交付物。",
+                "common_mistakes": "把待完成计划说成既有经历。",
+            }
+        ],
+        "result_verification": (
+            f"交付物：{'、'.join(str(value) for value in result.get('deliverables') or [])}。"
+            f"验证：{result.get('verification_method') or '说明验收方式'}。"
+            + (f" 指标口径：{metric_note}。" if metric_note else "")
+        ),
+        "knowledge_preparation": [
+            "复盘每个方法的输入、输出、替代方案和取舍。",
+            "准备一份可打开的交付物或过程证据，并说明它能验证什么。",
+        ],
+        "practice_steps": [
+            "先用 90 秒按背景、任务、行动、结果完整讲一遍。",
+            "再让同伴连续追问方法、难点、个人贡献和验证口径。",
+        ],
+        "achieved": achieved,
+        "honest_boundary": boundary,
+    }
+
+
+def _nonempty_strings(values: object) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return [str(value).strip() for value in values if str(value).strip()]
+
+
+def _valid_follow_up_chains(values: object) -> bool:
+    return isinstance(values, list) and bool(values) and all(
+        isinstance(value, dict)
+        and str(value.get("question") or "").strip()
+        and _nonempty_strings(value.get("follow_ups"))
+        and str(value.get("intent") or "").strip()
+        and _nonempty_strings(value.get("answer_points"))
+        for value in values
+    )
+
+
+def _valid_project_card(card: dict) -> bool:
+    return bool(
+        str(card.get("main_question") or "").strip()
+        and isinstance(card.get("star_outline"), dict)
+        and _valid_follow_up_chains(card.get("follow_up_chains"))
+        and str(card.get("result_verification") or "").strip()
+        and _nonempty_strings(card.get("knowledge_preparation"))
+        and _nonempty_strings(card.get("practice_steps"))
+    )
 
 
 def _align_cards(
@@ -468,6 +659,8 @@ def render_guide_html(guide: InterviewGuide) -> str:
         parts.append(_html_list("向面试官的反问", content.get("questions_to_ask")))
     if content.get("checklist"):
         parts.append(_html_list("面试前检查表", content.get("checklist")))
+    for project_card in content.get("project_cards") or []:
+        parts.append(_html_project_card(project_card))
     for card in content.get("cards") or []:
         parts.append(_html_card(card, kind=guide.kind))
     parts.append("</body></html>")
@@ -511,6 +704,66 @@ def _html_card(card: dict, *, kind: str) -> str:
         blocks.append("<h3>可能被问穿的问题</h3><ul>")
         blocks.extend(f"<li>{escape(str(item))}</li>" for item in card.get("exposure_questions") or [])
         blocks.append("</ul>")
+    blocks.append("</section>")
+    return "".join(blocks)
+
+
+def _html_project_card(card: dict) -> str:
+    title = str(card.get("title") or "项目 STAR 讲述")
+    blocks = [f"<section><h2>{escape(title)} · STAR 讲述</h2>"]
+    outline = card.get("star_outline") or {}
+    situation = outline.get("situation") or {}
+    task = outline.get("task") or {}
+    result = outline.get("result") or {}
+    blocks.append("<h3>背景与任务</h3><ul>")
+    for label, value in (("背景", situation.get("context")), ("问题", situation.get("problem")), ("角色", task.get("role")), ("目标", task.get("goal"))):
+        if value:
+            blocks.append(f"<li><strong>{escape(label)}</strong>：{escape(str(value))}</li>")
+    blocks.append("</ul>")
+    actions = outline.get("actions") or []
+    if actions:
+        blocks.append("<h3>行动与技术取舍</h3><ul>")
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            step = action.get("step") or "行动"
+            method = action.get("method") or ""
+            blocks.append(f"<li><strong>{escape(str(step))}</strong>：{escape(str(method))}</li>")
+        blocks.append("</ul>")
+    if result:
+        blocks.append("<h3>结果与验证</h3><ul>")
+        for deliverable in result.get("deliverables") or []:
+            blocks.append(f"<li>{escape(str(deliverable))}</li>")
+        if result.get("verification_method"):
+            blocks.append(f"<li><strong>验证</strong>：{escape(str(result['verification_method']))}</li>")
+        blocks.append("</ul>")
+    if card.get("main_question"):
+        blocks.append(f"<h3>主问题</h3><p>{escape(str(card['main_question']))}</p>")
+    for chain in card.get("follow_up_chains") or []:
+        if not isinstance(chain, dict):
+            continue
+        blocks.append(f"<h3>{escape(str(chain.get('anchor') or '连续追问'))}</h3>")
+        if chain.get("question"):
+            blocks.append(f"<p>{escape(str(chain['question']))}</p>")
+        if chain.get("follow_ups"):
+            blocks.append("<ul>")
+            blocks.extend(f"<li>{escape(str(value))}</li>" for value in chain.get("follow_ups") or [])
+            blocks.append("</ul>")
+        for key, label in (("intent", "考察意图"), ("required_evidence", "需要的证据"), ("common_mistakes", "常见误区")):
+            if chain.get(key):
+                blocks.append(f"<p><strong>{escape(label)}</strong>：{escape(str(chain[key]))}</p>")
+    if card.get("result_verification"):
+        blocks.append(f"<p><strong>结果核验</strong>：{escape(str(card['result_verification']))}</p>")
+    if card.get("knowledge_preparation"):
+        blocks.append("<h3>知识准备</h3><ul>")
+        blocks.extend(f"<li>{escape(str(value))}</li>" for value in card.get("knowledge_preparation") or [])
+        blocks.append("</ul>")
+    if card.get("practice_steps"):
+        blocks.append("<h3>练习步骤</h3><ul>")
+        blocks.extend(f"<li>{escape(str(value))}</li>" for value in card.get("practice_steps") or [])
+        blocks.append("</ul>")
+    if card.get("honest_boundary"):
+        blocks.append(f"<p><strong>诚实边界</strong>：{escape(str(card['honest_boundary']))}</p>")
     blocks.append("</section>")
     return "".join(blocks)
 

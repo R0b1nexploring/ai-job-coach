@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 
 from app.errors import AppError
@@ -16,6 +18,55 @@ REQUIRED_BULLET_FIELDS = (
     "locked",
     "new_claims",
 )
+
+PROJECT_SECTION_NAMES = frozenset({"项目/科研/竞赛"})
+STAR_CONTRACT_VERSION = 1
+
+
+def is_project_item(section: dict, item: dict) -> bool:
+    """Return whether an entry is a project-like entry in the v3 contract.
+
+    ``project_story`` is deliberately also a signal.  It lets an already
+    saved, non-standard section remain readable after a template rename.
+    """
+    return bool(
+        str((section or {}).get("name") or "") in PROJECT_SECTION_NAMES
+        or isinstance((item or {}).get("project_story"), dict)
+    )
+
+
+def iter_project_stories(content: dict):
+    """Yield the saved STAR extension together with its resume entry."""
+    for section in content.get("sections") or []:
+        for item in section.get("items") or []:
+            story = item.get("project_story") if isinstance(item, dict) else None
+            if isinstance(story, dict):
+                yield section, item, story
+
+
+def has_star_contract(content: dict) -> bool:
+    return int((content or {}).get("project_story_contract_version") or 0) >= STAR_CONTRACT_VERSION
+
+
+def content_fingerprint(content: dict) -> str:
+    """Fingerprint semantic resume content while retaining legacy hashes.
+
+    Versions produced before the STAR extension used the plain canonical JSON
+    digest.  Keep that exact digest for compatibility.  New STAR content gets
+    a namespaced payload, so its saved story participates in guide staleness
+    without conflating it with an older contract.
+    """
+    payload: object = content
+    if has_star_contract(content) or any(True for _ in iter_project_stories(content)):
+        payload = {"semantic_contract": "project-star-v1", "content": content}
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def new_bullet_id() -> str:

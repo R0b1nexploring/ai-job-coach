@@ -6,6 +6,13 @@
 
 ## ADDED Requirements
 
+### Requirement: A4 preview scales without clipping
+工作台 MUST 按容器尺寸等比显示完整 210×297mm 页面，正确区分 CSS px 与 PDF pt。预览缩放 MUST NOT 改变打印布局或正文。验收 SHALL 覆盖桌面和窄屏，检查完整页面与文字显示，不能仅断言 iframe 存在。
+
+#### Scenario: A4 page is shown in a narrow container
+- **WHEN** 预览容器小于 A4 页面原始 CSS 宽度
+- **THEN** 页面等比缩小并保留完整边界，不因固定 595px 容器裁切 210mm 页面；打印仍使用原始 A4 尺寸
+
 ### Requirement: The studio is the default user journey
 普通用户 SHALL 从统一简历工作台完成目标画像、上传或空白建档、素材追问、双轨生成、版本对比、导出和指南查看。系统 MUST NOT 根据年级或毕业年份切换流程。
 
@@ -25,6 +32,8 @@
 - **THEN** 页面显示三个有示例说明的输入，并在保存后收起表单，将经历直接加入生成参考
 
 ### Requirement: Users can inspect and control every visible bullet
+用户编辑、锁定、局部重生成、排序、撤销和版本对比为未来 TODO，本轮不新增或完善；已有功能保留兼容。以下交互合同在恢复该功能开发时执行，本轮仅复用预览、下载与指南查看。
+
 工作台 SHALL 提供 A4 预览、真实版与蓝图对比、逐 bullet 来源、质量问题、锁定、局部重生成、排序、撤销和版本对比。用户操作后 MUST 看到重新校验状态。
 
 #### Scenario: Lock a strong bullet before regeneration
@@ -53,6 +62,8 @@
 - **THEN** 工作台从服务端恢复同一 bundle 的进度，不发起重复生成
 
 ### Requirement: Invite trial access and task feedback are recoverable
+邀请试用建设为后续规划，本轮不主动实施；已有恢复和权限行为保持兼容。
+
 小范围真实用户试用 SHALL 使用单次、限时邀请码注册，并显示剩余 AI 额度。工作台 MUST 分别展示任务的 queued、running、succeeded、degraded 和 failed 状态、当前阶段、可公开错误及可用重试入口。草稿保存、简历生成、指南和导出 MUST 分别反馈状态，一个交付物失败不得使已完成的其他交付物失效。
 
 #### Scenario: Invite is consumed concurrently

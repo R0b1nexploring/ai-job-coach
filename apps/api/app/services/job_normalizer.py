@@ -15,10 +15,38 @@ KEYWORDS = [
     "跨部门",
 ]
 
+_TITLE_PATTERN = re.compile(
+    r"(?:[\u4e00-\u9fffA-Za-z0-9·+/#（）()\- ]{0,24})"
+    r"(?:工程师|实习生|专员|经理|主管|总监|顾问|研究员|设计师|分析师|开发者|运营)"
+)
+_IDENTITY_LABEL_PATTERN = re.compile(r"^(?:岗位(?:名称|职位)?|职位(?:名称)?|招聘岗位)\s*[:：]\s*(.+)$")
+_COMPANY_LABEL_PATTERN = re.compile(r"^(?:公司(?:名称)?|企业(?:名称)?|招聘单位|用人单位)\s*[:：]\s*(.+)$")
+
+
+def _infer_title(lines: list[str]) -> str:
+    for line in lines[:8]:
+        labelled = _IDENTITY_LABEL_PATTERN.match(line)
+        candidate = labelled.group(1).strip() if labelled else line
+        if re.search(r"岗位职责|职位描述|任职要求|职责要求", candidate):
+            continue
+        match = _TITLE_PATTERN.search(candidate)
+        if match:
+            return match.group(0).strip(" -•：:")[:200]
+    return ""
+
+
+def _infer_company(lines: list[str]) -> str:
+    for line in lines[:8]:
+        labelled = _COMPANY_LABEL_PATTERN.match(line)
+        if labelled:
+            return labelled.group(1).strip()[:200]
+    return ""
+
 
 def normalize_job(raw_jd: str, title: str = "", company_name: str = "", city: str = "") -> dict:
     lines = [x.strip(" -•\t") for x in raw_jd.splitlines() if x.strip()]
-    inferred_title = title or next((x for x in lines if "工程师" in x), "待确认岗位")
+    inferred_title = title.strip() or _infer_title(lines)
+    inferred_company = company_name.strip() or _infer_company(lines)
     must = [x for x in lines if re.search(r"要求|本科|专业|必须|熟悉|接受", x)][:8]
     responsibilities = [x for x in lines if re.search(r"负责|协助|维护|编制|跟进", x)][:8]
     nice = [x for x in lines if re.search(r"优先|加分", x)][:5]
@@ -26,7 +54,7 @@ def normalize_job(raw_jd: str, title: str = "", company_name: str = "", city: st
     work = [x for x in lines if re.search(r"轮班|出差|工厂", x)][:5]
     return {
         "title": inferred_title,
-        "company_name": company_name or "待确认公司",
+        "company_name": inferred_company,
         "city": city,
         "responsibilities": responsibilities,
         "must_have": must,
@@ -34,7 +62,13 @@ def normalize_job(raw_jd: str, title: str = "", company_name: str = "", city: st
         "keywords": keywords,
         "work_conditions": work,
         "uncertain_fields": [
-            k for k, v in {"company_name": company_name, "city": city}.items() if not v
+            k
+            for k, v in {
+                "title": inferred_title,
+                "company_name": inferred_company,
+                "city": city,
+            }.items()
+            if not v
         ],
         "content_hash": hashlib.sha256(raw_jd.strip().encode()).hexdigest(),
     }
@@ -105,11 +139,7 @@ def ground_job_output(
         )
     )
     for field, explicit in (("title", title), ("company_name", company_name), ("city", city)):
-        if (
-            not str(explicit or "").strip()
-            and result[field].startswith("待确认")
-            and field not in result["uncertain_fields"]
-        ):
+        if not str(explicit or "").strip() and not result[field] and field not in result["uncertain_fields"]:
             result["uncertain_fields"].append(field)
     result["content_hash"] = fallback["content_hash"]
     return result

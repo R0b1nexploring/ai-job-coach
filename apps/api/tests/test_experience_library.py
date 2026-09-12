@@ -19,6 +19,7 @@ def test_user_can_add_internship_and_it_becomes_a_confirmed_fact(client, db):
             "bullets_json": ["完成点检记录"],
             "skills_json": ["设备点检"],
             "details_json": {
+                "project_type": "实习项目",
                 "actions": "按点检表完成指定工位检查并记录异常",
                 "tools": "点检表",
                 "results": "完成点检记录",
@@ -36,9 +37,24 @@ def test_user_can_add_internship_and_it_becomes_a_confirmed_fact(client, db):
     facts = list(
         db.scalars(select(ResumeFact).where(ResumeFact.material_id == body["id"]))
     )
-    assert {fact.claim_type for fact in facts} >= {"organization", "role", "action", "tool", "result"}
+    assert {fact.claim_type for fact in facts} >= {"organization", "role", "project_type", "action", "tool", "result"}
     assert all(fact.verification_status == "user_confirmed" for fact in facts)
     assert all(fact.material_id == body["id"] for fact in facts)
+    assert all(fact.evidence_json.get("source_field") == fact.claim_type for fact in facts)
+    listed = client.get("/api/experience-facts")
+    assert listed.status_code == 200, listed.text
+    visible = [row for row in listed.json()["items"] if row["material_id"] == body["id"]]
+    assert {row["claim_type"] for row in visible} >= {
+        "organization",
+        "role",
+        "project_type",
+        "action",
+        "tool",
+        "result",
+    }
+    scoped = client.get(f"/api/experience/{body['id']}/facts")
+    assert scoped.status_code == 200, scoped.text
+    assert {row["id"] for row in scoped.json()["items"]} == {fact.id for fact in facts}
 
 
 def test_templates_are_readonly_and_copy_does_not_become_a_fact(client, db):

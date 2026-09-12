@@ -1,7 +1,7 @@
 from conftest import register
 from sqlalchemy import select
 
-from app.models.entities import TargetProfile
+from app.models.entities import Job, TargetProfile
 
 
 def _import_job(client, *, title="机械设计工程师", raw_jd=None, company="示例制造公司"):
@@ -37,6 +37,50 @@ def test_paste_raw_jd_then_save_job_then_create_profile(client):
     assert created.status_code == 201, created.text
     assert created.json()["job_ids"] == [job.json()["id"]]
     assert raw not in created.json()["job_ids"]
+
+
+def test_pasted_jd_keeps_real_identity_and_source_context(client, db):
+    register(client)
+    raw = (
+        "招聘单位：星河制造有限公司\n"
+        "岗位名称：机械设计工程师\n"
+        "岗位职责：负责机械结构设计。\n"
+        "任职要求：熟悉 SolidWorks。"
+    )
+    job_response = client.post("/api/jobs/import-text", json={"raw_jd": raw})
+    assert job_response.status_code in {200, 201}, job_response.text
+    job = job_response.json()
+    assert job["company_name"] == "星河制造有限公司"
+    assert job["title"] == "机械设计工程师"
+
+    created = client.post(
+        "/api/target-profiles",
+        json={"mode": "single_jd", "job_ids": [job["id"]]},
+    )
+    assert created.status_code == 201, created.text
+    profile = db.get(TargetProfile, created.json()["id"])
+    assert profile is not None
+    assert profile.snapshot_json["job_context"] == [
+        {
+            "job_id": job["id"],
+            "title": "机械设计工程师",
+            "company_name": "星河制造有限公司",
+            "city": "",
+            "raw_jd": raw,
+        }
+    ]
+    assert db.get(Job, job["id"]).raw_jd == raw
+
+
+def test_pasted_jd_without_identity_stays_unknown(client):
+    register(client)
+    response = client.post(
+        "/api/jobs/import-text",
+        json={"raw_jd": "负责机械结构设计。\n要求熟悉 SolidWorks 并能输出工程图。"},
+    )
+    assert response.status_code in {200, 201}, response.text
+    assert response.json()["company_name"] == ""
+    assert response.json()["title"] == ""
 
 
 def test_create_single_jd_profile(client):

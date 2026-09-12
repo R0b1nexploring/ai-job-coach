@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from app.providers.llm.base import ProviderError
 from app.providers.llm.runtime import generate_structured
 from app.providers.llm.schemas import QualityCriticOutput
-from app.services.content_contract import iter_bullets, visible_bullets
+from app.services.content_contract import (
+    has_star_contract,
+    is_project_item,
+    iter_bullets,
+    iter_project_stories,
+    visible_bullets,
+)
 from app.services.fact_guard import guard_content
 from app.services.resume_generator import estimate_resume_lines
 from app.services.resume_template import SECTION_ORDER
@@ -59,6 +64,7 @@ def evaluate_version(
     hard_issues.extend(_kind_issues(content, mode))
     hard_issues.extend(_coverage_issues(content, requirements, mode))
     hard_issues.extend(_structure_issues(content))
+    hard_issues.extend(_project_star_issues(content, mode))
     layout_warnings = _layout_warnings(content)
     if expected_headline and expected_headline not in str(content.get("headline") or ""):
         # Headline may be specialized around the job title; only flag empty.
@@ -85,6 +91,7 @@ def evaluate_version(
         "warnings": list(guard.get("warnings") or []) + [
             {"bullet_id": "", "message": warning} for warning in layout_warnings
         ],
+        "star_diagnostics": _project_star_diagnostics(content, mode),
     }
 
 
@@ -105,6 +112,8 @@ async def evaluate_version_with_critic(
             if name in report["dimensions"]
         },
         "summary": "确定性检查结果",
+        "recommendations": [],
+        "project_reviews": [],
     }
     try:
         critic, provider = await generate_structured(
@@ -112,6 +121,9 @@ async def evaluate_version_with_critic(
             system_prompt=(
                 "你是简历质量评审。根据简历正文、素材和目标要求评价表达与岗位相关性。"
                 "当 factuality_policy=ai_expansion 时允许 AI 补充，缺少事实支持只作提示，不阻止交付。"
+                "必须评价全部质量维度；对可改进的具体要点给出带 bullet_id 的、可执行的修改建议。"
+                "如存在 project_story，逐项评价背景/任务/行动/结果是否具体、行动是否能支撑结果、"
+                "个人贡献和技术取舍是否可追问，并用 project_id 和关联 bullet_ids 定位问题。"
                 "输出严格 JSON。"
             ),
             user_payload={
@@ -121,6 +133,22 @@ async def evaluate_version_with_critic(
                 "kind": mode,
                 "headline": content.get("headline"),
                 "bullet_count": len(visible_bullets(content)),
+                "bullets": [
+                    {"id": bullet.get("id"), "text": bullet.get("text")}
+                    for bullet in visible_bullets(content)
+                ],
+                "project_stories": [
+                    {
+                        "project_id": story.get("project_id"),
+                        "title": story.get("title"),
+                        "bullet_ids": story.get("bullet_ids") or [],
+                        "situation": story.get("situation") or {},
+                        "task": story.get("task") or {},
+                        "actions": story.get("actions") or [],
+                        "result": story.get("result") or {},
+                    }
+                    for _section, _item, story in iter_project_stories(content)
+                ],
                 "hard_passed": report["hard_passed"],
                 "mock_response": mock,
             },
@@ -130,17 +158,53 @@ async def evaluate_version_with_critic(
         for name in QUALITY_DIMENSIONS:
             item = critic.dimensions.get(name)
             if item is None:
-                dimensions[name] = report["dimensions"].get(name) or {"score": 60, "notes": []}
+                dimensions[name] = {
+                    "score": None,
+                    "notes": ["模型未评估此维度"],
+                    "assessed": False,
+                }
             else:
-                dimensions[name] = {"score": item.score, "notes": list(item.notes or [])}
+                dimensions[name] = {"score": item.score, "notes": list(item.notes or []), "assessed": True}
         report["dimensions"] = dimensions
         report["reviewer"] = "model" if provider == "compatible" else "deterministic"
-        report["reviewer_note"] = f"模型评审（{provider}）" if provider == "compatible" else "使用确定性检查"
+        report["reviewer_note"] = (
+            f"模型评审（{provider}）"
+            if provider == "compatible"
+            else "模型不可用或未配置，使用确定性检查"
+        )
         report["critic_summary"] = critic.summary
-    except (ProviderError, Exception):
+        report["critic_unavailable"] = provider != "compatible"
+        valid_bullet_ids = {str(bullet.get("id") or "") for bullet in visible_bullets(content)}
+        valid_project_ids = {
+            str(story.get("project_id") or "")
+            for _section, _item, story in iter_project_stories(content)
+        }
+        report["recommendations"] = [
+            {
+                "bullet_id": item.bullet_id,
+                "project_id": item.project_id,
+                "suggestion": item.suggestion,
+            }
+            for item in critic.recommendations
+            if (not item.bullet_id or item.bullet_id in valid_bullet_ids)
+            and (not item.project_id or item.project_id in valid_project_ids)
+        ]
+        report["project_reviews"] = [
+            {
+                "project_id": item.project_id,
+                "bullet_ids": [bullet_id for bullet_id in item.bullet_ids if bullet_id in valid_bullet_ids],
+                "diagnosis": item.diagnosis,
+                "suggestions": list(item.suggestions or []),
+            }
+            for item in critic.project_reviews
+            if item.project_id in valid_project_ids
+        ]
+    except Exception:
         report["reviewer"] = "deterministic"
         report["reviewer_note"] = "模型不可用，使用确定性检查"
         report["critic_unavailable"] = True
+        report["recommendations"] = []
+        report["project_reviews"] = []
     if not report.get("hard_passed"):
         report["status"] = "blocked"
     return report
@@ -257,6 +321,108 @@ def _structure_issues(content: dict) -> list[str]:
     if ordered != actual:
         return ["分区顺序不符合模板"]
     return []
+
+
+_VAGUE_STAR_VALUES = frozenset({"负责相关工作", "完成项目", "提升效果", "取得成果", "若干", "相关内容"})
+
+
+def _project_star_issues(content: dict, mode: str) -> list[str]:
+    """Hard-check locally owned STAR shape and provenance for new blueprints."""
+    if mode != "target" or not has_star_contract(content):
+        return []
+    issues: list[str] = []
+    for section in content.get("sections") or []:
+        for item in section.get("items") or []:
+            if not is_project_item(section, item):
+                continue
+            story = item.get("project_story")
+            label = str((story or {}).get("project_id") or item.get("organization") or item.get("role_title") or "项目")
+            if not isinstance(story, dict):
+                issues.append(f"项目 {label} 缺少完整 STAR 故事")
+                continue
+            if int(story.get("schema_version") or 0) != 1:
+                issues.append(f"项目 {label} 的 STAR 版本无效")
+            situation = story.get("situation") or {}
+            task = story.get("task") or {}
+            result = story.get("result") or {}
+            if not _specific_star_text(situation.get("context")) or not _specific_star_text(situation.get("problem")):
+                issues.append(f"项目 {label} 的 S（背景/问题）不具体")
+            if not _specific_star_text(task.get("role")) or not _specific_star_text(task.get("goal")):
+                issues.append(f"项目 {label} 的 T（角色/目标）不具体")
+            actions = story.get("actions") or []
+            if not isinstance(actions, list) or not actions or not all(
+                isinstance(action, dict)
+                and _specific_star_text(action.get("step"))
+                and _specific_star_text(action.get("method"))
+                and _specific_star_text(action.get("contribution"))
+                for action in actions
+            ):
+                issues.append(f"项目 {label} 的 A（行动/方法/贡献）不完整")
+            deliverables = result.get("deliverables") or []
+            if not _specific_star_values(deliverables) or not _specific_star_text(result.get("verification_method")):
+                issues.append(f"项目 {label} 的 R（交付/验证）不完整")
+            bullets = [bullet for bullet in item.get("bullets") or [] if isinstance(bullet, dict)]
+            bullet_ids = [str(bullet.get("id") or "") for bullet in bullets if bullet.get("id")]
+            story_bullet_ids = [str(value) for value in story.get("bullet_ids") or [] if str(value)]
+            if bullet_ids != story_bullet_ids:
+                issues.append(f"项目 {label} 的 STAR 要点映射不一致")
+            fact_ids = _ordered_refs(bullet.get("source_fact_ids") or [] for bullet in bullets)
+            target_ids = _ordered_refs(bullet.get("source_target_ids") or [] for bullet in bullets)
+            requirement_ids = _ordered_refs(
+                (bullet.get("requirement_ids") or bullet.get("source_target_ids") or [])
+                for bullet in bullets
+            )
+            if list(story.get("source_fact_ids") or []) != fact_ids:
+                issues.append(f"项目 {label} 的事实来源映射不一致")
+            if list(story.get("source_target_ids") or []) != target_ids:
+                issues.append(f"项目 {label} 的目标来源映射不一致")
+            if list(story.get("requirement_ids") or []) != requirement_ids:
+                issues.append(f"项目 {label} 的岗位要求映射不一致")
+            if story.get("achieved") is False:
+                for metric in result.get("metrics") or []:
+                    if isinstance(metric, dict) and metric.get("kind") == "observed":
+                        issues.append(f"项目 {label} 的未达成结果不能标为已观察指标")
+    return list(dict.fromkeys(issues))
+
+
+def _project_star_diagnostics(content: dict, mode: str) -> list[dict]:
+    """Explain likely weak STAR narratives without using a numeric threshold."""
+    if mode != "target" or not has_star_contract(content):
+        return []
+    diagnostics = []
+    for _section, _item, story in iter_project_stories(content):
+        actions = story.get("actions") or []
+        result = story.get("result") or {}
+        if actions and not any(_specific_star_text(action.get("rationale")) for action in actions if isinstance(action, dict)):
+            diagnostics.append({"project_id": story.get("project_id"), "message": "行动缺少为什么这样做的取舍说明"})
+        if actions and not any(_specific_star_text(action.get("difficulty")) for action in actions if isinstance(action, dict)):
+            diagnostics.append({"project_id": story.get("project_id"), "message": "行动缺少可追问的难点或风险"})
+        if result.get("metrics") and not any(
+            _specific_star_text(metric.get("conditions"))
+            for metric in result.get("metrics") or []
+            if isinstance(metric, dict)
+        ):
+            diagnostics.append({"project_id": story.get("project_id"), "message": "结果指标缺少测量口径或验收条件"})
+    return diagnostics
+
+
+def _ordered_refs(rows) -> list[str]:
+    values = []
+    for row in rows:
+        for value in row or []:
+            text = str(value or "")
+            if text and text not in values:
+                values.append(text)
+    return values
+
+
+def _specific_star_text(value: object) -> bool:
+    text = str(value or "").strip()
+    return len(text) >= 4 and text not in _VAGUE_STAR_VALUES
+
+
+def _specific_star_values(values: object) -> bool:
+    return isinstance(values, list) and any(_specific_star_text(value) for value in values)
 
 
 def _layout_warnings(content: dict) -> list[str]:
