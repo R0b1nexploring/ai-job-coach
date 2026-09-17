@@ -1,0 +1,72 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "电气自动化助理工程师",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "项目成员",
+          "location": "虚构城市",
+          "start_date": "2025-02",
+          "end_date": "2025-05",
+          "bullets": [
+            {
+              "id": "2e998c2c-aca6-4e73-aeb9-9a0acd8d5087",
+              "text": "使用PLC与变频器实现电机启停、调速控制，记录联调过程",
+              "source_fact_ids": [
+                "ep-f1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "ep-plc"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        },
+        {
+          "organization": "虚构职业技术学院",
+          "role_title": "实训学生",
+          "location": "虚构城市",
+          "start_date": "2024-07",
+          "end_date": "2024-08",
+          "bullets": [
+            {
+              "id": "e229a00f-9c01-4718-878f-fa3e7649cfdd",
+              "text": "按电气图纸完成配电柜元器件接线，并执行通电检查",
+              "source_fact_ids": [
+                "ep-f2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "ep-drawing"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": [
+    "未提供具体PLC与变频器型号",
+    "未提供独立绘制电气控制图纸的事实",
+    "未提供量化性能指标或故障率数据"
+  ]
+}

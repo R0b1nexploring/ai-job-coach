@@ -81,10 +81,10 @@ export function CapabilityTargets() {
       <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="page-title">学习目标</h1>
-          <p className="mt-2 text-sm text-black/55">完成真实产出并提交证据后，目标才会进入事实库。</p>
+          <p className="mt-2 text-sm text-ink-secondary">完成真实产出并提交证据后，目标才会进入事实库。</p>
         </div>
         <div className="rounded-2xl bg-white px-5 py-3 text-right shadow-sm">
-          <p className="text-xs text-black/50">整体进度</p>
+          <p className="text-xs text-ink-secondary">整体进度</p>
           <b className="text-2xl">{achieved} / {visibleTargets.length}</b>
         </div>
       </div>
@@ -93,7 +93,7 @@ export function CapabilityTargets() {
       <div className="mt-6 space-y-7">
         {grouped.size ? [...grouped.entries()].map(([jobId, items]) => (
           <section key={jobId}>
-            <h2 className="text-xl font-bold">{jobNames.get(jobId) || '岗位信息待补充'}</h2>
+            <h2 className="text-xl font-semibold">{jobNames.get(jobId) || '岗位信息待补充'}</h2>
             <div className="mt-3 grid gap-4 lg:grid-cols-2">
               {items.map((target) => (
                 <article className="card" key={target.id}>
@@ -101,14 +101,14 @@ export function CapabilityTargets() {
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${target.severity === 'high' ? 'bg-red-50 text-red-700' : target.severity === 'medium' ? 'bg-amber-50 text-amber-800' : 'bg-blue-50 text-blue-700'}`}>
                       {severityLabels[target.severity]}
                     </span>
-                    <span className="text-sm text-black/55">{statusLabels[target.status]}</span>
+                    <span className="text-sm text-ink-secondary">{statusLabels[target.status]}</span>
                   </div>
-                  <h3 className="mt-3 font-bold">{target.requirement}</h3>
-                  <p className="mt-2 text-sm leading-6 text-black/70">产出物：{target.deliverable}</p>
-                  <ul className="mt-3 space-y-1 text-sm text-black/60">
+                  <h3 className="mt-3 font-semibold">{target.requirement}</h3>
+                  <p className="mt-2 text-sm leading-6 text-ink">产出物：{target.deliverable}</p>
+                  <ul className="mt-3 space-y-1 text-sm text-ink-secondary">
                     {target.acceptance_criteria_json.map((criterion) => <li key={criterion}>✓ {criterion}</li>)}
                   </ul>
-                  <p className="mt-3 text-xs text-black/45">预计 {target.estimated_hours} 小时</p>
+                  <p className="mt-3 text-xs text-ink-muted">预计 {target.estimated_hours} 小时</p>
                   <div className="mt-4 flex flex-wrap gap-2">
                     {target.status === 'pending' && (
                       <button className="btn-secondary" onClick={() => update.mutate({ target, status: 'in_progress' })}>
@@ -129,10 +129,10 @@ export function CapabilityTargets() {
         )) : <Empty title="还没有学习目标，请先在匹配报告中生成。" />}
       </div>
       {evidenceTarget && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-5" role="dialog" aria-modal="true" aria-label="提交达成证据">
+        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-5" role="dialog" aria-modal="true" aria-label="提交达成证据">
           <section className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-            <h2 className="text-xl font-bold">提交达成证据</h2>
-            <p className="mt-2 text-sm text-black/60">{evidenceTarget.requirement}</p>
+            <h2 className="text-xl font-semibold">提交达成证据</h2>
+            <p className="mt-2 text-sm text-ink-secondary">{evidenceTarget.requirement}</p>
             <label className="mt-4 block">
               <span className="label">产出物证据（必填）</span>
               <textarea

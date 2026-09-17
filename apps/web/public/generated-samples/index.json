@@ -1,0 +1,1262 @@
+{
+  "generated_at": "2026-09-17T14:11:54.685219+00:00",
+  "groups": [
+    {
+      "source": "model",
+      "label": "真实模型样本",
+      "note": "经真实 Provider 的 v3 管线生成，含本地回退样本",
+      "items": [
+        {
+          "id": "model-20260917-sample-000-mechanical",
+          "direction": "mechanical",
+          "direction_label": "机械",
+          "title": "机械设计助理工程师",
+          "bullet_count": 2,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "项目成员 / 课程学生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "2025.03–06 使用 SolidWorks 完成二级减速器装配建模，输出装配图与零件图",
+                "2024.09–12 设计钻孔夹具结构，绘制定位与夹紧方案工程图"
+              ]
+            }
+          ],
+          "writer_source": "model",
+          "bundle_status": "degraded",
+          "files": {
+            "json": "/generated-samples/model-20260917-sample-000-mechanical.json"
+          }
+        },
+        {
+          "id": "model-20260917-sample-001-computer",
+          "direction": "computer",
+          "direction_label": "计算机",
+          "title": "后端开发实习生",
+          "bullet_count": 2,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "后端负责人",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 Spring Boot 实现失物登记与认领接口，MySQL 持久化数据",
+                "设计图书借阅数据库表结构与视图，编写 SQL 查询及存储过程"
+              ]
+            }
+          ],
+          "writer_source": "model",
+          "bundle_status": "ready",
+          "files": {
+            "json": "/generated-samples/model-20260917-sample-001-computer.json"
+          }
+        },
+        {
+          "id": "model-20260917-sample-002-ai",
+          "direction": "ai",
+          "direction_label": "AI",
+          "title": "算法实习生",
+          "bullet_count": 5,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "模型训练成员、课程学生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 pandas 清洗传感器采样数据，输出异常记录",
+                "使用 PyTorch 训练图像分类模型，记录增强与评估结果"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "PyTorch",
+                "pandas"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "建议经历",
+              "section": "技能",
+              "bullets": [
+                "Python"
+              ]
+            }
+          ],
+          "writer_source": "model",
+          "bundle_status": "ready",
+          "files": {
+            "json": "/generated-samples/model-20260917-sample-002-ai.json"
+          }
+        },
+        {
+          "id": "model-20260917-sample-003-electronics",
+          "direction": "electronics",
+          "direction_label": "电子",
+          "title": "硬件设计实习生",
+          "bullet_count": 2,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "课程学生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "完成电源模块原理图设计，并使用 Altium Designer 绘制双层 PCB",
+                "基于 STM32 与温度传感器实现闭环温控，记录调试数据"
+              ]
+            }
+          ],
+          "writer_source": "model",
+          "bundle_status": "ready",
+          "files": {
+            "json": "/generated-samples/model-20260917-sample-003-electronics.json"
+          }
+        },
+        {
+          "id": "model-20260917-sample-004-electrical",
+          "direction": "electrical",
+          "direction_label": "电气",
+          "title": "电气自动化助理工程师",
+          "bullet_count": 2,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "项目成员",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用PLC与变频器实现电机启停、调速控制，记录联调过程"
+              ]
+            },
+            {
+              "organization": "虚构职业技术学院",
+              "role_title": "实训学生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "按电气图纸完成配电柜元器件接线，并执行通电检查"
+              ]
+            }
+          ],
+          "writer_source": "model",
+          "bundle_status": "degraded",
+          "files": {
+            "json": "/generated-samples/model-20260917-sample-004-electrical.json"
+          }
+        },
+        {
+          "id": "model-20260917-sample-005-mechanical",
+          "direction": "mechanical",
+          "direction_label": "机械",
+          "title": "机械设计助理工程师",
+          "bullet_count": 2,
+          "projects": [
+            {
+              "organization": "",
+              "role_title": "目标补齐",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "熟练使用 SolidWorks 完成零件与装配设计"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "目标补齐",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "能够编写设计验证记录并解释关键取舍"
+              ]
+            }
+          ],
+          "writer_source": "fallback",
+          "bundle_status": "degraded",
+          "files": {
+            "json": "/generated-samples/model-20260917-sample-005-mechanical.json"
+          }
+        }
+      ]
+    },
+    {
+      "source": "authored",
+      "label": "本地作者样本",
+      "note": "由本机按内容合同撰写并渲染，用于积累虚构语料",
+      "items": [
+        {
+          "id": "authored-00-mechanical",
+          "direction": "mechanical",
+          "direction_label": "机械",
+          "title": "机械设计助理工程师",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "机械设计制造及其自动化本科，主修课程覆盖SolidWorks等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "项目成员",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 SolidWorks 参数化完成二级减速器箱体与齿轮轴建模",
+                "通过装配干涉检查调整轴承座位置，消除箱体与轴系干涉",
+                "输出减速器装配图与关键零件图，标注配合与尺寸公差",
+                "设计钻孔夹具的定位与夹紧方案，绘制装配工程图",
+                "按六点定位原理选择定位元件并校核夹紧力方向",
+                "整理设计说明与图纸检查记录，支持课程验收"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "SolidWorks",
+                "AutoCAD",
+                "机械制图",
+                "工程图标注",
+                "GD&T 基础"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-00-mechanical.json",
+            "html": "/generated-samples/authored-00-mechanical.html",
+            "docx": "/generated-samples/authored-00-mechanical.docx"
+          }
+        },
+        {
+          "id": "authored-01-mechanical",
+          "direction": "mechanical",
+          "direction_label": "机械",
+          "title": "机械设计助理工程师",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "机械设计制造及其自动化本科，主修课程覆盖SolidWorks等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "课程学生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "设计钻孔夹具的定位与夹紧方案，绘制装配工程图",
+                "按六点定位原理选择定位元件并校核夹紧力方向",
+                "整理设计说明与图纸检查记录，支持课程验收"
+              ]
+            },
+            {
+              "organization": "虚构精工实习岗",
+              "role_title": "技术实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "为减速器关键配合尺寸建立设计验证检查项与判定标准",
+                "对比两种轴承座结构方案，记录刚度与装配性取舍",
+                "输出验证记录表，逐项对应图纸尺寸与检查结果"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "SolidWorks",
+                "AutoCAD",
+                "机械制图",
+                "工程图标注",
+                "GD&T 基础"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-01-mechanical.json",
+            "html": "/generated-samples/authored-01-mechanical.html",
+            "docx": "/generated-samples/authored-01-mechanical.docx"
+          }
+        },
+        {
+          "id": "authored-02-mechanical",
+          "direction": "mechanical",
+          "direction_label": "机械",
+          "title": "机械设计助理工程师",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "机械设计制造及其自动化本科，主修课程覆盖SolidWorks等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "项目成员",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 SolidWorks 参数化完成二级减速器箱体与齿轮轴建模",
+                "通过装配干涉检查调整轴承座位置，消除箱体与轴系干涉",
+                "输出减速器装配图与关键零件图，标注配合与尺寸公差"
+              ]
+            },
+            {
+              "organization": "虚构精工实习岗",
+              "role_title": "技术实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "为减速器关键配合尺寸建立设计验证检查项与判定标准",
+                "对比两种轴承座结构方案，记录刚度与装配性取舍",
+                "输出验证记录表，逐项对应图纸尺寸与检查结果"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "SolidWorks",
+                "AutoCAD",
+                "机械制图",
+                "工程图标注",
+                "GD&T 基础"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-02-mechanical.json",
+            "html": "/generated-samples/authored-02-mechanical.html",
+            "docx": "/generated-samples/authored-02-mechanical.docx"
+          }
+        },
+        {
+          "id": "authored-03-mechanical",
+          "direction": "mechanical",
+          "direction_label": "机械",
+          "title": "机械设计助理工程师",
+          "bullet_count": 15,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "机械设计制造及其自动化本科，主修课程覆盖SolidWorks等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "项目成员",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 SolidWorks 参数化完成二级减速器箱体与齿轮轴建模",
+                "通过装配干涉检查调整轴承座位置，消除箱体与轴系干涉",
+                "输出减速器装配图与关键零件图，标注配合与尺寸公差",
+                "设计钻孔夹具的定位与夹紧方案，绘制装配工程图",
+                "按六点定位原理选择定位元件并校核夹紧力方向",
+                "整理设计说明与图纸检查记录，支持课程验收"
+              ]
+            },
+            {
+              "organization": "虚构精工实习岗",
+              "role_title": "技术实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "为减速器关键配合尺寸建立设计验证检查项与判定标准",
+                "对比两种轴承座结构方案，记录刚度与装配性取舍",
+                "输出验证记录表，逐项对应图纸尺寸与检查结果"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "SolidWorks",
+                "AutoCAD",
+                "机械制图",
+                "工程图标注",
+                "GD&T 基础"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-03-mechanical.json",
+            "html": "/generated-samples/authored-03-mechanical.html",
+            "docx": "/generated-samples/authored-03-mechanical.docx"
+          }
+        },
+        {
+          "id": "authored-04-computer",
+          "direction": "computer",
+          "direction_label": "计算机",
+          "title": "后端开发实习生",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "计算机科学与技术本科，主修课程覆盖Java等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "后端负责人",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 Spring Boot 实现失物登记、查询与认领 REST 接口",
+                "设计 MySQL 失物与用户表结构并编写联合查询",
+                "接入 JWT 鉴权并补充接口单元测试",
+                "设计图书借阅数据库的实体关系与第三范式表结构",
+                "编写借阅统计视图与存储过程，减少重复查询",
+                "用索引优化高频查询并对比执行计划"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "Java",
+                "Spring Boot",
+                "MySQL",
+                "Git",
+                "JUnit"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-04-computer.json",
+            "html": "/generated-samples/authored-04-computer.html",
+            "docx": "/generated-samples/authored-04-computer.docx"
+          }
+        },
+        {
+          "id": "authored-05-computer",
+          "direction": "computer",
+          "direction_label": "计算机",
+          "title": "后端开发实习生",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "计算机科学与技术本科，主修课程覆盖Java等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "课程学生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "设计图书借阅数据库的实体关系与第三范式表结构",
+                "编写借阅统计视图与存储过程，减少重复查询",
+                "用索引优化高频查询并对比执行计划"
+              ]
+            },
+            {
+              "organization": "虚构网络科技实习岗",
+              "role_title": "开发实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "为热点查询接口引入本地缓存并设置过期策略",
+                "使用压测脚本对比优化前后的响应时间",
+                "整理接口文档与异常返回约定"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "Java",
+                "Spring Boot",
+                "MySQL",
+                "Git",
+                "JUnit"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-05-computer.json",
+            "html": "/generated-samples/authored-05-computer.html",
+            "docx": "/generated-samples/authored-05-computer.docx"
+          }
+        },
+        {
+          "id": "authored-06-computer",
+          "direction": "computer",
+          "direction_label": "计算机",
+          "title": "后端开发实习生",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "计算机科学与技术本科，主修课程覆盖Java等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "后端负责人",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 Spring Boot 实现失物登记、查询与认领 REST 接口",
+                "设计 MySQL 失物与用户表结构并编写联合查询",
+                "接入 JWT 鉴权并补充接口单元测试"
+              ]
+            },
+            {
+              "organization": "虚构网络科技实习岗",
+              "role_title": "开发实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "为热点查询接口引入本地缓存并设置过期策略",
+                "使用压测脚本对比优化前后的响应时间",
+                "整理接口文档与异常返回约定"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "Java",
+                "Spring Boot",
+                "MySQL",
+                "Git",
+                "JUnit"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-06-computer.json",
+            "html": "/generated-samples/authored-06-computer.html",
+            "docx": "/generated-samples/authored-06-computer.docx"
+          }
+        },
+        {
+          "id": "authored-07-computer",
+          "direction": "computer",
+          "direction_label": "计算机",
+          "title": "后端开发实习生",
+          "bullet_count": 15,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "计算机科学与技术本科，主修课程覆盖Java等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "后端负责人",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 Spring Boot 实现失物登记、查询与认领 REST 接口",
+                "设计 MySQL 失物与用户表结构并编写联合查询",
+                "接入 JWT 鉴权并补充接口单元测试",
+                "设计图书借阅数据库的实体关系与第三范式表结构",
+                "编写借阅统计视图与存储过程，减少重复查询",
+                "用索引优化高频查询并对比执行计划"
+              ]
+            },
+            {
+              "organization": "虚构网络科技实习岗",
+              "role_title": "开发实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "为热点查询接口引入本地缓存并设置过期策略",
+                "使用压测脚本对比优化前后的响应时间",
+                "整理接口文档与异常返回约定"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "Java",
+                "Spring Boot",
+                "MySQL",
+                "Git",
+                "JUnit"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-07-computer.json",
+            "html": "/generated-samples/authored-07-computer.html",
+            "docx": "/generated-samples/authored-07-computer.docx"
+          }
+        },
+        {
+          "id": "authored-08-ai",
+          "direction": "ai",
+          "direction_label": "AI",
+          "title": "算法实习生",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "人工智能本科，主修课程覆盖Python等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "模型训练成员",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 PyTorch 搭建卷积网络完成图像分类训练",
+                "通过数据增强与学习率调整提升验证集表现",
+                "记录训练曲线与混淆矩阵，分析误分类样本",
+                "使用 pandas 清洗传感器采样数据并处理缺失值",
+                "编写异常值检测规则并输出异常记录表",
+                "将清洗流程封装为可重复执行的脚本"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "Python",
+                "PyTorch",
+                "pandas",
+                "NumPy",
+                "scikit-learn"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-08-ai.json",
+            "html": "/generated-samples/authored-08-ai.html",
+            "docx": "/generated-samples/authored-08-ai.docx"
+          }
+        },
+        {
+          "id": "authored-09-ai",
+          "direction": "ai",
+          "direction_label": "AI",
+          "title": "算法实习生",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "人工智能本科，主修课程覆盖Python等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "课程学生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 pandas 清洗传感器采样数据并处理缺失值",
+                "编写异常值检测规则并输出异常记录表",
+                "将清洗流程封装为可重复执行的脚本"
+              ]
+            },
+            {
+              "organization": "虚构智能科技实习岗",
+              "role_title": "算法实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用朴素贝叶斯与词袋特征完成文本分类基线",
+                "对比不同特征处理对准确率的影响",
+                "整理实验记录与错误分析"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "Python",
+                "PyTorch",
+                "pandas",
+                "NumPy",
+                "scikit-learn"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-09-ai.json",
+            "html": "/generated-samples/authored-09-ai.html",
+            "docx": "/generated-samples/authored-09-ai.docx"
+          }
+        },
+        {
+          "id": "authored-10-ai",
+          "direction": "ai",
+          "direction_label": "AI",
+          "title": "算法实习生",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "人工智能本科，主修课程覆盖Python等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "模型训练成员",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 PyTorch 搭建卷积网络完成图像分类训练",
+                "通过数据增强与学习率调整提升验证集表现",
+                "记录训练曲线与混淆矩阵，分析误分类样本"
+              ]
+            },
+            {
+              "organization": "虚构智能科技实习岗",
+              "role_title": "算法实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用朴素贝叶斯与词袋特征完成文本分类基线",
+                "对比不同特征处理对准确率的影响",
+                "整理实验记录与错误分析"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "Python",
+                "PyTorch",
+                "pandas",
+                "NumPy",
+                "scikit-learn"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-10-ai.json",
+            "html": "/generated-samples/authored-10-ai.html",
+            "docx": "/generated-samples/authored-10-ai.docx"
+          }
+        },
+        {
+          "id": "authored-11-ai",
+          "direction": "ai",
+          "direction_label": "AI",
+          "title": "算法实习生",
+          "bullet_count": 15,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "人工智能本科，主修课程覆盖Python等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "模型训练成员",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 PyTorch 搭建卷积网络完成图像分类训练",
+                "通过数据增强与学习率调整提升验证集表现",
+                "记录训练曲线与混淆矩阵，分析误分类样本",
+                "使用 pandas 清洗传感器采样数据并处理缺失值",
+                "编写异常值检测规则并输出异常记录表",
+                "将清洗流程封装为可重复执行的脚本"
+              ]
+            },
+            {
+              "organization": "虚构智能科技实习岗",
+              "role_title": "算法实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用朴素贝叶斯与词袋特征完成文本分类基线",
+                "对比不同特征处理对准确率的影响",
+                "整理实验记录与错误分析"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "Python",
+                "PyTorch",
+                "pandas",
+                "NumPy",
+                "scikit-learn"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-11-ai.json",
+            "html": "/generated-samples/authored-11-ai.html",
+            "docx": "/generated-samples/authored-11-ai.docx"
+          }
+        },
+        {
+          "id": "authored-12-electronics",
+          "direction": "electronics",
+          "direction_label": "电子",
+          "title": "硬件设计实习生",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "电子信息工程本科，主修课程覆盖STM32等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "嵌入式负责人",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 STM32 采集温度传感器数据并实现闭环控制",
+                "编写 C 语言驱动与定时中断，完成 PWM 输出",
+                "记录调试数据并分析超调与稳态误差",
+                "使用 Altium Designer 设计电源模块原理图与双层 PCB",
+                "完成器件布局与走线，检查电源与地平面完整性",
+                "整理设计文件与电气规则检查结果"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "STM32",
+                "C",
+                "Altium Designer",
+                "示波器",
+                "电路调试"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-12-electronics.json",
+            "html": "/generated-samples/authored-12-electronics.html",
+            "docx": "/generated-samples/authored-12-electronics.docx"
+          }
+        },
+        {
+          "id": "authored-13-electronics",
+          "direction": "electronics",
+          "direction_label": "电子",
+          "title": "硬件设计实习生",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "电子信息工程本科，主修课程覆盖STM32等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "课程学生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 Altium Designer 设计电源模块原理图与双层 PCB",
+                "完成器件布局与走线，检查电源与地平面完整性",
+                "整理设计文件与电气规则检查结果"
+              ]
+            },
+            {
+              "organization": "虚构电子科技实习岗",
+              "role_title": "硬件实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "设计分压与滤波电路调理传感器输出信号",
+                "用示波器测量纹波并调整滤波参数",
+                "记录测试数据与改进过程"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "STM32",
+                "C",
+                "Altium Designer",
+                "示波器",
+                "电路调试"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-13-electronics.json",
+            "html": "/generated-samples/authored-13-electronics.html",
+            "docx": "/generated-samples/authored-13-electronics.docx"
+          }
+        },
+        {
+          "id": "authored-14-electronics",
+          "direction": "electronics",
+          "direction_label": "电子",
+          "title": "硬件设计实习生",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "电子信息工程本科，主修课程覆盖STM32等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "嵌入式负责人",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 STM32 采集温度传感器数据并实现闭环控制",
+                "编写 C 语言驱动与定时中断，完成 PWM 输出",
+                "记录调试数据并分析超调与稳态误差"
+              ]
+            },
+            {
+              "organization": "虚构电子科技实习岗",
+              "role_title": "硬件实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "设计分压与滤波电路调理传感器输出信号",
+                "用示波器测量纹波并调整滤波参数",
+                "记录测试数据与改进过程"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "STM32",
+                "C",
+                "Altium Designer",
+                "示波器",
+                "电路调试"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-14-electronics.json",
+            "html": "/generated-samples/authored-14-electronics.html",
+            "docx": "/generated-samples/authored-14-electronics.docx"
+          }
+        },
+        {
+          "id": "authored-15-electronics",
+          "direction": "electronics",
+          "direction_label": "电子",
+          "title": "硬件设计实习生",
+          "bullet_count": 15,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "电子信息工程本科，主修课程覆盖STM32等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "嵌入式负责人",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 STM32 采集温度传感器数据并实现闭环控制",
+                "编写 C 语言驱动与定时中断，完成 PWM 输出",
+                "记录调试数据并分析超调与稳态误差",
+                "使用 Altium Designer 设计电源模块原理图与双层 PCB",
+                "完成器件布局与走线，检查电源与地平面完整性",
+                "整理设计文件与电气规则检查结果"
+              ]
+            },
+            {
+              "organization": "虚构电子科技实习岗",
+              "role_title": "硬件实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "设计分压与滤波电路调理传感器输出信号",
+                "用示波器测量纹波并调整滤波参数",
+                "记录测试数据与改进过程"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "STM32",
+                "C",
+                "Altium Designer",
+                "示波器",
+                "电路调试"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-15-electronics.json",
+            "html": "/generated-samples/authored-15-electronics.html",
+            "docx": "/generated-samples/authored-15-electronics.docx"
+          }
+        },
+        {
+          "id": "authored-16-electrical",
+          "direction": "electrical",
+          "direction_label": "电气",
+          "title": "电气自动化助理工程师",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "电气工程及其自动化本科，主修课程覆盖PLC等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "项目成员",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 PLC 编写电机启停与调速控制逻辑",
+                "配置变频器参数并完成联调",
+                "记录联调过程与故障排查步骤"
+              ]
+            },
+            {
+              "organization": "虚构职业技术学院",
+              "role_title": "实训学生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "按电气原理图完成配电柜元器件接线",
+                "执行通电前检查并排除一处接线错误",
+                "整理实训验收记录与安全操作要点"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "PLC",
+                "变频器",
+                "电气图纸",
+                "Eplan 基础",
+                "万用表"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-16-electrical.json",
+            "html": "/generated-samples/authored-16-electrical.html",
+            "docx": "/generated-samples/authored-16-electrical.docx"
+          }
+        },
+        {
+          "id": "authored-17-electrical",
+          "direction": "electrical",
+          "direction_label": "电气",
+          "title": "电气自动化助理工程师",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "电气工程及其自动化本科，主修课程覆盖PLC等方向"
+              ]
+            },
+            {
+              "organization": "虚构职业技术学院",
+              "role_title": "实训学生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "按电气原理图完成配电柜元器件接线",
+                "执行通电前检查并排除一处接线错误",
+                "整理实训验收记录与安全操作要点"
+              ]
+            },
+            {
+              "organization": "虚构电气设备实习岗",
+              "role_title": "电气实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "绘制电机正反转控制原理图与接线图",
+                "标注元件符号与端子编号，核对图纸一致性",
+                "整理图纸清单与元件明细表"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "PLC",
+                "变频器",
+                "电气图纸",
+                "Eplan 基础",
+                "万用表"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-17-electrical.json",
+            "html": "/generated-samples/authored-17-electrical.html",
+            "docx": "/generated-samples/authored-17-electrical.docx"
+          }
+        },
+        {
+          "id": "authored-18-electrical",
+          "direction": "electrical",
+          "direction_label": "电气",
+          "title": "电气自动化助理工程师",
+          "bullet_count": 12,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "电气工程及其自动化本科，主修课程覆盖PLC等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "项目成员",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 PLC 编写电机启停与调速控制逻辑",
+                "配置变频器参数并完成联调",
+                "记录联调过程与故障排查步骤"
+              ]
+            },
+            {
+              "organization": "虚构电气设备实习岗",
+              "role_title": "电气实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "绘制电机正反转控制原理图与接线图",
+                "标注元件符号与端子编号，核对图纸一致性",
+                "整理图纸清单与元件明细表"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "PLC",
+                "变频器",
+                "电气图纸",
+                "Eplan 基础",
+                "万用表"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-18-electrical.json",
+            "html": "/generated-samples/authored-18-electrical.html",
+            "docx": "/generated-samples/authored-18-electrical.docx"
+          }
+        },
+        {
+          "id": "authored-19-electrical",
+          "direction": "electrical",
+          "direction_label": "电气",
+          "title": "电气自动化助理工程师",
+          "bullet_count": 15,
+          "projects": [
+            {
+              "organization": "虚构理工大学",
+              "role_title": "本科",
+              "section": "教育背景",
+              "bullets": [
+                "电气工程及其自动化本科，主修课程覆盖PLC等方向"
+              ]
+            },
+            {
+              "organization": "虚构理工大学",
+              "role_title": "项目成员",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "使用 PLC 编写电机启停与调速控制逻辑",
+                "配置变频器参数并完成联调",
+                "记录联调过程与故障排查步骤"
+              ]
+            },
+            {
+              "organization": "虚构职业技术学院",
+              "role_title": "实训学生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "按电气原理图完成配电柜元器件接线",
+                "执行通电前检查并排除一处接线错误",
+                "整理实训验收记录与安全操作要点"
+              ]
+            },
+            {
+              "organization": "虚构电气设备实习岗",
+              "role_title": "电气实习生",
+              "section": "项目/科研/竞赛",
+              "bullets": [
+                "绘制电机正反转控制原理图与接线图",
+                "标注元件符号与端子编号，核对图纸一致性",
+                "整理图纸清单与元件明细表"
+              ]
+            },
+            {
+              "organization": "",
+              "role_title": "",
+              "section": "技能",
+              "bullets": [
+                "PLC",
+                "变频器",
+                "电气图纸",
+                "Eplan 基础",
+                "万用表"
+              ]
+            }
+          ],
+          "files": {
+            "json": "/generated-samples/authored-19-electrical.json",
+            "html": "/generated-samples/authored-19-electrical.html",
+            "docx": "/generated-samples/authored-19-electrical.docx"
+          }
+        }
+      ]
+    }
+  ]
+}

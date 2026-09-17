@@ -420,6 +420,13 @@ def _project_card(story: dict, *, item: dict, profile=None) -> dict:
         for metric in metrics
     )
     achieved = story.get("achieved") is True
+    assumptions = _nonempty_strings(story.get("design_assumptions"))
+    open_questions = _nonempty_strings(story.get("open_questions"))
+    preparation_questions = [
+        f"「{question}」目前依据是什么，计划如何验证？" for question in open_questions
+    ] + [
+        f"「{assumption}」是设计假设还是个人既有经历，能否提供来源？" for assumption in assumptions
+    ]
     boundary = ""
     if not achieved:
         boundary = "这是蓝图项目的准备方案；只能说明计划、验证方法与待补证据，不能说成自己已经完成。"
@@ -433,6 +440,9 @@ def _project_card(story: dict, *, item: dict, profile=None) -> dict:
             "actions": actions,
             "result": result,
         },
+        "design_assumptions": assumptions,
+        "open_questions": open_questions,
+        "preparation_questions": preparation_questions,
         "main_question": f"请用 STAR 讲清楚「{title}」如何证明你适合{target_title}。",
         "follow_up_chains": action_chains or [
             {

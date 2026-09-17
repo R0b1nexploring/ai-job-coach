@@ -6,6 +6,28 @@
 
 ## ADDED Requirements
 
+### Requirement: Local checks and model critique have separate responsibilities
+系统 MUST 保留两版简历的模型评审，包括分项评分、具体问题及可执行建议；评审 SHALL 读取该版本正文、项目方案、事实素材、目标画像和本地诊断。本地检查 SHALL 负责必要信息、已知占位话术、来源归属、项目/要点关联与目标/实测状态；模型 SHALL 补充具体性、正文与方案的一致性、行动与结果因果关系及技术合理性的解释性判断。两者均 MUST NOT 被描述为事实认证或项目复现证明。模型评分不得替代本地硬门禁，评审低分或建议不单独触发自动重写；模型不可用继续执行确定性回退并明确标为 degraded，最终内容硬门禁失败仍为 failed。
+
+#### Scenario: One detailed action masks another incomplete action
+- **WHEN** 一个项目中部分行动有取舍和难点，其他行动只有占位文字，或部分指标缺少测量条件
+- **THEN** 本地诊断逐项指出缺失内容并关联项目、要点和字段，不因一项完整而宣称所有行动或指标均完整
+
+#### Scenario: Resume copy omits information that exists in the plan
+- **WHEN** 内部方案有明确任务或结果，但简历可见正文只列出工具
+- **THEN** 评审定位正文丢失的要素并给出改进建议，不以内部字段齐全判定文案质量合格；仅模型建议不触发自动修复
+
+#### Scenario: A model gives a high score without explaining a contradiction
+- **WHEN** 评审返回高分，但没有解释行动与结果之间的明显矛盾
+- **THEN** 该分数不能作为质量验收证据，验收记录该漏检案例；本地来源或状态失败仍阻止交付
+
+### Requirement: Quality improvements can be evaluated with fictional cases
+质量改动 SHALL 使用完全虚构的目标画像与项目素材验证，覆盖空白、稀疏、多项目和无数值成果；不依赖用户提供真实简历或已有项目库。本地回归 MUST 覆盖占位话术、项目隔离、部分行动缺项、目标误标实测、方案与正文不一致、指南同源性及模型失败。真实模型文案效果 SHALL 通过同输入的改动前后对照和人工检查记录；不新增固定案例数量或发布评分阈值。
+
+#### Scenario: Mock tests pass after a writing change
+- **WHEN** 确定性或 mock 测试通过，但尚未进行真实模型文案对照
+- **THEN** 记录已验证的合同与尚未验证的效果，不把提示词存在、字段非空或模型自评分当作文案改善证据
+
 ### Requirement: STAR quality checks substance and causal consistency
 系统 MUST 检查蓝图项目 STAR 信息及其在可见正文中的覆盖，并 SHALL 提供项目级的具体性、个人贡献、行动与结果因果关系、技术合理性和可验证性评审。字段非空或包含 S/T/A/R 关键词 MUST NOT 被当作质量证明。错误 SHALL 定位到具体项目和要点；缺少必需元素、错误来源或目标成果误标实测按内容错误处理，低分和风格建议不单独触发自动重写。
 

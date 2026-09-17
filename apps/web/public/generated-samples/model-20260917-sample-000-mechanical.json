@@ -1,0 +1,61 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "机械设计助理工程师",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "项目成员 / 课程学生",
+          "location": "虚构城市",
+          "start_date": "2024-09",
+          "end_date": "2025-06",
+          "bullets": [
+            {
+              "id": "ea5a465b-dc4a-40a6-bd05-f42f14239f35",
+              "text": "2025.03–06 使用 SolidWorks 完成二级减速器装配建模，输出装配图与零件图",
+              "source_fact_ids": [
+                "mech-f1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "mech-cad"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            },
+            {
+              "id": "f7955b8b-a55c-4cf6-b9d9-74a85e269356",
+              "text": "2024.09–12 设计钻孔夹具结构，绘制定位与夹紧方案工程图",
+              "source_fact_ids": [
+                "mech-f2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "mech-cad"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": [
+    "尚无已确认的设计验证记录编写案例与关键取舍说明。"
+  ]
+}

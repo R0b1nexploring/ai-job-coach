@@ -81,7 +81,7 @@ export function Experience() {
     <>
       <span className="badge">实习 · 项目 · 范本</span>
       <h1 className="page-title mt-3">经历库</h1>
-      <p className="mt-2 max-w-2xl text-sm text-black/60">
+      <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
         实习和项目是生成简历的材料库。可以不先上传文件，直接记下真实经历。全站范本只供对照，不能当成你已经做过的事。
       </p>
       {message && <p className="mt-5 rounded-xl bg-green-50 p-3 text-green-700">{message}</p>}
@@ -103,7 +103,7 @@ export function Experience() {
               create.mutate()
             }}
           >
-            <h2 className="text-xl font-bold">添加真实经历</h2>
+            <h2 className="text-xl font-semibold">添加真实经历</h2>
             <div className="flex gap-2">
               <label className="text-sm"><input className="mr-2" type="radio" checked={form.kind === 'internship'} onChange={() => setForm((current) => ({ ...current, kind: 'internship' }))} />实习</label>
               <label className="text-sm"><input className="mr-2" type="radio" checked={form.kind === 'project'} onChange={() => setForm((current) => ({ ...current, kind: 'project' }))} />项目</label>
@@ -124,13 +124,13 @@ export function Experience() {
             <button className="btn" disabled={!form.title.trim() || create.isPending}>保存到经历库</button>
           </form>
           <section className="mt-8">
-            <h2 className="text-2xl font-bold">实习</h2>
+            <h2 className="text-2xl font-semibold">实习</h2>
             <div className="mt-4 grid gap-4 lg:grid-cols-2">
               {internships.length ? internships.map((item) => <ExperienceCard key={item.id} item={item} onConfirm={() => confirm.mutate(item.id)} />) : <Empty title="还没有实习经历。" />}
             </div>
           </section>
           <section className="mt-8">
-            <h2 className="text-2xl font-bold">项目</h2>
+            <h2 className="text-2xl font-semibold">项目</h2>
             <div className="mt-4 grid gap-4 lg:grid-cols-2">
               {projects.length ? projects.map((item) => <ExperienceCard key={item.id} item={item} onConfirm={() => confirm.mutate(item.id)} />) : <Empty title="还没有项目经历。" />}
             </div>
@@ -141,10 +141,10 @@ export function Experience() {
           {templates.length ? templates.map((item) => (
             <article className="card" key={item.id}>
               <p className="badge">{item.kind === 'internship' ? '实习范本' : '项目范本'}</p>
-              <h2 className="mt-3 font-bold">{item.title}</h2>
-              <p className="mt-1 text-sm text-black/50">{item.organization} · {item.role_title}</p>
-              <p className="mt-3 text-sm leading-6 text-black/70">{item.summary}</p>
-              <ul className="mt-3 space-y-1 text-sm text-black/60">
+              <h2 className="mt-3 font-semibold">{item.title}</h2>
+              <p className="mt-1 text-sm text-ink-secondary">{item.organization} · {item.role_title}</p>
+              <p className="mt-3 text-sm leading-6 text-ink">{item.summary}</p>
+              <ul className="mt-3 space-y-1 text-sm text-ink-secondary">
                 {item.bullets_json.map((bullet) => <li key={bullet}>• {bullet}</li>)}
               </ul>
               <button className="btn-secondary mt-4" onClick={() => copyTemplate.mutate(item.id)}>按此范本创建我的经历</button>
@@ -161,13 +161,13 @@ function ExperienceCard({ item, onConfirm }: { item: ExperienceEntry; onConfirm:
     <article className="card">
       <div className="flex justify-between gap-3">
         <div>
-          <h3 className="font-bold">{item.title}</h3>
-          <p className="mt-1 text-sm text-black/50">{item.organization || '组织待填写'} · {item.role_title || '角色待填写'}</p>
-          <p className="mt-1 text-xs text-black/45">{item.start_date || '开始时间未知'} – {item.end_date || '结束时间未知'}</p>
+          <h3 className="font-semibold">{item.title}</h3>
+          <p className="mt-1 text-sm text-ink-secondary">{item.organization || '组织待填写'} · {item.role_title || '角色待填写'}</p>
+          <p className="mt-1 text-xs text-ink-muted">{item.start_date || '开始时间未知'} – {item.end_date || '结束时间未知'}</p>
         </div>
         <span className="rounded-full bg-cream px-2.5 py-1 text-xs">{item.linked_to_facts ? '已入事实库' : '草稿'}</span>
       </div>
-      <p className="mt-3 text-sm leading-6 text-black/70">{item.summary || '还没有经历说明。'}</p>
+      <p className="mt-3 text-sm leading-6 text-ink">{item.summary || '还没有经历说明。'}</p>
       {!item.linked_to_facts && (
         <button className="btn mt-4" onClick={onConfirm}>确认加入事实库</button>
       )}

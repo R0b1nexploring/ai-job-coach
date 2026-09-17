@@ -87,14 +87,14 @@ export function Channels() {
           <article className="card" key={channel.id}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="font-bold">{channel.company_name}</h2>
-                <p className="mt-1 text-sm text-black/55">{channelTypeLabels[channel.channel_type]} · {scopeLabels[channel.scope]}</p>
+                <h2 className="font-semibold">{channel.company_name}</h2>
+                <p className="mt-1 text-sm text-ink-secondary">{channelTypeLabels[channel.channel_type]} · {scopeLabels[channel.scope]}</p>
               </div>
               <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${channel.verify_status === 'dead' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
                 {verifyLabels[channel.verify_status]}
               </span>
             </div>
-            <p className="mt-3 text-xs text-black/45">来源更新时间：{channel.source_updated_at ? new Date(channel.source_updated_at).toLocaleDateString('zh-CN') : '未知'}</p>
+            <p className="mt-3 text-xs text-ink-muted">来源更新时间：{channel.source_updated_at ? new Date(channel.source_updated_at).toLocaleDateString('zh-CN') : '未知'}</p>
             <div className="mt-4 flex flex-wrap gap-2">
               {channel.url && <a className="btn-secondary" href={channel.url} target="_blank" rel="noreferrer">打开投递入口</a>}
               {channel.email && <button className="btn-secondary" onClick={() => copyEmail(channel.email)}>复制邮箱</button>}

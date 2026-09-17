@@ -35,23 +35,24 @@ export function AuthPage({ register = false }: { register?: boolean }) {
   return (
     <>
       <PublicHeader />
-      <main className="mx-auto grid max-w-5xl items-center gap-10 px-5 py-12 md:grid-cols-2 md:py-16">
+      <main className="mx-auto grid min-h-[calc(100vh-64px)] max-w-5xl items-center gap-12 px-5 py-12 md:grid-cols-[1fr_420px] md:py-16">
         <div className="hidden md:block">
-          <span className="badge">自助简历工作台</span>
-          <h2 className="mt-4 text-4xl font-bold tracking-tight">一份岗位，两份简历</h2>
-          <p className="mt-4 max-w-md text-black/60 leading-7">
+          <p className="eyebrow text-sage">自助简历工作台</p>
+          <h2 className="mt-4 font-display text-[34px] font-medium leading-[1.15] tracking-[-0.01em]">一份岗位，两份简历</h2>
+          <p className="mt-4 max-w-md text-sm leading-7 text-ink-secondary">
             登录后直接进入工作台：分析岗位、生成求职版和蓝图 Plus，再导出面试指南。
           </p>
-          <ul className="mt-8 space-y-3 text-sm text-black/65">
-            <li className="flex gap-2"><span className="text-sage">01</span>粘贴职位描述</li>
-            <li className="flex gap-2"><span className="text-sage">02</span>生成求职版与蓝图</li>
-            <li className="flex gap-2"><span className="text-sage">03</span>导出并准备面试</li>
+          <ul className="mt-8 grid max-w-md gap-px overflow-hidden rounded-xl border border-line bg-ink/[0.07] text-sm">
+            {['粘贴职位描述', '生成求职版与蓝图', '导出并准备面试'].map((item, index) => (
+              <li className="flex items-center gap-3 bg-white px-4 py-3.5" key={item}><span className="text-xs font-semibold text-sage">0{index + 1}</span>{item}</li>
+            ))}
           </ul>
         </div>
-        <div className="card mx-auto w-full max-w-md">
-          <h1 className="text-3xl font-bold tracking-tight">{register ? '创建账号' : '欢迎回来'}</h1>
-          <p className="mt-2 text-sm text-black/50">{register ? '创建后即可进入简历工作台。' : '使用邮箱登录，继续未完成的简历。'}</p>
-          <form noValidate className="mt-8 space-y-4" onSubmit={form.handleSubmit(submit)}>
+        <div className="card mx-auto w-full max-w-md p-6 sm:p-8">
+          <p className="eyebrow">求职罗盘账户</p>
+          <h1 className="mt-2 font-display text-[26px] font-medium leading-[1.25]">{register ? '创建账号' : '欢迎回来'}</h1>
+          <p className="mt-2 text-sm text-ink-secondary">{register ? '创建后即可进入简历工作台。' : '使用邮箱登录，继续未完成的简历。'}</p>
+          <form noValidate className="mt-7 space-y-4" onSubmit={form.handleSubmit(submit)}>
             {register && (
               <label>
                 <span className="label">称呼</span>
@@ -69,11 +70,11 @@ export function AuthPage({ register = false }: { register?: boolean }) {
               <small className="text-red-600">{form.formState.errors.password?.message}</small>
             </label>
             {error && <p className="text-red-600" role="alert">{error}</p>}
-            <button className="btn w-full py-3" disabled={form.formState.isSubmitting}>
+            <button className="btn w-full" disabled={form.formState.isSubmitting}>
               {form.formState.isSubmitting ? '请稍候…' : register ? '注册并继续' : '登录'}
             </button>
           </form>
-          <p className="mt-5 text-sm text-black/60">
+          <p className="mt-5 text-sm text-ink-secondary">
             {register ? '已有账号？' : '还没有账号？'}{' '}
             <Link className="font-semibold text-sage underline-offset-2 hover:underline" to={register ? '/login' : '/register'}>
               {register ? '登录' : '立即注册'}

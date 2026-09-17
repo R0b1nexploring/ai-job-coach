@@ -195,10 +195,16 @@ def test_project_story_inputs_handle_multiple_and_blank_materials_without_cross_
     assert all(len(row["fact_ids"]) <= 1 for row in rows)
     blank = build_project_story_inputs([], [], requirements, [])
     assert blank == [{
-        "id": "virtual:target-project", "source": "virtual_target", "title": "目标实践方案",
+        "id": "virtual:target-project", "schema_version": 1, "source": "virtual_target",
+        "title": "目标实践方案",
         "organization": "", "role_title": "计划负责人", "fact_ids": [],
+        "material_summary": "", "material_details": {},
         "requirement_ids": ["r-cad"], "requirements": ["SolidWorks 装配设计"],
         "story_boundary": "这是待完成的蓝图项目；所有结果都是目标，不能陈述为个人既有经历",
+        "design_supplement": (
+            "无个人素材；围绕目标要求设计边界清楚的小项目，"
+            "信息不足时缩小范围，方法、步骤与验证方式要具体，所有结果为 target。"
+        ),
     }]
 
 

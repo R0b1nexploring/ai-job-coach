@@ -1,0 +1,62 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "后端开发实习生",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "后端负责人",
+          "location": "虚构城市",
+          "start_date": "2025-02",
+          "end_date": "2025-05",
+          "bullets": [
+            {
+              "id": "cf1c5501-7f6d-4fb9-95b6-31fb6532b3bc",
+              "text": "使用 Spring Boot 实现失物登记与认领接口，MySQL 持久化数据",
+              "source_fact_ids": [
+                "cs-f1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "cs-java",
+                "cs-sql"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            },
+            {
+              "id": "06750877-1674-4f35-a69f-7f9b7f23c596",
+              "text": "设计图书借阅数据库表结构与视图，编写 SQL 查询及存储过程",
+              "source_fact_ids": [
+                "cs-f2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "cs-sql"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": [
+    "缺少正式实习经历、Git实际项目证据及接口测试结果"
+  ]
+}

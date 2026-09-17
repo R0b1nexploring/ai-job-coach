@@ -1,0 +1,215 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "机械设计助理工程师",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "教育背景",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "本科",
+          "location": "虚构城市",
+          "start_date": "2022-09",
+          "end_date": "2026-07",
+          "bullets": [
+            {
+              "id": "bca922cb-6133-476f-a6ee-f8afab1db5d0",
+              "text": "机械设计制造及其自动化本科，主修课程覆盖SolidWorks等方向",
+              "source_fact_ids": [
+                "f-mechanical-education"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "项目成员",
+          "location": "虚构城市",
+          "start_date": "2025-03",
+          "end_date": "2025-06",
+          "bullets": [
+            {
+              "id": "e2fe76ea-cdd7-4849-a5aa-11c99f82c2b6",
+              "text": "使用 SolidWorks 参数化完成二级减速器箱体与齿轮轴建模",
+              "source_fact_ids": [
+                "f-mechanical-reducer-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "dbc18fbe-3941-4d0b-98aa-ace0cfc62f6a",
+              "text": "通过装配干涉检查调整轴承座位置，消除箱体与轴系干涉",
+              "source_fact_ids": [
+                "f-mechanical-reducer-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "281ee4d6-ff71-4aef-818b-8088a2d14be0",
+              "text": "输出减速器装配图与关键零件图，标注配合与尺寸公差",
+              "source_fact_ids": [
+                "f-mechanical-reducer-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "202813d7-4b61-4497-aae6-5b2b5f3f0f1b",
+              "text": "设计钻孔夹具的定位与夹紧方案，绘制装配工程图",
+              "source_fact_ids": [
+                "f-mechanical-fixture-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            },
+            {
+              "id": "b226696d-08c8-4803-8b7e-4d80d8ca8dd4",
+              "text": "按六点定位原理选择定位元件并校核夹紧力方向",
+              "source_fact_ids": [
+                "f-mechanical-fixture-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            },
+            {
+              "id": "a2f8f8f3-0c8e-49e1-833f-a627c6a2509e",
+              "text": "整理设计说明与图纸检查记录，支持课程验收",
+              "source_fact_ids": [
+                "f-mechanical-fixture-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "技能",
+      "presentation": "tags",
+      "items": [
+        {
+          "organization": "",
+          "role_title": "",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "id": "440829b4-56ba-47c1-93de-a0b9d264726a",
+              "text": "SolidWorks",
+              "source_fact_ids": [
+                "f-mechanical-skill-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "289ba816-d655-4534-a1b7-b2c16194b3e3",
+              "text": "AutoCAD",
+              "source_fact_ids": [
+                "f-mechanical-skill-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "e9854ac9-5d04-469b-9292-fa859e36293b",
+              "text": "机械制图",
+              "source_fact_ids": [
+                "f-mechanical-skill-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "65a75a97-953e-44cc-854f-d447623690f6",
+              "text": "工程图标注",
+              "source_fact_ids": [
+                "f-mechanical-skill-3"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "cc31cfee-2288-4d4f-b780-80943b3c90a5",
+              "text": "GD&T 基础",
+              "source_fact_ids": [
+                "f-mechanical-skill-4"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": []
+}

@@ -141,7 +141,9 @@ def _assemble_item(
     raw_story = item.get("project_story") if isinstance(item.get("project_story"), dict) else None
     if kept:
         row = {**header, "bullets": kept}
-        if raw_story:
+        # Internal project plans belong to the blueprint only.  A job-seeking
+        # resume must not inherit blueprint project stories from the model.
+        if raw_story and kind == "target":
             row["project_story"] = deepcopy(raw_story)
         rows.append(row)
     for extra in independent:
@@ -245,6 +247,8 @@ def _assemble_project_story(raw: object, *, item: dict, bullets: list[dict], req
             "verification_method": verification_method,
             "metrics": metrics,
         },
+        "design_assumptions": _text_list(raw.get("design_assumptions")),
+        "open_questions": _text_list(raw.get("open_questions")),
         "bullet_ids": bullet_ids,
         "source_fact_ids": source_fact_ids,
         "source_target_ids": source_target_ids,

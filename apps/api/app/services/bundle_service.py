@@ -93,6 +93,16 @@ RESUME_REWRITE_PAIR_PROMPT = (
     "蓝图可含未达成目标，achieved=false。蓝图中每个项目/科研/竞赛 item 都必须带 project_story："
     "schema_version=1，且包含 situation（背景和问题）、task（角色、目标、约束）、"
     "actions（步骤、方法、取舍/难点、个人或计划贡献）和 result（交付物、验证方式、可选指标）。"
+    "先展开 project_story 项目方案，再将同一方案压缩为 bullets，不能从漂亮的成果句倒编过程。"
+    "project_story_inputs 按项目隔离事实与草稿细节，只能在各自项目内引用；"
+    "每个输入的 design_supplement 说明该项目的设计边界，按来源区分已确认事实、草稿与虚拟目标，不得越界。"
+    "无素材时围绕目标要求设计边界清楚的小项目，明确输入、输出和具体问题；"
+    "信息不足时缩小项目范围，而不是补出未经验证的细节或数字。"
+    "每个关键行动说明操作对象、方法、选择理由和难点处理；结果说明产物如何检验。"
+    "project_story 用 design_assumptions 记录没有个人来源、由 AI 补充的设计细节，"
+    "用 open_questions 记录尚待本人核实或验证的方法、指标与假设；没有就不填，不得编造。"
+    "禁止用‘业务需要、负责开发、使用工具、效果良好’或写作指令代替项目细节。"
+    "无实测依据时不虚构提升比例；可以仅交付程序、图纸或报告并说明验证步骤。"
     "project_story 仅是内部结构，resume bullets 仍须自然、简洁地表达项目成果；"
     "未完成计划必须用 target 指标和 achieved=false，绝不写成已观察到的结果。"
     "contact 直接使用输入 contact。不要输出布局、HTML、字体或持久 ID。"
@@ -373,6 +383,8 @@ def build_project_story_inputs(
     one explicit virtual target project instead of a fabricated past project.
     """
     brief = build_writing_brief(facts, draft_materials, requirements, job_context)
+    facts_by_id = {fact.id: fact for fact in facts}
+    drafts_by_id = {str(material.get("id") or ""): material for material in draft_materials or []}
     requirements_by_id = {
         str(item.get("id") or ""): str(item.get("text") or "")
         for item in requirements
@@ -388,11 +400,22 @@ def build_project_story_inputs(
         rows.append(
             {
                 "id": f"{material.get('source')}:{material.get('id')}",
+                "schema_version": 1,
                 "source": material.get("source"),
                 "title": material.get("title") or "未命名项目",
                 "organization": material.get("organization") or "",
                 "role_title": material.get("role_title") or "",
                 "fact_ids": list(material.get("fact_ids") or []),
+                "facts": [
+                    _fact_input(facts_by_id[fact_id])
+                    for fact_id in material.get("fact_ids") or []
+                    if fact_id in facts_by_id
+                ],
+                "material_summary": (
+                    str(drafts_by_id.get(str(material.get("id")), {}).get("summary") or "")
+                    if material.get("source") == "draft_material" else ""
+                ),
+                "material_details": deepcopy(material.get("details") or {}),
                 "requirement_ids": matched,
                 "requirements": [requirements_by_id[item] for item in matched],
                 "story_boundary": (
@@ -400,6 +423,7 @@ def build_project_story_inputs(
                     if material.get("source") == "confirmed_fact"
                     else "仅作为待核验素材或计划，不得写成已完成经历"
                 ),
+                "design_supplement": _design_supplement(material.get("source")),
             }
         )
     if not rows:
@@ -412,17 +436,45 @@ def build_project_story_inputs(
         rows.append(
             {
                 "id": "virtual:target-project",
+                "schema_version": 1,
                 "source": "virtual_target",
                 "title": "目标实践方案",
                 "organization": "",
                 "role_title": "计划负责人",
                 "fact_ids": [],
+                "material_summary": "",
+                "material_details": {},
                 "requirement_ids": [requirement_id] if requirement_id else [],
                 "requirements": [requirement] if requirement else [],
                 "story_boundary": "这是待完成的蓝图项目；所有结果都是目标，不能陈述为个人既有经历",
+                "design_supplement": _design_supplement("virtual_target"),
             }
         )
     return rows
+
+
+def _design_supplement(source: object) -> str:
+    """Describe, per material source, what AI design may safely add.
+
+    The plan is organised before the copy is written, so the boundary has to
+    travel with each project: confirmed facts may be shaped, a draft may be
+    completed, and a virtual target may only be designed.  Unverified methods
+    and metrics belong in ``open_questions``, never in an observed result.
+    """
+    if source == "confirmed_fact":
+        return (
+            "可基于已确认事实设计方法、取舍与验证步骤；"
+            "不得新增组织、时间、奖项或已取得的实测结果。"
+        )
+    if source == "draft_material":
+        return (
+            "用户草稿可补全为可执行方案，但设计补全与用户已提供内容分开记录；"
+            "不确定的方法与指标写入 open_questions。"
+        )
+    return (
+        "无个人素材；围绕目标要求设计边界清楚的小项目，"
+        "信息不足时缩小范围，方法、步骤与验证方式要具体，所有结果为 target。"
+    )
 
 
 def _generation_request_hash(*, resume_id: str, profile_id: str, profile_version, facts, draft_materials=None) -> str:

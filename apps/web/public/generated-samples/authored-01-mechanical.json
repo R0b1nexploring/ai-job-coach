@@ -1,0 +1,224 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "机械设计助理工程师",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "教育背景",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "本科",
+          "location": "虚构城市",
+          "start_date": "2022-09",
+          "end_date": "2026-07",
+          "bullets": [
+            {
+              "id": "79a3e516-c11a-45a1-ba9b-7e15c8b86d41",
+              "text": "机械设计制造及其自动化本科，主修课程覆盖SolidWorks等方向",
+              "source_fact_ids": [
+                "f-mechanical-education"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "课程学生",
+          "location": "虚构城市",
+          "start_date": "2024-09",
+          "end_date": "2024-12",
+          "bullets": [
+            {
+              "id": "48dbe417-fff4-4f0a-825a-895fc8324d49",
+              "text": "设计钻孔夹具的定位与夹紧方案，绘制装配工程图",
+              "source_fact_ids": [
+                "f-mechanical-fixture-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "f14f80ad-88eb-4a64-a718-644ea9ea568f",
+              "text": "按六点定位原理选择定位元件并校核夹紧力方向",
+              "source_fact_ids": [
+                "f-mechanical-fixture-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "4291f173-d8f4-4d9c-8a74-e1cf248ea7b0",
+              "text": "整理设计说明与图纸检查记录，支持课程验收",
+              "source_fact_ids": [
+                "f-mechanical-fixture-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        },
+        {
+          "organization": "虚构精工实习岗",
+          "role_title": "技术实习生",
+          "location": "虚构城市",
+          "start_date": "2025-07",
+          "end_date": "2025-09",
+          "bullets": [
+            {
+              "id": "151d1c73-b538-45ee-8617-b84c30e334dd",
+              "text": "为减速器关键配合尺寸建立设计验证检查项与判定标准",
+              "source_fact_ids": [
+                "f-mechanical-verify-record-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "22d034d7-7e1a-4fb7-a22c-b846257f0608",
+              "text": "对比两种轴承座结构方案，记录刚度与装配性取舍",
+              "source_fact_ids": [
+                "f-mechanical-verify-record-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "d91ad75d-303f-423b-b9a3-d6bc7c4d681f",
+              "text": "输出验证记录表，逐项对应图纸尺寸与检查结果",
+              "source_fact_ids": [
+                "f-mechanical-verify-record-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "技能",
+      "presentation": "tags",
+      "items": [
+        {
+          "organization": "",
+          "role_title": "",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "id": "6737da04-237e-499b-9d8d-118413a7ba93",
+              "text": "SolidWorks",
+              "source_fact_ids": [
+                "f-mechanical-skill-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "c9f922a1-ae4c-4358-bff2-456803807195",
+              "text": "AutoCAD",
+              "source_fact_ids": [
+                "f-mechanical-skill-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "f263702e-e5f2-4508-b3ad-e9dd967ed981",
+              "text": "机械制图",
+              "source_fact_ids": [
+                "f-mechanical-skill-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "b47b651b-843b-475b-b7bf-32ae341f5a38",
+              "text": "工程图标注",
+              "source_fact_ids": [
+                "f-mechanical-skill-3"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "6ab81c5a-d978-42b9-9ead-68d2aa635dcd",
+              "text": "GD&T 基础",
+              "source_fact_ids": [
+                "f-mechanical-skill-4"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": []
+}

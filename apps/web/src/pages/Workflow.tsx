@@ -35,7 +35,7 @@ export function Applications() {
   return <><span className="badge">合法状态机</span><h1 className="page-title mt-3">投递看板</h1>
     {(update.error || emailDraft.error) && <div className="mt-4"><ErrorState error={update.error || emailDraft.error} /></div>}
     <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{query.data?.items?.length ? query.data.items.map((item: any) =>
-      <article className="card" key={item.id}><p className="badge">{statusNames[item.status] || item.status}</p><p className="mt-3 break-all text-sm text-black/60">记录 {item.id.slice(0, 8)}</p>
+      <article className="card" key={item.id}><p className="badge">{statusNames[item.status] || item.status}</p><p className="mt-3 break-all text-sm text-ink-secondary">记录 {item.id.slice(0, 8)}</p>
         <ApplicationChannelInfo channel={channelById.get(item.channel_id)} onDraft={() => emailDraft.mutate(item.id)} />
         {next[item.status] && <button className="btn-secondary mt-5" onClick={() => update.mutate({ id: item.id, status: next[item.status], currentStatus: item.status })}>{item.status === 'pending_confirmation' ? '确认加入投递准备' : `推进到：${statusNames[next[item.status]]}`}</button>}
       </article>) : <Empty title="还没有投递记录。请先在匹配后加入队列。" />}</div>
@@ -44,7 +44,7 @@ export function Applications() {
 }
 
 function ApplicationChannelInfo({ channel, onDraft }: { channel: any; onDraft: () => void }) {
-  if (!channel) return <p className="mt-3 text-xs text-black/45">未关联具体投递入口</p>
+  if (!channel) return <p className="mt-3 text-xs text-ink-muted">未关联具体投递入口</p>
   return (
     <section className="mt-3 rounded-xl bg-cream p-3 text-sm">
       <b>{channel.company_name}投递入口</b>
@@ -60,13 +60,13 @@ function ApplicationChannelInfo({ channel, onDraft }: { channel: any; onDraft: (
 function EmailDraftModal({ draft, onClose }: { draft: any; onClose: () => void }) {
   const copyDraft = () => navigator.clipboard.writeText(`收件人：${draft.to}\n主题：${draft.subject}\n\n${draft.body}`)
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-5" role="dialog" aria-modal="true" aria-label="邮件草稿">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-5" role="dialog" aria-modal="true" aria-label="邮件草稿">
       <section className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="text-xl font-bold">邮件草稿（系统不会发送）</h2>
+        <h2 className="text-xl font-semibold">邮件草稿（系统不会发送）</h2>
         <label className="mt-4 block"><span className="label">收件人</span><input className="field" readOnly value={draft.to} /></label>
         <label className="mt-3 block"><span className="label">主题</span><input className="field" readOnly value={draft.subject} /></label>
         <label className="mt-3 block"><span className="label">正文</span><textarea className="field min-h-64" readOnly value={draft.body} /></label>
-        <p className="mt-3 text-sm text-black/60">{draft.attachment_hint}</p>
+        <p className="mt-3 text-sm text-ink-secondary">{draft.attachment_hint}</p>
         {draft.warnings?.length > 0 && <ul className="mt-3 space-y-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{draft.warnings.map((warning: string) => <li key={warning}>△ {warning}</li>)}</ul>}
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button className="btn-secondary" onClick={onClose}>关闭</button>
@@ -131,16 +131,16 @@ function InterviewCard({ item }: { item: any }) {
     onSuccess: () => client.invalidateQueries({ queryKey: ['interviews'] }),
   })
   const error = save.error || submit.error
-  return <article className="card"><div className="flex flex-wrap justify-between gap-3"><h2 className="font-bold">模拟题组</h2><div className="flex gap-2"><span className="badge">{interviewStatus[item.status] || item.status}</span><span className="badge">{questions.length} 题</span></div></div>
-    {item.question_set_json.exposure_warning && <section className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><h3 className="font-bold text-amber-900">重点暴露风险</h3><p className="mt-2 text-sm text-amber-900">{item.question_set_json.exposure_warning.message}</p></section>}
-    {item.question_set_json.self_introduction && <details className="mt-4 rounded-xl bg-green-50 p-4" open><summary className="cursor-pointer font-bold">完整自我介绍草稿（约 {item.question_set_json.self_introduction.duration_seconds} 秒）</summary><p className="mt-3 whitespace-pre-wrap text-sm leading-7">{item.question_set_json.self_introduction.text}</p><p className="mt-2 text-xs text-black/50">练习稿必须按本人真实表达修改；事实来源 {item.question_set_json.self_introduction.source_fact_ids.length} 条。</p></details>}
-    {item.question_set_json.project_answers?.length > 0 && <details className="mt-4 rounded-xl bg-cream p-4"><summary className="cursor-pointer font-bold">项目回答与追问</summary><div className="mt-3 space-y-5">{item.question_set_json.project_answers.map((answer: any, index: number) => <ProjectAnswer answer={answer} key={answer.fact_id || index} />)}</div></details>}
-    {item.question_set_json.common_answers?.length > 0 && <details className="mt-4 rounded-xl border border-black/10 p-4"><summary className="cursor-pointer font-bold">常见问题回答框架</summary><div className="mt-3 space-y-3">{item.question_set_json.common_answers.map((answer: any, index: number) => <div key={index}><b className="text-sm">{answer.question}</b><p className="mt-1 text-sm text-black/70">{answer.answer}</p></div>)}</div></details>}
-    {item.question_set_json.preparation_plan?.length > 0 && <div className="mt-4 grid gap-4 md:grid-cols-2"><section className="rounded-xl border border-sage/20 p-4"><h3 className="font-bold">面试前准备</h3><ul className="mt-2 space-y-2 text-sm">{item.question_set_json.preparation_plan.map((step: string) => <li key={step}>✓ {step}</li>)}</ul></section><section className="rounded-xl border border-amber-200 bg-amber-50 p-4"><h3 className="font-bold text-amber-900">真实性提醒</h3><ul className="mt-2 space-y-2 text-sm text-amber-900">{item.question_set_json.risk_reminders.map((step: string) => <li key={step}>△ {step}</li>)}</ul></section></div>}
-    <ol className="mt-4 space-y-5">{questions.map((question: any, index: number) => <li key={question.id}><p className="font-semibold">{index + 1}. {question.question}</p><p className="mt-1 text-sm text-black/50">考察：{question.why_asked} · 评分：{question.rubric.join(' / ')}</p>{item.status === 'draft' && <textarea aria-label={`回答第 ${index + 1} 题`} className="field mt-3 min-h-24" value={answers[question.id] || ''} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })} placeholder="按真实经历填写；不知道可以明确说明。" />}</li>)}</ol>
+  return <article className="card"><div className="flex flex-wrap justify-between gap-3"><h2 className="font-semibold">模拟题组</h2><div className="flex gap-2"><span className="badge">{interviewStatus[item.status] || item.status}</span><span className="badge">{questions.length} 题</span></div></div>
+    {item.question_set_json.exposure_warning && <section className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><h3 className="font-semibold text-amber-900">重点暴露风险</h3><p className="mt-2 text-sm text-amber-900">{item.question_set_json.exposure_warning.message}</p></section>}
+    {item.question_set_json.self_introduction && <details className="mt-4 rounded-xl bg-green-50 p-4" open><summary className="cursor-pointer font-semibold">完整自我介绍草稿（约 {item.question_set_json.self_introduction.duration_seconds} 秒）</summary><p className="mt-3 whitespace-pre-wrap text-sm leading-7">{item.question_set_json.self_introduction.text}</p><p className="mt-2 text-xs text-ink-secondary">练习稿必须按本人真实表达修改；事实来源 {item.question_set_json.self_introduction.source_fact_ids.length} 条。</p></details>}
+    {item.question_set_json.project_answers?.length > 0 && <details className="mt-4 rounded-xl bg-cream p-4"><summary className="cursor-pointer font-semibold">项目回答与追问</summary><div className="mt-3 space-y-5">{item.question_set_json.project_answers.map((answer: any, index: number) => <ProjectAnswer answer={answer} key={answer.fact_id || index} />)}</div></details>}
+    {item.question_set_json.common_answers?.length > 0 && <details className="mt-4 rounded-xl border border-line p-4"><summary className="cursor-pointer font-semibold">常见问题回答框架</summary><div className="mt-3 space-y-3">{item.question_set_json.common_answers.map((answer: any, index: number) => <div key={index}><b className="text-sm">{answer.question}</b><p className="mt-1 text-sm text-ink">{answer.answer}</p></div>)}</div></details>}
+    {item.question_set_json.preparation_plan?.length > 0 && <div className="mt-4 grid gap-4 md:grid-cols-2"><section className="rounded-xl border border-sage/20 p-4"><h3 className="font-semibold">面试前准备</h3><ul className="mt-2 space-y-2 text-sm">{item.question_set_json.preparation_plan.map((step: string) => <li key={step}>✓ {step}</li>)}</ul></section><section className="rounded-xl border border-amber-200 bg-amber-50 p-4"><h3 className="font-semibold text-amber-900">真实性提醒</h3><ul className="mt-2 space-y-2 text-sm text-amber-900">{item.question_set_json.risk_reminders.map((step: string) => <li key={step}>△ {step}</li>)}</ul></section></div>}
+    <ol className="mt-4 space-y-5">{questions.map((question: any, index: number) => <li key={question.id}><p className="font-semibold">{index + 1}. {question.question}</p><p className="mt-1 text-sm text-ink-secondary">考察：{question.why_asked} · 评分：{question.rubric.join(' / ')}</p>{item.status === 'draft' && <textarea aria-label={`回答第 ${index + 1} 题`} className="field mt-3 min-h-24" value={answers[question.id] || ''} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })} placeholder="按真实经历填写；不知道可以明确说明。" />}</li>)}</ol>
     {item.status === 'draft' && <div className="mt-5 flex flex-wrap gap-3"><button className="btn-secondary" disabled={save.isPending} onClick={() => save.mutate()}>保存回答</button><button className="btn" disabled={submit.isPending || !Object.values(answers).some((answer) => answer.trim())} onClick={() => submit.mutate()}>提交顾问评分</button></div>}
     {item.status === 'submitted' && <p className="mt-5 rounded-xl bg-amber-50 p-3 text-amber-800">回答已锁定，等待顾问评分与复盘。</p>}
-    {item.status === 'scored' && <div className="mt-5 rounded-xl bg-green-50 p-4"><h3 className="font-bold">顾问评分</h3><div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-3">{Object.entries(item.scorecard_json || {}).map(([name, score]) => <p key={name} className="rounded-lg bg-white p-2 text-sm">{name}：<b>{String(score)}</b></p>)}</div><p className="mt-3 text-sm">{item.feedback_json?.summary || '顾问已完成评分。'}</p>{item.feedback_json?.next_task && <p className="mt-2 text-sm text-green-800">下一步：{item.feedback_json.next_task}</p>}</div>}
+    {item.status === 'scored' && <div className="mt-5 rounded-xl bg-green-50 p-4"><h3 className="font-semibold">顾问评分</h3><div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-3">{Object.entries(item.scorecard_json || {}).map(([name, score]) => <p key={name} className="rounded-lg bg-white p-2 text-sm">{name}：<b>{String(score)}</b></p>)}</div><p className="mt-3 text-sm">{item.feedback_json?.summary || '顾问已完成评分。'}</p>{item.feedback_json?.next_task && <p className="mt-2 text-sm text-green-800">下一步：{item.feedback_json.next_task}</p>}</div>}
     {error && <div className="mt-4"><ErrorState error={error} /></div>}
   </article>
 }
@@ -168,13 +168,13 @@ function ProjectAnswer({ answer }: { answer: any }) {
       </div>
       {answer.honesty_script && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">诚实说明：{answer.honesty_script}</p>}
       <dl className="mt-3 space-y-2 text-sm">
-        {sections.map(([label, value]) => <div key={label}><dt className="font-semibold">{label}</dt><dd className="mt-0.5 text-black/65">{value}</dd></div>)}
+        {sections.map(([label, value]) => <div key={label}><dt className="font-semibold">{label}</dt><dd className="mt-0.5 text-ink-secondary">{value}</dd></div>)}
       </dl>
       <div className="mt-3 space-y-2">
         {answer.follow_ups.map((followUp: any, index: number) => (
-          <div className="rounded-lg border border-black/10 p-3 text-sm" key={`${followUp.question}-${index}`}>
-            <div className="flex items-center justify-between gap-2"><b>{followUp.question}</b><span className={followUp.risk === 'high' ? 'text-red-700' : 'text-black/45'}>{followUp.risk === 'high' ? '高风险' : '追问'}</span></div>
-            <p className="mt-1 text-black/60">应对：{followUp.how_to_answer}</p>
+          <div className="rounded-lg border border-line p-3 text-sm" key={`${followUp.question}-${index}`}>
+            <div className="flex items-center justify-between gap-2"><b>{followUp.question}</b><span className={followUp.risk === 'high' ? 'text-red-700' : 'text-ink-muted'}>{followUp.risk === 'high' ? '高风险' : '追问'}</span></div>
+            <p className="mt-1 text-ink-secondary">应对：{followUp.how_to_answer}</p>
           </div>
         ))}
       </div>
@@ -190,8 +190,8 @@ export function Orders() {
   if (packages.error || quotas.error || ledger.error) return <ErrorState error={packages.error || quotas.error || ledger.error} />
   return <><span className="badge">MVP-1 演示额度</span><h1 className="page-title mt-3">套餐与额度</h1>
     <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800">在线支付尚未开放。当前额度由种子脚本或管理员发放，不代表真实付款。</p>
-    <div className="mt-6 grid gap-4 md:grid-cols-4">{packages.data?.items?.map((item: any) => <article className="card" key={item.id}><h2 className="font-bold">{item.name}</h2><p className="my-3 text-3xl font-black">¥{item.price_cents / 100}</p><p className="text-xs text-black/50">简历 {item.resume_quota} · 投递 {item.application_quota} · 面试 {item.interview_quota}</p><p className="mt-4 text-sm">{item.features_json.join(' · ')}</p></article>)}</div>
-    <h2 className="mt-10 text-2xl font-bold">当前额度</h2><div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">{Object.entries(quotas.data || {}).map(([key, value]) => <div className="card" key={key}><p className="text-sm text-black/50">{quotaLabels[key] || '其他额度'}</p><b className="text-3xl">{value}</b></div>)}</div>
-    <h2 className="mt-10 text-2xl font-bold">额度变化</h2><div className="mt-4 space-y-3">{ledger.data?.items?.length ? ledger.data.items.map((item: any) => <article className="card flex justify-between" key={item.id}><div><b>{item.reason}</b><p className="text-sm text-black/50">{quotaLabels[item.quota_type] || '其他额度'}</p></div><b className={item.delta > 0 ? 'text-green-700' : 'text-coral'}>{item.delta > 0 ? '+' : ''}{item.delta}</b></article>) : <Empty title="暂无额度变化。" />}</div>
+    <div className="mt-6 grid gap-4 md:grid-cols-4">{packages.data?.items?.map((item: any) => <article className="card" key={item.id}><h2 className="font-semibold">{item.name}</h2><p className="my-3 font-display text-[34px] font-medium leading-none tabular-nums">¥{item.price_cents / 100}</p><p className="text-xs text-ink-secondary">简历 {item.resume_quota} · 投递 {item.application_quota} · 面试 {item.interview_quota}</p><p className="mt-4 text-sm">{item.features_json.join(' · ')}</p></article>)}</div>
+    <h2 className="mt-10 text-2xl font-semibold">当前额度</h2><div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">{Object.entries(quotas.data || {}).map(([key, value]) => <div className="card" key={key}><p className="text-sm text-ink-secondary">{quotaLabels[key] || '其他额度'}</p><b className="text-3xl">{value}</b></div>)}</div>
+    <h2 className="mt-10 text-2xl font-semibold">额度变化</h2><div className="mt-4 space-y-3">{ledger.data?.items?.length ? ledger.data.items.map((item: any) => <article className="card flex justify-between" key={item.id}><div><b>{item.reason}</b><p className="text-sm text-ink-secondary">{quotaLabels[item.quota_type] || '其他额度'}</p></div><b className={item.delta > 0 ? 'text-green-700' : 'text-coral'}>{item.delta > 0 ? '+' : ''}{item.delta}</b></article>) : <Empty title="暂无额度变化。" />}</div>
   </>
 }

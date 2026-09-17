@@ -1,0 +1,66 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "机械设计助理工程师",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "",
+          "role_title": "目标补齐",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "id": "d21c1e68-88b5-41e4-8b4b-826fa5771602",
+              "text": "熟练使用 SolidWorks 完成零件与装配设计",
+              "source_fact_ids": [],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "mech-cad"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ],
+          "entry_kind": "ai_suggestion"
+        },
+        {
+          "organization": "",
+          "role_title": "目标补齐",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "id": "43c4002e-a5f8-48df-9266-83a2fb0f4cab",
+              "text": "能够编写设计验证记录并解释关键取舍",
+              "source_fact_ids": [],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "mech-doc"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ],
+          "entry_kind": "ai_suggestion"
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": []
+}

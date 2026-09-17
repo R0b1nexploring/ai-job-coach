@@ -1,0 +1,63 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "硬件设计实习生",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "课程学生",
+          "location": "虚构城市",
+          "start_date": "2024-09",
+          "end_date": "2024-12",
+          "bullets": [
+            {
+              "id": "be388333-52ec-415a-9e59-e638b2b5f006",
+              "text": "完成电源模块原理图设计，并使用 Altium Designer 绘制双层 PCB",
+              "source_fact_ids": [
+                "ee-f2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "ee-pcb"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            },
+            {
+              "id": "0a0e943e-1113-4603-919e-0709eb7a351d",
+              "text": "基于 STM32 与温度传感器实现闭环温控，记录调试数据",
+              "source_fact_ids": [
+                "ee-f1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "ee-mcu"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": [
+    "未提供正式实习或工作经历",
+    "未提供C语言项目中的具体实现证据",
+    "未提供量化性能指标或测试数据"
+  ]
+}

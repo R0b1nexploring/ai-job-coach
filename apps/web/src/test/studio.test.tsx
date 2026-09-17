@@ -52,6 +52,7 @@ test('普通用户主导航只保留工作台、指南和设置', async () => {
   expect(await screen.findByRole('link', { name: '工作台' })).toBeVisible()
   expect(screen.getByRole('link', { name: '面试指南' })).toBeVisible()
   expect(screen.getByRole('link', { name: '设置' })).toBeVisible()
+  expect(screen.queryByRole('link', { name: '生成记录' })).not.toBeInTheDocument()
   expect(screen.queryByRole('link', { name: '岗位' })).not.toBeInTheDocument()
   expect(screen.queryByRole('link', { name: '投递' })).not.toBeInTheDocument()
   expect(screen.queryByRole('link', { name: '学习' })).not.toBeInTheDocument()
@@ -71,7 +72,7 @@ test('旧岗位页仍可直接打开', async () => {
   expect(await screen.findByRole('heading', { name: /岗位|简章|发现/ })).toBeTruthy()
 })
 
-test('工作台默认只展示必要输入，附加素材按需展开', async () => {
+test('工作台默认只展示岗位输入，后续步骤按状态解锁', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => json({ items: [], total: 0, unread_count: 0 })))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
@@ -80,21 +81,53 @@ test('工作台默认只展示必要输入，附加素材按需展开', async ()
     </QueryClientProvider>,
   )
   expect(await screen.findByText('你想申请什么岗位？')).toBeVisible()
-  expect(screen.getByText('让结果更像你')).toBeVisible()
-  expect(screen.getByText('生成你的两份简历')).toBeVisible()
-  expect(screen.getByText('导出简历')).toBeVisible()
-  expect(screen.getByText('准备面试')).toBeVisible()
   expect(screen.getByPlaceholderText(/粘贴职位描述/)).toBeVisible()
-  expect(screen.getByText('上传现有简历')).toBeVisible()
+  expect(screen.getByRole('button', { name: /^01\s*岗位/ })).toHaveAttribute('aria-current', 'step')
+  expect(screen.getByRole('button', { name: /素材/ })).toBeDisabled()
+  expect(screen.getByRole('button', { name: /双版简历/ })).toBeDisabled()
+  expect(screen.getByRole('button', { name: /导出与指南/ })).toBeDisabled()
   expect(screen.queryByPlaceholderText(/学校实验室/)).not.toBeInTheDocument()
   expect(screen.queryByText('示例生物工程')).not.toBeInTheDocument()
-  const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: '补充一段经历' }))
-  expect(screen.getByLabelText('项目类型')).toBeVisible()
-  expect(screen.getByPlaceholderText(/学校实验室/)).toBeVisible()
-  expect(screen.getByPlaceholderText(/结构设计负责人/)).toBeVisible()
-  expect(screen.getByPlaceholderText(/SolidWorks、Excel/)).toBeVisible()
-  expect(screen.getByPlaceholderText(/用自己的话描述/)).toBeVisible()
+})
+
+test('生成记录入口放在工作台内，不占用主导航', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => json({ items: [], total: 0, unread_count: 0 })))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <ResumeStudio />
+    </QueryClientProvider>,
+  )
+  expect(await screen.findByRole('link', { name: /生成记录/ })).toHaveAttribute('href', '/app/history')
+})
+
+test('目标 JD 与投递入口固定在简历左侧，当前步骤操作保持独立', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.endsWith('/api/jobs') && !url.endsWith('/api/jobs/j1')) {
+      return json({ items: [{ id: 'j1', title: '机械工程师', company_name: '示例制造', city: '杭州', source_url: '' }], total: 1 })
+    }
+    if (url.endsWith('/api/jobs/j1')) {
+      return json({ id: 'j1', title: '机械工程师', company_name: '示例制造', city: '杭州', raw_jd: '负责机械结构设计和工程图纸维护。', source_url: '' })
+    }
+    if (url.endsWith('/api/resumes')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/experience')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/experience-facts')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/target-profiles')) return json({ items: [{ id: 'p1', title: '机械工程师', mode: 'single_jd', job_ids: ['j1'], snapshot_json: {} }], total: 1 })
+    if (url.endsWith('/api/resume-bundles')) return json({ items: [], total: 0 })
+    return json({ items: [], total: 0 })
+  }))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <ResumeStudio />
+    </QueryClientProvider>,
+  )
+  expect(await screen.findByRole('heading', { name: '目标 JD' })).toBeVisible()
+  expect(await screen.findByText('机械工程师')).toBeVisible()
+  expect(screen.getByRole('heading', { name: '投递入口' })).toBeVisible()
+  expect(screen.getByRole('button', { name: '投递入口（即将接入）' })).toBeDisabled()
+  expect(await screen.findByRole('heading', { name: '让结果更像你' })).toBeVisible()
 })
 
 test('保存 JD 不会把原文写进画像 job_ids', async () => {
@@ -161,7 +194,7 @@ test('空白建档可编辑素材、查看缺口并确认原子事实', async ()
     const url = String(input)
     if (url.endsWith('/api/jobs')) return json({ items: [], total: 0 })
     if (url.endsWith('/api/resumes')) return json({ items: [], total: 0 })
-    if (url.endsWith('/api/target-profiles')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/target-profiles')) return json({ items: [{ id: 'p1', title: '机械工程师', mode: 'single_jd' }], total: 1 })
     if (url.endsWith('/api/resume-bundles')) return json({ items: [], total: 0 })
     if (url.endsWith('/api/experience-facts')) {
       return json({
@@ -417,6 +450,9 @@ test('锁定后整份重生成会发出重生成请求，非首条可局部重�
   await waitFor(() => expect(generateButton).toBeEnabled())
   await user.click(generateButton)
   expect(await screen.findByText('完成点检')).toBeVisible()
+  expect(screen.getAllByText('已通过').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('已关联 1 条素材事实')).toHaveLength(2)
+  expect(screen.queryByText('来源 f1')).not.toBeInTheDocument()
   const rewriteButtons = screen.getAllByRole('button', { name: '重写本条' })
   await user.click(rewriteButtons[1])
   await user.click(screen.getAllByRole('button', { name: '锁定' })[0])
@@ -425,6 +461,7 @@ test('锁定后整份重生成会发出重生成请求，非首条可局部重�
   await user.click(screen.getByRole('button', { name: '整份重生成' }))
   expect(await screen.findByText('已重生成并重新校验。')).toBeVisible()
   expect(regenerateRequests).toContainEqual({ scope: 'all' })
+  await user.click(screen.getByRole('button', { name: /导出与指南/ }))
   await user.click(screen.getByRole('button', { name: '重新生成指南' }))
   expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/interview-guides/g1/regenerate'))).toBe(true)
 })
@@ -479,11 +516,13 @@ test('面试指南展示追问、六段式并提供下载', async () => {
     </QueryClientProvider>,
   )
   expect(await screen.findByText('请讲装配体')).toBeVisible()
+  expect(screen.getByText('要点 01')).toBeVisible()
+  expect(screen.getByText('已就绪')).toBeVisible()
   expect(screen.getByText('连续追问')).toBeVisible()
   expect(screen.getByText('六段式讲法')).toBeVisible()
-  expect(screen.getByText('90 秒自我介绍')).toBeVisible()
+  expect(screen.getByRole('heading', { name: '90 秒自我介绍' })).toBeVisible()
   expect(screen.getByText(/核验材料/)).toBeVisible()
-  expect(screen.getByText('项目 STAR 讲述')).toBeVisible()
+  expect(screen.getAllByText('项目 STAR 讲述').length).toBeGreaterThan(0)
   expect(screen.getByText('装配体课程设计')).toBeVisible()
   expect(screen.getByText('项目连续追问')).toBeVisible()
   expect(screen.getByText('知识准备')).toBeVisible()

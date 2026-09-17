@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>定价页样品 · 三个方向</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="./tailwind-theme.js"></script>
+    <link rel="stylesheet" href="./base.css" />
+  </head>
+  <body class="font-sans">
+    <main class="mx-auto max-w-[720px] px-6 py-24">
+      <p class="text-[12px] font-semibold tracking-[0.05em] text-ink-muted">样品对照</p>
+      <h1 class="mt-3 font-display text-[44px] font-medium leading-[1.08] tracking-[-0.01em]">
+        同一个定价页，三个方向
+      </h1>
+      <p class="mt-6 text-[16px] text-ink-secondary">
+        三个样品的产品事实、套餐内容、FAQ 完全一致，只有设计方向不同。用于对照挑选，不代表最终文案。
+      </p>
+
+      <div class="mt-12 border-t border-line">
+        <a href="./a-buttondown.html" class="group block border-b border-line py-6">
+          <div class="flex items-baseline justify-between gap-6">
+            <span class="font-display text-[26px] leading-tight">样品 A · 规模决策式</span>
+            <span class="text-[13px] text-ink-muted">Buttondown 参考</span>
+          </div>
+          <p class="mt-2 text-[15px] text-ink-secondary">
+            单列 + 用量滑块，价格随写作量变化；差异用行式清单，无并列卡片。
+          </p>
+        </a>
+
+        <a href="./b-anthropic.html" class="group block border-b border-line py-6">
+          <div class="flex items-baseline justify-between gap-6">
+            <span class="font-display text-[26px] leading-tight">样品 B · 克制三档式</span>
+            <span class="text-[13px] text-ink-muted">Anthropic 参考</span>
+          </div>
+          <p class="mt-2 text-[15px] text-ink-secondary">
+            三张边框套餐列 + 月/年切换；推荐项只靠边框与一处强调标记，折叠对比表。
+          </p>
+        </a>
+
+        <a href="./c-ghost.html" class="group block border-b border-line py-6">
+          <div class="flex items-baseline justify-between gap-6">
+            <span class="font-display text-[26px] leading-tight">样品 C · 编辑出版式</span>
+            <span class="text-[13px] text-ink-muted">Ghost 参考</span>
+          </div>
+          <p class="mt-2 text-[15px] text-ink-secondary">
+            角色命名套餐 + 竖线分栏（无卡片盒）；更大衬线、更多分组对比、收尾陈述。
+          </p>
+        </a>
+      </div>
+
+      <p class="mt-10 text-[13px] text-ink-muted">
+        规范依据：仓库根目录 <span class="text-ink-secondary">DESIGN.md</span>。色板沿用
+        <span class="text-ink-secondary">apps/web/tailwind.config.js</span> 的 ink / sage / cream / coral。
+      </p>
+    </main>
+  </body>
+</html>

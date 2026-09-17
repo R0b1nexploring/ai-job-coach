@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>样品 A · 规模决策式 · 定价</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="./tailwind-theme.js"></script>
+    <link rel="stylesheet" href="./base.css" />
+  </head>
+  <body class="font-sans">
+    <!-- 样品标识 -->
+    <div class="border-b border-line bg-surface">
+      <div class="mx-auto max-w-[1200px] px-6 py-2 text-[12px] tracking-[0.05em] text-ink-muted">
+        样品 A · 规模决策式（参考 Buttondown）
+      </div>
+    </div>
+
+    <!-- 导航 -->
+    <header class="border-b border-line">
+      <div class="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-6">
+        <a href="./index.html" class="text-[15px] font-semibold tracking-tight">字间</a>
+        <nav class="flex items-center gap-8 text-[14px]">
+          <a href="#" class="text-ink-secondary transition-colors duration-100 hover:text-ink">功能</a>
+          <a href="#" class="text-ink">定价</a>
+          <a href="#" class="text-ink-secondary transition-colors duration-100 hover:text-ink">登录</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <!-- 定价头 -->
+      <section class="mx-auto max-w-[720px] px-6 pb-16 pt-24">
+        <p class="text-[12px] font-semibold tracking-[0.05em] text-ink-muted">定价</p>
+        <h1 class="mt-3 font-display text-[44px] font-medium leading-[1.08] tracking-[-0.01em]">
+          一个不替你写作的写作工具
+        </h1>
+        <p class="mt-6 text-[16px] text-ink-secondary">
+          它帮你把想法理清、把句子收紧，但每一句最终都是你的。定价只和你的写作量有关，不按功能上锁。
+        </p>
+
+        <!-- 唯一主动控件：用量 → 价格 -->
+        <div class="mt-12 border border-line bg-surface p-6 md:p-8">
+          <label for="words" class="text-[12px] font-semibold tracking-[0.05em] text-ink-muted">
+            你每月大概写多少字
+          </label>
+          <div class="mt-4 flex items-baseline gap-3">
+            <span id="wordsOut" class="tabular font-display text-[34px] leading-none">60,000</span>
+            <span class="text-[14px] text-ink-secondary">字 / 月</span>
+          </div>
+          <input id="words" type="range" min="0" max="400" step="10" value="60" class="mt-6" />
+          <div class="mt-3 flex justify-between text-[12px] text-ink-muted">
+            <span>几乎不写</span>
+            <span>每天都在写</span>
+          </div>
+
+          <div class="mt-8 border-t border-line pt-6">
+            <p class="text-[12px] font-semibold tracking-[0.05em] text-ink-muted">适合你的方案</p>
+            <div class="mt-4 flex flex-wrap items-end justify-between gap-6">
+              <div>
+                <p id="planName" class="font-display text-[26px] leading-tight">写作</p>
+                <p id="planDesc" class="mt-1 text-[14px] text-ink-secondary">适合每周都在写的人</p>
+              </div>
+              <div class="text-right">
+                <p id="planPrice" class="tabular font-display text-[44px] leading-none">¥29</p>
+                <p class="mt-1 text-[14px] text-ink-secondary">每月 · 按年结算</p>
+              </div>
+            </div>
+            <a
+              href="#"
+              class="mt-8 inline-flex h-11 items-center bg-ink px-6 text-[15px] font-medium text-canvas"
+            >
+              开始写作
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- 所有方案都包含 -->
+      <section class="mx-auto max-w-[720px] px-6 py-16">
+        <p class="text-[12px] font-semibold tracking-[0.05em] text-ink-muted">所有方案都包含</p>
+        <ul class="mt-6 grid gap-x-10 sm:grid-cols-2">
+          <li class="border-t border-line py-3 text-[15px]">纯文本存储，随时导出</li>
+          <li class="border-t border-line py-3 text-[15px]">不改写你的原句，只给建议</li>
+          <li class="border-t border-line py-3 text-[15px]">版本历史，可逐句回退</li>
+          <li class="border-t border-line py-3 text-[15px]">导出即所有权，不锁定格式</li>
+        </ul>
+      </section>
+
+      <!-- 按需要添加 -->
+      <section class="mx-auto max-w-[720px] px-6 py-16">
+        <p class="text-[12px] font-semibold tracking-[0.05em] text-ink-muted">按需要添加</p>
+        <div class="mt-6 border-t border-line">
+          <!-- 占位：以下功能与价格需替换为真实产品事实 -->
+          <div class="flex items-center justify-between border-b border-line py-3">
+            <span class="text-[15px]">团队席位（每人）</span>
+            <span class="tabular text-[15px] text-ink-secondary">+¥40 / 月</span>
+          </div>
+          <div class="flex items-center justify-between border-b border-line py-3">
+            <span class="text-[15px]">优先支持</span>
+            <span class="tabular text-[15px] text-ink-secondary">+¥20 / 月</span>
+          </div>
+          <div class="flex items-center justify-between border-b border-line py-3">
+            <span class="text-[15px]">自定义导出模板</span>
+            <span class="tabular text-[15px] text-ink-secondary">+¥15 / 月</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 信任 -->
+      <section class="mx-auto max-w-[720px] px-6 py-16">
+        <div class="border-t border-line-strong">
+          <div class="border-b border-line py-5">
+            <p class="text-[15px]">随时取消，没有长期合约</p>
+            <p class="mt-1 text-[14px] text-ink-secondary">自助操作，不需要联系客服。</p>
+          </div>
+          <div class="border-b border-line py-5">
+            <p class="text-[15px]">你的文字不用于训练模型</p>
+            <p class="mt-1 text-[14px] text-ink-secondary">默认关闭，设置里可以逐项确认。</p>
+          </div>
+          <div class="border-b border-line py-5">
+            <p class="text-[15px]">带走全部内容</p>
+            <p class="mt-1 text-[14px] text-ink-secondary">一键导出，离开时不会留下任何东西。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- FAQ -->
+      <section class="mx-auto max-w-[720px] px-6 py-16">
+        <h2 class="font-display text-[34px] font-medium leading-[1.15] tracking-[-0.01em]">常见问题</h2>
+        <div class="mt-8 border-t border-line">
+          <details class="border-b border-line">
+            <summary class="flex items-center justify-between py-4">
+              <span class="text-[19px] font-semibold leading-[1.35]">我的文章会被用来训练模型吗？</span>
+              <svg class="chev h-4 w-4 shrink-0 text-ink-muted" viewBox="0 0 16 16" fill="none">
+                <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.25" />
+              </svg>
+            </summary>
+            <p class="pb-5 text-[16px] text-ink-secondary">
+              不会。默认状态下你的稿件不会进入训练数据。这一项可以在设置里查看，也可以随时导出并删除账号下的全部内容。
+            </p>
+          </details>
+          <details class="border-b border-line">
+            <summary class="flex items-center justify-between py-4">
+              <span class="text-[19px] font-semibold leading-[1.35]">年付可以中途退款吗？</span>
+              <svg class="chev h-4 w-4 shrink-0 text-ink-muted" viewBox="0 0 16 16" fill="none">
+                <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.25" />
+              </svg>
+            </summary>
+            <p class="pb-5 text-[16px] text-ink-secondary">
+              可以。前 14 天按未使用月份全额退回，之后按剩余月份折算。退款在设置里自助申请，不需要说明理由。
+            </p>
+          </details>
+          <details class="border-b border-line">
+            <summary class="flex items-center justify-between py-4">
+              <span class="text-[19px] font-semibold leading-[1.35]">免费版会过期吗？</span>
+              <svg class="chev h-4 w-4 shrink-0 text-ink-muted" viewBox="0 0 16 16" fill="none">
+                <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.25" />
+              </svg>
+            </summary>
+            <p class="pb-5 text-[16px] text-ink-secondary">
+              不会。免费额度每月重置，不要求绑定银行卡，也不会在你不知情时自动扣费。额度用完就是停下，没有隐藏的自动升级。
+            </p>
+          </details>
+          <details class="border-b border-line">
+            <summary class="flex items-center justify-between py-4">
+              <span class="text-[19px] font-semibold leading-[1.35]">我写的内容归谁？</span>
+              <svg class="chev h-4 w-4 shrink-0 text-ink-muted" viewBox="0 0 16 16" fill="none">
+                <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.25" />
+              </svg>
+            </summary>
+            <p class="pb-5 text-[16px] text-ink-secondary">
+              归你。你写下的内容、AI 给出的建议、以及你采纳后的版本，版权都属于你，我们不主张任何权利。
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <footer class="border-t border-line">
+      <div class="mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-4 px-6 py-10">
+        <span class="text-[14px] text-ink-secondary">字间</span>
+        <nav class="flex flex-wrap gap-6 text-[13px] text-ink-secondary">
+          <a href="#" class="hover:text-ink">隐私</a>
+          <a href="#" class="hover:text-ink">条款</a>
+          <a href="#" class="hover:text-ink">联系我们</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script src="./sample.js"></script>
+    <script>
+      ;(function () {
+        var input = document.getElementById('words')
+        var out = document.getElementById('wordsOut')
+        var nameEl = document.getElementById('planName')
+        var descEl = document.getElementById('planDesc')
+        var priceEl = document.getElementById('planPrice')
+
+        function update() {
+          var words = parseInt(input.value, 10) * 1000
+          out.textContent = words.toLocaleString('en-US')
+
+          if (words < 30000) {
+            nameEl.textContent = '起步'
+            descEl.textContent = '适合先试一周的人'
+            priceEl.textContent = '¥0'
+          } else if (words <= 200000) {
+            nameEl.textContent = '写作'
+            descEl.textContent = '适合每周都在写的人'
+            priceEl.textContent = '¥29'
+          } else {
+            nameEl.textContent = '工作室'
+            descEl.textContent = '适合把写作当主业的人'
+            priceEl.textContent = '¥69'
+          }
+        }
+
+        input.addEventListener('input', update)
+        update()
+      })()
+    </script>
+  </body>
+</html>

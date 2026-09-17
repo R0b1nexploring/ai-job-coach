@@ -6,6 +6,17 @@
 
 ## ADDED Requirements
 
+### Requirement: Guides expand saved internal plans without inventing another project
+指南 SHALL 使用其绑定版本实际保存的项目方案和可见正文，将具体方法、取舍、难点及验证方式转为准备问题和回答要点。系统 MUST NOT 为了让指南看似完整而另编角色、技术路线或已取得成果。内部方案不是独立项目教程；既有指南中的针对性实践准备继续保留。求职版只消费其实际正文和对应来源/方案，不直接套用蓝图方案中的未来成果。
+
+#### Scenario: The saved plan contains an unresolved design assumption
+- **WHEN** 方案中的某个方法或指标尚待验证
+- **THEN** 指南将其作为需要理解或验证的问题，说明应准备的材料，不生成冒充已经实施的第一人称答案
+
+#### Scenario: Only the internal plan changes
+- **WHEN** 保存的项目方法、角色、目标或验证方式改变，而简历短句尚未改变
+- **THEN** 系统更新语义内容哈希并使原指南过期，新指南读取新方案，不能沿用旧方案生成的内容
+
 ### Requirement: Project guides explain the same STAR story in depth
 蓝图指南 MUST 为每个项目提供与已保存 STAR 说明和正文一致的项目讲解：问题背景、本人任务、行动过程与取舍、结果验证。指南 SHALL 组织项目级主线并关联逐条要点，避免把同一段通用介绍重复到所有卡片。求职版指南 SHALL 以其实际正文和来源为依据，不借用蓝图中的未来成果。
 

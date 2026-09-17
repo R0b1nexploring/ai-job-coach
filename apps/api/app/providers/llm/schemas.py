@@ -192,6 +192,8 @@ class ProjectStoryOutput(BaseModel):
     task: dict[str, object] = Field(default_factory=dict)
     actions: list[ProjectStarActionOutput] = Field(default_factory=list)
     result: ProjectStarResultOutput = Field(default_factory=ProjectStarResultOutput)
+    design_assumptions: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
     bullet_ids: list[str] = Field(default_factory=list)
     source_fact_ids: list[str] = Field(default_factory=list)
     source_target_ids: list[str] = Field(default_factory=list)

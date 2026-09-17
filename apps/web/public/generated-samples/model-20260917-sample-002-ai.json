@@ -1,0 +1,129 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "算法实习生",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "模型训练成员、课程学生",
+          "location": "虚构城市",
+          "start_date": "2024-10；2025-03",
+          "end_date": "2024-12；2025-06",
+          "bullets": [
+            {
+              "id": "df5c8736-4b34-4c09-94e3-bb902a8722f0",
+              "text": "使用 pandas 清洗传感器采样数据，输出异常记录",
+              "source_fact_ids": [
+                "ai-f2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "ai-python"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            },
+            {
+              "id": "5f6e39a6-a891-4e3f-8b61-19e0822254e7",
+              "text": "使用 PyTorch 训练图像分类模型，记录增强与评估结果",
+              "source_fact_ids": [
+                "ai-f1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "ai-train"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "技能",
+      "presentation": "tags",
+      "items": [
+        {
+          "organization": "",
+          "role_title": "",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "id": "69bfd176-d9f8-4e68-84e0-2574661abab8",
+              "text": "PyTorch",
+              "source_fact_ids": [
+                "ai-f1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "ai-train"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            },
+            {
+              "id": "2e608cfa-4a2b-462d-8da6-79ebe43583a7",
+              "text": "pandas",
+              "source_fact_ids": [
+                "ai-f2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "ai-python"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        },
+        {
+          "organization": "",
+          "role_title": "建议经历",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "id": "0481cefd-041d-46c0-84d8-49a2d7b520e2",
+              "text": "Python",
+              "source_fact_ids": [],
+              "source_target_ids": [],
+              "requirement_ids": [
+                "ai-python"
+              ],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ],
+          "entry_kind": "ai_suggestion"
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": [
+    "暂无可确认的学历、学位、奖项或证书信息。"
+  ]
+}

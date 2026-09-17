@@ -1,0 +1,224 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "算法实习生",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "教育背景",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "本科",
+          "location": "虚构城市",
+          "start_date": "2022-09",
+          "end_date": "2026-07",
+          "bullets": [
+            {
+              "id": "48131ec7-2feb-4609-ba21-90d1022d7f2c",
+              "text": "人工智能本科，主修课程覆盖Python等方向",
+              "source_fact_ids": [
+                "f-ai-education"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "课程学生",
+          "location": "虚构城市",
+          "start_date": "2024-10",
+          "end_date": "2024-12",
+          "bullets": [
+            {
+              "id": "c0e91193-27f3-42b7-bc77-9d0b8c8422c7",
+              "text": "使用 pandas 清洗传感器采样数据并处理缺失值",
+              "source_fact_ids": [
+                "f-ai-data-clean-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "ed91d796-f205-44d1-9e67-7f2c03e45de5",
+              "text": "编写异常值检测规则并输出异常记录表",
+              "source_fact_ids": [
+                "f-ai-data-clean-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "1dee766e-0ef4-48e1-9149-f868ed6fc553",
+              "text": "将清洗流程封装为可重复执行的脚本",
+              "source_fact_ids": [
+                "f-ai-data-clean-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        },
+        {
+          "organization": "虚构智能科技实习岗",
+          "role_title": "算法实习生",
+          "location": "虚构城市",
+          "start_date": "2025-07",
+          "end_date": "2025-09",
+          "bullets": [
+            {
+              "id": "c8c185bb-0a52-4a31-8420-fba26e98c005",
+              "text": "使用朴素贝叶斯与词袋特征完成文本分类基线",
+              "source_fact_ids": [
+                "f-ai-text-cls-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "80f1c359-4aab-403f-9ba2-90c202268abb",
+              "text": "对比不同特征处理对准确率的影响",
+              "source_fact_ids": [
+                "f-ai-text-cls-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "d16039ea-5211-4c08-b406-f17c32e15af6",
+              "text": "整理实验记录与错误分析",
+              "source_fact_ids": [
+                "f-ai-text-cls-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "技能",
+      "presentation": "tags",
+      "items": [
+        {
+          "organization": "",
+          "role_title": "",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "id": "604afe2b-267f-44fd-b19b-7c1ed1e86370",
+              "text": "Python",
+              "source_fact_ids": [
+                "f-ai-skill-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "2f21193e-1808-41c4-87f3-dcb277b352aa",
+              "text": "PyTorch",
+              "source_fact_ids": [
+                "f-ai-skill-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "aec35b0e-b985-44e4-87ed-60b82ba2945e",
+              "text": "pandas",
+              "source_fact_ids": [
+                "f-ai-skill-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "9cf3504a-9c68-41f0-9c0e-4424ffe08dbd",
+              "text": "NumPy",
+              "source_fact_ids": [
+                "f-ai-skill-3"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "c56a0ffc-6828-4605-885b-b026e693e626",
+              "text": "scikit-learn",
+              "source_fact_ids": [
+                "f-ai-skill-4"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": []
+}

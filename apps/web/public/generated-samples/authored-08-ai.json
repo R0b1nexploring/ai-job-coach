@@ -1,0 +1,215 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "算法实习生",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "教育背景",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "本科",
+          "location": "虚构城市",
+          "start_date": "2022-09",
+          "end_date": "2026-07",
+          "bullets": [
+            {
+              "id": "b0f2faf5-d9d3-4cc2-9f0e-11f76997287c",
+              "text": "人工智能本科，主修课程覆盖Python等方向",
+              "source_fact_ids": [
+                "f-ai-education"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "模型训练成员",
+          "location": "虚构城市",
+          "start_date": "2025-03",
+          "end_date": "2025-06",
+          "bullets": [
+            {
+              "id": "5a4b2730-bafd-4412-b0af-84bb0a19dcbe",
+              "text": "使用 PyTorch 搭建卷积网络完成图像分类训练",
+              "source_fact_ids": [
+                "f-ai-image-cls-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "7057ea7f-254e-4b99-aad2-b25501ad1a74",
+              "text": "通过数据增强与学习率调整提升验证集表现",
+              "source_fact_ids": [
+                "f-ai-image-cls-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "a9c9586e-3657-4767-835b-300ef9d8e507",
+              "text": "记录训练曲线与混淆矩阵，分析误分类样本",
+              "source_fact_ids": [
+                "f-ai-image-cls-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "5e0eade0-11da-4f7a-84c7-d458b3b6124b",
+              "text": "使用 pandas 清洗传感器采样数据并处理缺失值",
+              "source_fact_ids": [
+                "f-ai-data-clean-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            },
+            {
+              "id": "d02e71d4-d162-4da4-8509-87615d120b29",
+              "text": "编写异常值检测规则并输出异常记录表",
+              "source_fact_ids": [
+                "f-ai-data-clean-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            },
+            {
+              "id": "7b2edbea-bdc5-49fd-9edc-639cabe5c09c",
+              "text": "将清洗流程封装为可重复执行的脚本",
+              "source_fact_ids": [
+                "f-ai-data-clean-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "技能",
+      "presentation": "tags",
+      "items": [
+        {
+          "organization": "",
+          "role_title": "",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "id": "95ff38ca-8beb-4797-ba7f-39c80c29cd9c",
+              "text": "Python",
+              "source_fact_ids": [
+                "f-ai-skill-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "1a010a11-d748-4e6d-a86c-9bfe7a92fc4a",
+              "text": "PyTorch",
+              "source_fact_ids": [
+                "f-ai-skill-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "586f53de-39e2-461e-a248-ef80f96da9e1",
+              "text": "pandas",
+              "source_fact_ids": [
+                "f-ai-skill-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "738b7306-2449-4334-b420-5145c58adacc",
+              "text": "NumPy",
+              "source_fact_ids": [
+                "f-ai-skill-3"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "1f0c939e-51fe-4814-b057-7309840ce1e1",
+              "text": "scikit-learn",
+              "source_fact_ids": [
+                "f-ai-skill-4"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": []
+}

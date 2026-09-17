@@ -11,6 +11,16 @@ type IconName =
   | 'check'
   | 'download'
   | 'alert'
+  | 'target'
+  | 'material'
+  | 'layers'
+  | 'delivery'
+  | 'chevron-right'
+  | 'menu'
+  | 'close'
+  | 'plus'
+  | 'upload'
+  | 'history'
 
 export function Icon({ name, className = 'h-4 w-4' }: { name: IconName; className?: string }) {
   const common = {
@@ -94,16 +104,36 @@ export function Icon({ name, className = 'h-4 w-4' }: { name: IconName; classNam
           <path d="M10.2 4.8 2.9 17.2A2 2 0 0 0 4.7 20h14.6a2 2 0 0 0 1.8-2.8L13.8 4.8a2 2 0 0 0-3.6 0Z" />
         </svg>
       )
+    case 'target':
+      return <svg {...common}><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></svg>
+    case 'material':
+      return <svg {...common}><path d="M7 3.5h10A1.5 1.5 0 0 1 18.5 5v14A1.5 1.5 0 0 1 17 20.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5Z" /><path d="M9 8h6M9 12h6M9 16h4" /></svg>
+    case 'layers':
+      return <svg {...common}><path d="m12 3 8 4.5-8 4.5-8-4.5Z" /><path d="m4 12 8 4.5 8-4.5M4 16.5 12 21l8-4.5" /></svg>
+    case 'delivery':
+      return <svg {...common}><path d="M4 5.5h16v13H4Z" /><path d="M8 9h8M8 13h5" /><path d="m16 16 2 2 3-3" /></svg>
+    case 'chevron-right':
+      return <svg {...common}><path d="m9 5 7 7-7 7" /></svg>
+    case 'menu':
+      return <svg {...common}><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+    case 'close':
+      return <svg {...common}><path d="m6 6 12 12M18 6 6 18" /></svg>
+    case 'plus':
+      return <svg {...common}><path d="M12 5v14M5 12h14" /></svg>
+    case 'upload':
+      return <svg {...common}><path d="M12 16V4M7.5 8.5 12 4l4.5 4.5" /><path d="M5 13v6.5h14V13" /></svg>
+    case 'history':
+      return <svg {...common}><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1" /><path d="M3.5 4v4h4" /><path d="M12 8v4.3l3 1.8" /></svg>
   }
 }
 
 export function Logo({ compact = false }: { compact?: boolean }) {
   return (
     <span className="inline-flex items-center gap-2.5 text-inherit">
-      <span className="grid h-9 w-9 place-items-center rounded-2xl bg-sage text-white shadow-sm">
+      <span className="grid h-8 w-8 place-items-center rounded bg-ink text-canvas">
         <Icon name="compass" className="h-5 w-5" />
       </span>
-      {!compact && <span className="text-lg font-bold tracking-tight">求职罗盘</span>}
+      {!compact && <span className="text-[17px] font-semibold tracking-tight">求职罗盘</span>}
     </span>
   )
 }
@@ -151,4 +181,21 @@ export function Alert({
 
 export function StepIndex({ n }: { n: string }) {
   return <span className="step-index">{n}</span>
+}
+
+export function StatusChip({
+  tone = 'neutral',
+  children,
+}: {
+  tone?: 'neutral' | 'success' | 'warning' | 'danger' | 'info'
+  children: ReactNode
+}) {
+  const tones = {
+    neutral: 'border-line bg-ink/[0.03] text-ink-secondary',
+    success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    warning: 'border-amber-200 bg-amber-50 text-amber-800',
+    danger: 'border-red-200 bg-red-50 text-red-700',
+    info: 'border-sky-200 bg-sky-50 text-sky-700',
+  }
+  return <span className={`status-chip ${tones[tone]}`}>{children}</span>
 }

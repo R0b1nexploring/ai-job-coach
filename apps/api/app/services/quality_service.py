@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
+
 from app.providers.llm.runtime import generate_structured
 from app.providers.llm.schemas import QualityCriticOutput
 from app.services.content_contract import (
@@ -150,6 +153,7 @@ async def evaluate_version_with_critic(
                     for _section, _item, story in iter_project_stories(content)
                 ],
                 "hard_passed": report["hard_passed"],
+                "star_diagnostics": report["star_diagnostics"],
                 "mock_response": mock,
             },
             response_model=QualityCriticOutput,
@@ -385,24 +389,143 @@ def _project_star_issues(content: dict, mode: str) -> list[str]:
     return list(dict.fromkeys(issues))
 
 
+_STAR_PLACEHOLDERS = _VAGUE_STAR_VALUES | frozenset({
+    "业务需要", "效果不好", "负责开发", "使用工具", "效果良好",
+    "围绕目标岗位设计一段可验证的项目实践",
+    "需要把岗位要求转为可拆分、可验证的项目产出",
+    "需要在既有项目约束下完成可复盘的交付",
+    "形成可演示、可复盘的项目交付",
+    "先定义输入、输出和验证方式，再按阶段保留过程记录",
+    "说明该方法如何服务项目目标", "明确约束、风险与取舍",
+    "让每个行动都能追溯到岗位要求和最终交付",
+    "在时间、素材与技术边界内做取舍",
+    "本人负责的已确认部分", "计划负责方案拆解、执行记录与验证",
+    "可演示的项目产出", "过程记录与版本说明",
+    "用交付物、过程记录和验收条件逐项核验",
+    "记录测量口径、环境与验收条件",
+})
+
+
+def _has_project_detail(value: object) -> bool:
+    text = str(value or "").strip().rstrip("。.!！;；")
+    return _specific_star_text(text) and text not in _STAR_PLACEHOLDERS
+
+
 def _project_star_diagnostics(content: dict, mode: str) -> list[dict]:
-    """Explain likely weak STAR narratives without using a numeric threshold."""
+    """Locate missing details and known filler, not certify technical validity.
+
+    These remain advisory: a local fallback can pass structural gates while
+    explicitly exposing the project details that still need to be developed.
+    """
     if mode != "target" or not has_star_contract(content):
         return []
     diagnostics = []
-    for _section, _item, story in iter_project_stories(content):
+    for _section, item, story in iter_project_stories(content):
+        def check(value: object, field: str, message: str) -> None:
+            if not _has_project_detail(value):
+                diagnostics.append(_diagnostic(story, field, message, item=item))
+
+        situation = story.get("situation") or {}
+        task = story.get("task") or {}
         actions = story.get("actions") or []
         result = story.get("result") or {}
-        if actions and not any(_specific_star_text(action.get("rationale")) for action in actions if isinstance(action, dict)):
-            diagnostics.append({"project_id": story.get("project_id"), "message": "行动缺少为什么这样做的取舍说明"})
-        if actions and not any(_specific_star_text(action.get("difficulty")) for action in actions if isinstance(action, dict)):
-            diagnostics.append({"project_id": story.get("project_id"), "message": "行动缺少可追问的难点或风险"})
-        if result.get("metrics") and not any(
-            _specific_star_text(metric.get("conditions"))
-            for metric in result.get("metrics") or []
-            if isinstance(metric, dict)
-        ):
-            diagnostics.append({"project_id": story.get("project_id"), "message": "结果指标缺少测量口径或验收条件"})
+        check(situation.get("context"), "situation.context", "背景缺少具体使用场景或处理对象")
+        check(situation.get("problem"), "situation.problem", "问题描述缺少需要解决的具体障碍")
+        check(task.get("goal"), "task.goal", "个人目标缺少明确的任务或产出")
+        for index, action in enumerate(actions):
+            if not isinstance(action, dict):
+                continue  # Invalid structure is reported by the hard gate.
+            for field, message in (
+                ("step", "行动缺少具体操作步骤"),
+                ("method", "行动缺少操作对象和具体方法"),
+                ("contribution", "行动缺少个人承担的具体工作"),
+                ("rationale", "行动缺少为什么这样做的取舍说明"),
+                ("difficulty", "行动缺少可追问的难点或风险"),
+            ):
+                check(action.get(field), f"actions.{index}.{field}", message)
+        if not any(_has_project_detail(value) for value in result.get("deliverables") or []):
+            check(None, "result.deliverables", "结果缺少可检查的具体交付物")
+        check(result.get("verification_method"), "result.verification_method", "结果缺少具体检查步骤或比较方法")
+        for index, metric in enumerate(result.get("metrics") or []):
+            if isinstance(metric, dict):
+                check(metric.get("conditions"), f"result.metrics.{index}.conditions", "结果指标缺少测量口径或验收条件")
+        diagnostics.extend(_visible_coverage_diagnostics(story, item=item))
+    return diagnostics
+
+
+def _diagnostic(story: dict, field: str, message: str, *, item: dict | None = None) -> dict:
+    bullet_ids = story.get("bullet_ids")
+    if not bullet_ids and item is not None:
+        bullet_ids = [
+            bullet.get("id")
+            for bullet in item.get("bullets") or []
+            if isinstance(bullet, dict) and bullet.get("id")
+        ]
+    return {
+        "project_id": story.get("project_id"),
+        "bullet_ids": list(bullet_ids or []),
+        "field": field,
+        "message": message,
+    }
+
+
+_STAR_COVERAGE_STOP_TOKENS = frozenset(
+    {"负责", "要求", "相关", "岗位", "工作", "能够", "以及", "进行", "完成", "说明", "使用", "项目", "目标", "形成"}
+)
+
+
+def _coverage_tokens(value: object) -> set[str]:
+    """Coarse deterministic tokens used only to locate dropped STAR elements.
+
+    No embedding or model call: the same saved content always yields the same
+    coverage verdict, and a zero-overlap result is a prompt to review rather
+    than a sentence-level semantic proof.
+    """
+    text = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    tokens = set(re.findall(r"[a-z][a-z0-9+.#/-]{1,}|[\u4e00-\u9fff]{2,}", text))
+    for fragment in re.findall(r"[\u4e00-\u9fff]{2,}", text):
+        tokens.update(fragment[index : index + 2] for index in range(len(fragment) - 1))
+    return {token for token in tokens if token not in _STAR_COVERAGE_STOP_TOKENS}
+
+
+def _visible_coverage_diagnostics(story: dict, *, item: dict) -> list[dict]:
+    """Flag plan elements whose vocabulary never reaches the visible bullets.
+
+    The mapping in ``bullet_ids`` only proves that bullets exist for a project;
+    it does not prove the compressed copy still says what the plan intended.
+    We therefore compare a conservative token set per element group and report
+    the group when a concrete plan element has no overlap at all with the
+    visible text.  This is advisory and never triggers an automatic rewrite.
+    """
+    bullets = [bullet for bullet in item.get("bullets") or [] if isinstance(bullet, dict)]
+    if not bullets:
+        return []
+    bullet_tokens: set[str] = set()
+    for bullet in bullets:
+        bullet_tokens |= _coverage_tokens(bullet.get("text"))
+    if not bullet_tokens:
+        return []
+    situation = story.get("situation") or {}
+    task = story.get("task") or {}
+    actions = story.get("actions") or []
+    result = story.get("result") or {}
+    groups = (
+        ("visible_coverage.situation", "可见正文没有保留项目背景或问题", [situation.get("context"), situation.get("problem")]),
+        ("visible_coverage.task", "可见正文没有保留本人的任务或目标", [task.get("goal")]),
+        (
+            "visible_coverage.result",
+            "可见正文没有保留项目结果或验证方式",
+            [result.get("verification_method"), *(result.get("deliverables") or [])],
+        ),
+    )
+    diagnostics = []
+    for field, message, values in groups:
+        plan_tokens: set[str] = set()
+        for value in values:
+            if _has_project_detail(value):
+                plan_tokens |= _coverage_tokens(value)
+        if plan_tokens and not (plan_tokens & bullet_tokens):
+            diagnostics.append(_diagnostic(story, field, message, item=item))
     return diagnostics
 
 

@@ -1,0 +1,263 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "算法实习生",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "教育背景",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "本科",
+          "location": "虚构城市",
+          "start_date": "2022-09",
+          "end_date": "2026-07",
+          "bullets": [
+            {
+              "id": "e505c2c1-998e-47cd-9fa3-46fe121a425a",
+              "text": "人工智能本科，主修课程覆盖Python等方向",
+              "source_fact_ids": [
+                "f-ai-education"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "模型训练成员",
+          "location": "虚构城市",
+          "start_date": "2025-03",
+          "end_date": "2025-06",
+          "bullets": [
+            {
+              "id": "c7b2b08d-3a11-48ba-82c3-4ecaba2bc10f",
+              "text": "使用 PyTorch 搭建卷积网络完成图像分类训练",
+              "source_fact_ids": [
+                "f-ai-image-cls-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "b72015df-4d01-42ce-bab5-43df0e2b330e",
+              "text": "通过数据增强与学习率调整提升验证集表现",
+              "source_fact_ids": [
+                "f-ai-image-cls-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "782598b1-7589-4f4f-a6aa-19d4241bfa86",
+              "text": "记录训练曲线与混淆矩阵，分析误分类样本",
+              "source_fact_ids": [
+                "f-ai-image-cls-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "cb5aaca8-41f3-4020-8494-28a9bb10d419",
+              "text": "使用 pandas 清洗传感器采样数据并处理缺失值",
+              "source_fact_ids": [
+                "f-ai-data-clean-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            },
+            {
+              "id": "3ed89e5e-02f5-42ac-aa8c-7ad50ce06eb2",
+              "text": "编写异常值检测规则并输出异常记录表",
+              "source_fact_ids": [
+                "f-ai-data-clean-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            },
+            {
+              "id": "2b7194e6-1688-4291-9a6f-6d7a634e053b",
+              "text": "将清洗流程封装为可重复执行的脚本",
+              "source_fact_ids": [
+                "f-ai-data-clean-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        },
+        {
+          "organization": "虚构智能科技实习岗",
+          "role_title": "算法实习生",
+          "location": "虚构城市",
+          "start_date": "2025-07",
+          "end_date": "2025-09",
+          "bullets": [
+            {
+              "id": "7f052d24-aa31-4ca1-bc11-421d3c334da1",
+              "text": "使用朴素贝叶斯与词袋特征完成文本分类基线",
+              "source_fact_ids": [
+                "f-ai-text-cls-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "34654105-95a8-428a-998b-9aabd699c14a",
+              "text": "对比不同特征处理对准确率的影响",
+              "source_fact_ids": [
+                "f-ai-text-cls-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "bb447d08-5fa6-4d02-801b-73e48915d9c2",
+              "text": "整理实验记录与错误分析",
+              "source_fact_ids": [
+                "f-ai-text-cls-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "技能",
+      "presentation": "tags",
+      "items": [
+        {
+          "organization": "",
+          "role_title": "",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "id": "86ceb77f-551f-462f-9111-6bb06feaf673",
+              "text": "Python",
+              "source_fact_ids": [
+                "f-ai-skill-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "818bc47c-efa5-474f-beb8-b39c1e359a16",
+              "text": "PyTorch",
+              "source_fact_ids": [
+                "f-ai-skill-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "595cdc9b-8a95-4214-8884-df176013b702",
+              "text": "pandas",
+              "source_fact_ids": [
+                "f-ai-skill-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "05dc186d-778a-4f22-9136-fdc94db50a05",
+              "text": "NumPy",
+              "source_fact_ids": [
+                "f-ai-skill-3"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "e2808b74-1935-4466-8377-0bde59575735",
+              "text": "scikit-learn",
+              "source_fact_ids": [
+                "f-ai-skill-4"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": []
+}

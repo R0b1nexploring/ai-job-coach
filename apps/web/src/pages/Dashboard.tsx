@@ -14,31 +14,31 @@ export function Dashboard() {
       <h1 className="page-title mt-3">用真实经历生成一页简历</h1>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         <Link to="/app/experience" className="card hover:border-sage">
-          <p className="text-sm text-black/50">第一步</p>
-          <h2 className="mt-2 text-2xl font-black">完善实习 / 项目</h2>
-          <p className="mt-3 text-sm text-black/60">把真实实习和项目记进经历库，这是后面改简历的材料。</p>
+          <p className="text-sm text-ink-secondary">第一步</p>
+          <h2 className="mt-2 text-2xl font-semibold">完善实习 / 项目</h2>
+          <p className="mt-3 text-sm text-ink-secondary">把真实实习和项目记进经历库，这是后面改简历的材料。</p>
         </Link>
         <Link to="/app/jobs" className="card hover:border-sage">
-          <p className="text-sm text-black/50">第二步</p>
-          <h2 className="mt-2 text-2xl font-black">选一个目标岗位</h2>
-          <p className="mt-3 text-sm text-black/60">粘贴 JD 或打开匹配报告，再生成针对这个岗位的简历。</p>
+          <p className="text-sm text-ink-secondary">第二步</p>
+          <h2 className="mt-2 text-2xl font-semibold">选一个目标岗位</h2>
+          <p className="mt-3 text-sm text-ink-secondary">粘贴 JD 或打开匹配报告，再生成针对这个岗位的简历。</p>
         </Link>
         <Link to="/app/resumes" className="card hover:border-sage md:col-span-2">
-          <p className="text-sm text-black/50">第三步</p>
-          <h2 className="mt-2 text-2xl font-black">生成一页简历</h2>
-          <p className="mt-3 text-sm text-black/60">用已确认的实习和项目改写要点。未达成学习目标会标成灰色，不会假装已经做过。</p>
+          <p className="text-sm text-ink-secondary">第三步</p>
+          <h2 className="mt-2 text-2xl font-semibold">生成一页简历</h2>
+          <p className="mt-3 text-sm text-ink-secondary">用已确认的实习和项目改写要点。未达成学习目标会标成灰色，不会假装已经做过。</p>
         </Link>
       </div>
       <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {Object.entries({ resume: '定制简历', application: '辅助投递', interview: '模拟面试', match: '免费匹配' }).map(([key, label]) => (
           <div className="card" key={key}>
-            <p className="text-sm text-black/50">{label}额度</p>
-            <p className="mt-2 text-4xl font-black">{quotas.data?.[key] ?? 0}</p>
+            <p className="text-sm text-ink-secondary">{label}额度</p>
+            <p className="mt-2 font-display text-[34px] font-medium leading-none tabular-nums">{quotas.data?.[key] ?? 0}</p>
           </div>
         ))}
       </div>
       <section className="card mt-6">
-        <h2 className="text-xl font-bold">本周周报</h2>
+        <h2 className="text-xl font-semibold">本周周报</h2>
         {report.isLoading ? <p>正在统计…</p> : (
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <p>岗位 <b>{report.data?.new_jobs}</b></p>

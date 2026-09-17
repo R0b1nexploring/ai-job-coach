@@ -19,7 +19,7 @@ export function Resumes() {
   return <><div className="flex flex-wrap items-end justify-between gap-4"><div><span className="badge">事实优先</span><h1 className="page-title mt-3">简历与事实库</h1></div><label className="btn cursor-pointer">上传 DOCX / PDF<input className="hidden" type="file" accept=".docx,.pdf" onChange={(event) => event.target.files?.[0] && upload.mutate(event.target.files[0])} /></label></div>
     {(upload.error || resumes.error || versions.error) && <div className="mt-5"><ErrorState error={upload.error || resumes.error || versions.error} /></div>}{message && <p className="mt-5 rounded-xl bg-green-50 p-3 text-green-700">{message}</p>}
     <div className="mt-6 space-y-4">{resumes.data?.items.length ? resumes.data.items.map((resume) => <ResumeCard key={resume.id} resume={resume} />) : <Empty title="还没有简历，上传一份开始分析。" />}</div>
-    <section className="mt-10"><h2 className="text-2xl font-bold">定制版本</h2><div className="mt-4 space-y-3">{versions.data?.items?.length ? versions.data.items.map((version: any) => <VersionCard key={version.id} version={version} />) : <Empty title="还没有岗位定制版本。" />}</div></section>
+    <section className="mt-10"><h2 className="text-2xl font-semibold">定制版本</h2><div className="mt-4 space-y-3">{versions.data?.items?.length ? versions.data.items.map((version: any) => <VersionCard key={version.id} version={version} />) : <Empty title="还没有岗位定制版本。" />}</div></section>
   </>
 }
 
@@ -76,7 +76,7 @@ function VersionCard({ version }: { version: any }) {
               {isTarget ? '蓝图 · 对照 JD 的差距' : '可投递 · 全部已确认'}
             </span>
           </div>
-          <p className="mt-1 text-sm text-black/50">
+          <p className="mt-1 text-sm text-ink-secondary">
             事实检查：{guardStatusLabels[version.guard_status] || '未知状态'} · 审核：{reviewStatusLabels[version.review_status] || '未知状态'}
           </p>
           {isTarget && (
@@ -104,7 +104,7 @@ function VersionCard({ version }: { version: any }) {
       <ResumeDraft content={version.content_json} />
       {editing && (
         <div className="mt-4 space-y-4 rounded-xl border border-sage/20 bg-green-50/40 p-4">
-          <p className="text-xs text-black/55">只能压缩、排序和改写已有来源；未达成目标必须继续明确标记。保存后会重新执行事实检查。</p>
+          <p className="text-xs text-ink-secondary">只能压缩、排序和改写已有来源；未达成目标必须继续明确标记。保存后会重新执行事实检查。</p>
           <label>
             <span className="label">简历标题</span>
             <input aria-label="简历标题" className="field" value={headline} onChange={(event) => setHeadline(event.target.value)} />
@@ -174,10 +174,10 @@ function ResumeCard({ resume }: { resume: Resume }) {
   })
   const analyze = useMutation({ mutationFn: () => api<any>(`/api/resumes/${resume.id}/analysis`, { method: 'POST' }), onSuccess: setAnalysis })
   const missing = blockingMissing.length ? blockingMissing : (resume.missing_information_json || [])
-  return <article className="card"><div className="flex flex-wrap justify-between gap-3"><div><h2 className="font-bold">{resume.display_name}</h2><p className="text-sm text-black/50">解析状态：{parseStatusLabels[resume.parse_status] || '未知状态'}</p></div><div className="flex gap-2"><button className="btn-secondary" disabled={analyze.isPending} onClick={() => analyze.mutate()}>{analyze.isPending ? '分析中…' : '分析岗位方向'}</button><button className="btn-secondary" disabled={!!resume.facts_confirmed_at || confirmAll.isPending} onClick={() => confirmAll.mutate()}>{resume.facts_confirmed_at ? '完整事实已确认' : '确认所有完整事实'}</button></div></div>
+  return <article className="card"><div className="flex flex-wrap justify-between gap-3"><div><h2 className="font-semibold">{resume.display_name}</h2><p className="text-sm text-ink-secondary">解析状态：{parseStatusLabels[resume.parse_status] || '未知状态'}</p></div><div className="flex gap-2"><button className="btn-secondary" disabled={analyze.isPending} onClick={() => analyze.mutate()}>{analyze.isPending ? '分析中…' : '分析岗位方向'}</button><button className="btn-secondary" disabled={!!resume.facts_confirmed_at || confirmAll.isPending} onClick={() => confirmAll.mutate()}>{resume.facts_confirmed_at ? '完整事实已确认' : '确认所有完整事实'}</button></div></div>
     {message && <p className="mt-3 rounded-xl bg-green-50 p-3 text-green-700">{message}</p>}
     {missing.length > 0 && <ClarificationForm resumeId={resume.id} missing={missing} onCompleted={() => { setBlockingMissing([]); setMessage('待补信息已保存，请再次确认所有完整事实。') }} />}
-    {analysis && <section className="mt-4 rounded-xl border border-sage/20 bg-green-50/50 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold">简历方向建议</h3><span className="badge">建议稿 · 非事实结论</span></div><p className="mt-2 text-sm">{analysis.summary}</p>{analysis.requires_fact_confirmation && <p className="mt-2 text-sm text-amber-800">部分事实尚未确认，请先核对事实库再生成定制简历。</p>}<div className="mt-3 grid gap-3 md:grid-cols-2">{analysis.role_suggestions.map((item: any) => <div className="rounded-lg bg-white p-3" key={item.role}><b>{item.role}</b><p className="mt-1 text-sm text-black/60">{item.reason}</p><p className="mt-2 text-xs text-sage">搜索词：{item.search_keywords.join(' / ')}</p></div>)}</div>{analysis.risks.length > 0 && <p className="mt-3 text-sm text-amber-800">注意：{analysis.risks.join('；')}</p>}</section>}
+    {analysis && <section className="mt-4 rounded-xl border border-sage/20 bg-green-50/50 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">简历方向建议</h3><span className="badge">建议稿 · 非事实结论</span></div><p className="mt-2 text-sm">{analysis.summary}</p>{analysis.requires_fact_confirmation && <p className="mt-2 text-sm text-amber-800">部分事实尚未确认，请先核对事实库再生成定制简历。</p>}<div className="mt-3 grid gap-3 md:grid-cols-2">{analysis.role_suggestions.map((item: any) => <div className="rounded-lg bg-white p-3" key={item.role}><b>{item.role}</b><p className="mt-1 text-sm text-ink-secondary">{item.reason}</p><p className="mt-2 text-xs text-sage">搜索词：{item.search_keywords.join(' / ')}</p></div>)}</div>{analysis.risks.length > 0 && <p className="mt-3 text-sm text-amber-800">注意：{analysis.risks.join('；')}</p>}</section>}
     {(analyze.error || confirmAll.error) && <div className="mt-3"><ErrorState error={analyze.error || confirmAll.error} /></div>}
     <details className="mt-4"><summary className="cursor-pointer text-sage">查看与编辑事实库（{facts.data?.total ?? 0}）</summary><div className="mt-3 space-y-2">{facts.data?.items?.map((fact: any) => <FactRow key={fact.id} fact={fact} resumeId={resume.id} />)}</div><NewFactForm resumeId={resume.id} /></details></article>
 }
@@ -208,7 +208,7 @@ function ClarificationForm({ resumeId, missing, onCompleted }: {
 
   return (
     <section className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
-      <h3 className="font-bold text-amber-900">先补充关键事实</h3>
+      <h3 className="font-semibold text-amber-900">先补充关键事实</h3>
       <p className="mt-1 text-sm text-amber-800">缺少这些字段时不会批量确认，避免把不完整内容误当成已核实事实。</p>
       <div className="mt-3 space-y-3">
         {missing.map((item) => {
@@ -250,7 +250,7 @@ function NewFactForm({ resumeId }: { resumeId: string }) {
     mutationFn: () => api(`/api/resumes/${resumeId}/facts`, { method: 'POST', body: JSON.stringify({ category, label: text.slice(0, 30), value_json: { text }, source_text: '用户主动补充' }) }),
     onSuccess: () => { setText(''); client.invalidateQueries({ queryKey: ['facts', resumeId] }); client.invalidateQueries({ queryKey: ['resumes'] }) },
   })
-  return <form className="mt-4 rounded-xl border border-dashed border-sage/40 p-3" onSubmit={(event) => { event.preventDefault(); create.mutate() }}><h3 className="font-semibold">补充真实经历</h3><p className="mt-1 text-xs text-black/50">仅填写真实完成且可核对的事实，新增后仍需确认。</p><div className="mt-3 grid gap-2 md:grid-cols-[160px_1fr_auto]"><select aria-label="事实类型" className="field" value={category} onChange={(event) => setCategory(event.target.value)}><option value="projects">个人或课程项目</option><option value="employment">工作或实习</option><option value="education">教育经历</option><option value="skills">技能</option><option value="certificates">证书</option><option value="other">其他事实</option></select><input aria-label="新增事实内容" className="field" value={text} onChange={(event) => setText(event.target.value)} placeholder="描述真实动作、产物和证据" /><button className="btn" disabled={!text.trim() || create.isPending}>加入事实库</button></div>{create.error && <ErrorState error={create.error} />}</form>
+  return <form className="mt-4 rounded-xl border border-dashed border-sage/40 p-3" onSubmit={(event) => { event.preventDefault(); create.mutate() }}><h3 className="font-semibold">补充真实经历</h3><p className="mt-1 text-xs text-ink-secondary">仅填写真实完成且可核对的事实，新增后仍需确认。</p><div className="mt-3 grid gap-2 md:grid-cols-[160px_1fr_auto]"><select aria-label="事实类型" className="field" value={category} onChange={(event) => setCategory(event.target.value)}><option value="projects">个人或课程项目</option><option value="employment">工作或实习</option><option value="education">教育经历</option><option value="skills">技能</option><option value="certificates">证书</option><option value="other">其他事实</option></select><input aria-label="新增事实内容" className="field" value={text} onChange={(event) => setText(event.target.value)} placeholder="描述真实动作、产物和证据" /><button className="btn" disabled={!text.trim() || create.isPending}>加入事实库</button></div>{create.error && <ErrorState error={create.error} />}</form>
 }
 
 export function ResumeDraft({ content }: { content: any }) {
@@ -259,10 +259,10 @@ export function ResumeDraft({ content }: { content: any }) {
   if (!sections.length && !gap?.reasons?.length) return null
   return (
     <div className="mt-4 space-y-4 rounded-xl bg-cream p-4 text-sm">
-      {content.headline && <p className="text-lg font-bold">意向：{content.headline}</p>}
+      {content.headline && <p className="text-lg font-semibold">意向：{content.headline}</p>}
       {content.kind === 'target' && gap?.reasons?.length ? (
         <div className="rounded-xl bg-amber-50 p-3 text-amber-950">
-          <p className="font-bold">{gap.title || '对照岗位还缺什么'}</p>
+          <p className="font-semibold">{gap.title || '对照岗位还缺什么'}</p>
           <p className="mt-1 text-xs text-amber-900/80">下面是按 JD 画出的差距，未达成条目不是你已经做过的经历。</p>
           <ul className="mt-2 list-disc space-y-1 pl-5">
             {gap.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}
@@ -273,7 +273,7 @@ export function ResumeDraft({ content }: { content: any }) {
         <section key={`${section.name}-${sectionIndex}`}>
           <h3 className="font-semibold">{section.name}</h3>
           {section.presentation === 'tags' || section.name === '技能' || section.name === '技能证书' ? (
-            <p className="mt-2 text-black/80">
+            <p className="mt-2 text-ink">
               {(section.items || []).flatMap((item: any) => item.bullets || []).map((bullet: any) => (
                 bullet.achieved === false ? `[未达成 · 学习目标] ${bullet.text}` : bullet.text
               )).filter(Boolean).join(' / ')}
@@ -281,7 +281,7 @@ export function ResumeDraft({ content }: { content: any }) {
           ) : (section.items || []).map((item: any, itemIndex: number) => (
             <div className="mt-2" key={`${item.organization || item.text || 'item'}-${itemIndex}`}>
               {(item.organization || item.role_title || item.start_date) && (
-                <p className="text-black/55">
+                <p className="text-ink-secondary">
                   {(section.name === '教育背景'
                     ? [item.organization, item.role_title, [item.start_date, item.end_date].filter(Boolean).join('–')]
                     : [item.role_title, item.organization, [item.start_date, item.end_date].filter(Boolean).join('–')]
@@ -290,7 +290,7 @@ export function ResumeDraft({ content }: { content: any }) {
               )}
               <ul className="mt-1 list-disc space-y-1 pl-5">
                 {(item.bullets || (item.text ? [{ text: item.text, achieved: true }] : [])).map((bullet: any, bulletIndex: number) => (
-                  <li key={bulletIndex} className={bullet.achieved === false ? 'text-black/45' : ''}>
+                  <li key={bulletIndex} className={bullet.achieved === false ? 'text-ink-muted' : ''}>
                     {bullet.achieved === false ? '[未达成 · 学习目标] ' : ''}
                     {bullet.text}
                   </li>

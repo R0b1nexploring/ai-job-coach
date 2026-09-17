@@ -1,0 +1,224 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "电气自动化助理工程师",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "教育背景",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "本科",
+          "location": "虚构城市",
+          "start_date": "2022-09",
+          "end_date": "2026-07",
+          "bullets": [
+            {
+              "id": "a67e1a4d-f527-4f0b-8295-354c5d625077",
+              "text": "电气工程及其自动化本科，主修课程覆盖PLC等方向",
+              "source_fact_ids": [
+                "f-electrical-education"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构职业技术学院",
+          "role_title": "实训学生",
+          "location": "虚构城市",
+          "start_date": "2024-07",
+          "end_date": "2024-08",
+          "bullets": [
+            {
+              "id": "8885f903-5610-45a0-8195-6164a9a55626",
+              "text": "按电气原理图完成配电柜元器件接线",
+              "source_fact_ids": [
+                "f-electrical-switchgear-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "c8186e8f-dd61-40b5-97fd-197daf0c118d",
+              "text": "执行通电前检查并排除一处接线错误",
+              "source_fact_ids": [
+                "f-electrical-switchgear-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "fb4e7785-2d56-48f1-bfd8-fe1603e4bebf",
+              "text": "整理实训验收记录与安全操作要点",
+              "source_fact_ids": [
+                "f-electrical-switchgear-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        },
+        {
+          "organization": "虚构电气设备实习岗",
+          "role_title": "电气实习生",
+          "location": "虚构城市",
+          "start_date": "2025-07",
+          "end_date": "2025-09",
+          "bullets": [
+            {
+              "id": "6cb24dcf-1d63-40ac-80f5-019b8b7cbfd5",
+              "text": "绘制电机正反转控制原理图与接线图",
+              "source_fact_ids": [
+                "f-electrical-drawing-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "e4aa33e0-2600-411a-a153-e97a25e99e32",
+              "text": "标注元件符号与端子编号，核对图纸一致性",
+              "source_fact_ids": [
+                "f-electrical-drawing-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "66ba5af5-c55c-4b72-b5af-d58fe0507161",
+              "text": "整理图纸清单与元件明细表",
+              "source_fact_ids": [
+                "f-electrical-drawing-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "技能",
+      "presentation": "tags",
+      "items": [
+        {
+          "organization": "",
+          "role_title": "",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "id": "051a714d-7ff3-4d6c-8ff1-e35bac8c91c4",
+              "text": "PLC",
+              "source_fact_ids": [
+                "f-electrical-skill-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "ba2ad850-4f70-41aa-b894-8306d95551f7",
+              "text": "变频器",
+              "source_fact_ids": [
+                "f-electrical-skill-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "5136400e-4eb2-4c78-a903-dd8c7174a3e6",
+              "text": "电气图纸",
+              "source_fact_ids": [
+                "f-electrical-skill-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "39812091-f7d4-4d96-9a3c-3f36e346b617",
+              "text": "Eplan 基础",
+              "source_fact_ids": [
+                "f-electrical-skill-3"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "392924b2-38e4-4253-8ae7-bac6cb786235",
+              "text": "万用表",
+              "source_fact_ids": [
+                "f-electrical-skill-4"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": []
+}

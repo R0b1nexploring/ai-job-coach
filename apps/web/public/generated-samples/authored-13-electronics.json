@@ -1,0 +1,224 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "硬件设计实习生",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "教育背景",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "本科",
+          "location": "虚构城市",
+          "start_date": "2022-09",
+          "end_date": "2026-07",
+          "bullets": [
+            {
+              "id": "05e74544-bd40-4812-9594-80122d63311c",
+              "text": "电子信息工程本科，主修课程覆盖STM32等方向",
+              "source_fact_ids": [
+                "f-electronics-education"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "课程学生",
+          "location": "虚构城市",
+          "start_date": "2024-09",
+          "end_date": "2024-12",
+          "bullets": [
+            {
+              "id": "75fef92f-1f88-4927-ae7c-f080113e2e6a",
+              "text": "使用 Altium Designer 设计电源模块原理图与双层 PCB",
+              "source_fact_ids": [
+                "f-electronics-pcb-power-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "2cebc745-85bf-4789-99fd-d76c3c549b22",
+              "text": "完成器件布局与走线，检查电源与地平面完整性",
+              "source_fact_ids": [
+                "f-electronics-pcb-power-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "ea25105a-64ef-4141-a0bc-7653fd27ff26",
+              "text": "整理设计文件与电气规则检查结果",
+              "source_fact_ids": [
+                "f-electronics-pcb-power-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        },
+        {
+          "organization": "虚构电子科技实习岗",
+          "role_title": "硬件实习生",
+          "location": "虚构城市",
+          "start_date": "2025-07",
+          "end_date": "2025-09",
+          "bullets": [
+            {
+              "id": "70daae84-67f5-4d52-906d-cfd41b35d07b",
+              "text": "设计分压与滤波电路调理传感器输出信号",
+              "source_fact_ids": [
+                "f-electronics-signal-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "9e14337b-58ed-44b6-b238-f6b9104513fd",
+              "text": "用示波器测量纹波并调整滤波参数",
+              "source_fact_ids": [
+                "f-electronics-signal-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "dec2bfc8-ab09-400c-9f83-2e9eaea32287",
+              "text": "记录测试数据与改进过程",
+              "source_fact_ids": [
+                "f-electronics-signal-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "技能",
+      "presentation": "tags",
+      "items": [
+        {
+          "organization": "",
+          "role_title": "",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "id": "b68e3a21-69e4-4737-9294-c575f2c0d54a",
+              "text": "STM32",
+              "source_fact_ids": [
+                "f-electronics-skill-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "687093f7-2750-462a-a5ec-ddc8e36c0028",
+              "text": "C",
+              "source_fact_ids": [
+                "f-electronics-skill-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "117fdbf6-c8ea-4af3-a944-7ffab31f1f89",
+              "text": "Altium Designer",
+              "source_fact_ids": [
+                "f-electronics-skill-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "c2854736-aa6f-47e9-a4a9-7424ef06caac",
+              "text": "示波器",
+              "source_fact_ids": [
+                "f-electronics-skill-3"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "d82ac26b-e28d-4729-8d43-fcce55cd9942",
+              "text": "电路调试",
+              "source_fact_ids": [
+                "f-electronics-skill-4"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": []
+}

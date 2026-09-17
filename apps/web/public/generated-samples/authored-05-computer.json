@@ -1,0 +1,224 @@
+{
+  "content_version": 3,
+  "factuality_policy": "ai_expansion",
+  "kind": "submittable",
+  "headline": "后端开发实习生",
+  "contact": {
+    "name": "虚构样本",
+    "email": "fictional@example.test",
+    "city": "虚构城市"
+  },
+  "sections": [
+    {
+      "name": "教育背景",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "本科",
+          "location": "虚构城市",
+          "start_date": "2022-09",
+          "end_date": "2026-07",
+          "bullets": [
+            {
+              "id": "6996b4d2-11fe-4456-b665-446a28eb8324",
+              "text": "计算机科学与技术本科，主修课程覆盖Java等方向",
+              "source_fact_ids": [
+                "f-computer-education"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": false,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "ai_generated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "项目/科研/竞赛",
+      "presentation": "items",
+      "items": [
+        {
+          "organization": "虚构理工大学",
+          "role_title": "课程学生",
+          "location": "虚构城市",
+          "start_date": "2024-09",
+          "end_date": "2024-12",
+          "bullets": [
+            {
+              "id": "1631a6c0-c777-4432-b820-91b7fd4c71b6",
+              "text": "设计图书借阅数据库的实体关系与第三范式表结构",
+              "source_fact_ids": [
+                "f-computer-library-db-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "c366b096-9e7f-47c7-8663-f16faab2cceb",
+              "text": "编写借阅统计视图与存储过程，减少重复查询",
+              "source_fact_ids": [
+                "f-computer-library-db-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "e1a03562-1e67-4c4a-82b7-fffe9dc48681",
+              "text": "用索引优化高频查询并对比执行计划",
+              "source_fact_ids": [
+                "f-computer-library-db-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        },
+        {
+          "organization": "虚构网络科技实习岗",
+          "role_title": "开发实习生",
+          "location": "虚构城市",
+          "start_date": "2025-07",
+          "end_date": "2025-09",
+          "bullets": [
+            {
+              "id": "213762fa-61f0-4e6e-a8a8-a0201c80e500",
+              "text": "为热点查询接口引入本地缓存并设置过期策略",
+              "source_fact_ids": [
+                "f-computer-cache-perf-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "a936ce11-7651-4707-a93c-eedfcf19a364",
+              "text": "使用压测脚本对比优化前后的响应时间",
+              "source_fact_ids": [
+                "f-computer-cache-perf-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "dc55714e-e6ad-463f-bac4-c908091227af",
+              "text": "整理接口文档与异常返回约定",
+              "source_fact_ids": [
+                "f-computer-cache-perf-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "技能",
+      "presentation": "tags",
+      "items": [
+        {
+          "organization": "",
+          "role_title": "",
+          "location": "",
+          "start_date": "",
+          "end_date": "",
+          "bullets": [
+            {
+              "id": "81f26356-e07e-4653-bae4-213faccc4bc6",
+              "text": "Java",
+              "source_fact_ids": [
+                "f-computer-skill-0"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "95424c7e-2c6f-4c35-bd08-477f2cffda7c",
+              "text": "Spring Boot",
+              "source_fact_ids": [
+                "f-computer-skill-1"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "2c23533d-098a-40e8-8ece-0d4f6346333d",
+              "text": "MySQL",
+              "source_fact_ids": [
+                "f-computer-skill-2"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "f3eb4081-399b-4421-b73a-d01d2847efa7",
+              "text": "Git",
+              "source_fact_ids": [
+                "f-computer-skill-3"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            },
+            {
+              "id": "ebf45568-4645-4e2d-b3d1-a3e2f52bb42f",
+              "text": "JUnit",
+              "source_fact_ids": [
+                "f-computer-skill-4"
+              ],
+              "source_target_ids": [],
+              "requirement_ids": [],
+              "achieved": true,
+              "locked": false,
+              "new_claims": [],
+              "verification_status": "source_based"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded_gaps": []
+}

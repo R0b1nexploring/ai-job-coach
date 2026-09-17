@@ -6,6 +6,25 @@
 
 ## ADDED Requirements
 
+### Requirement: Internal project plans precede resume copy
+系统 SHALL 在逻辑上先组织项目方案，再将其压缩为简历正文。方案 MUST 包含具体场景与问题、个人角色及目标、输入与预期输出、实施步骤、方法选择理由、关键难点、交付物与验证方法，并区分已有来源、AI 设计假设和待验证项。方案 SHALL 作为版本化内部材料保存并关联当前项目、要点和目标要求，不作为独立用户教程或新页面。逻辑顺序 MUST NOT 被解释为固定模型调用次数。
+
+#### Scenario: Generate with no project library or personal materials
+- **WHEN** 用户有有效目标画像，但没有个人项目素材，且项目库为空或尚未建设
+- **THEN** 系统仍可围绕目标要求设计边界清楚的简单项目，形成内部方案和简历文案，保留 AI 来源及未达成状态，不要求用户先提供参考项目
+
+#### Scenario: Available information cannot support a complex project
+- **WHEN** 所需项目涉及缺少依据的复杂技术过程或实验结果
+- **THEN** 系统缩小到可解释的项目范围，记录假设和待验证问题；不把未知细节写成既有事实，不用虚构数字填满结果
+
+#### Scenario: Several project inputs are available
+- **WHEN** 系统整理多段项目的事实和草稿
+- **THEN** 每份方案只携带所属项目的正文、证据、确认状态及草稿细节；设计补充保持可区分，不借用另一项目的个人成果
+
+#### Scenario: A project plan is compressed into resume bullets
+- **WHEN** 系统将完整方案压缩到简历篇幅
+- **THEN** 可见正文在项目整体仍表达问题、个人任务、行动和结果；系统保留各要素与可见要点的关联，不以仅存在项目 ID 或内部说明代替正文覆盖
+
 ### Requirement: Every blueprint project presents a complete STAR story
 新生成的蓝图中每个项目经历 MUST 在项目整体呈现完整背景、本人任务、具体行动和结果。背景 SHALL 说明场景及问题，任务 SHALL 说明个人角色与目标，行动 SHALL 解释具体方法、步骤、关键难点和个人贡献，结果 SHALL 说明交付物及如何验证。四要素 MUST 形成相互支持的项目主线，不能以工具清单、空泛标签或“建议做某项目”代替。成稿 SHALL 自然表达，不要求每条 bullet 重复四要素或显示 STAR 字母。
 
