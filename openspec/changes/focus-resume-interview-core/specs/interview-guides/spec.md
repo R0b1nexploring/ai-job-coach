@@ -1,3 +1,5 @@
+> **当前范围（2026-09-18）**：完整业务路线按主计划顶部 R0–R6 与 tasks 第17节执行。恢复最小邀请试用、持久任务与真实文件验收；旧“上线暂缓”范围被覆盖，固定规模实验、原型库及完整编辑器仍延期。历史实现勾选不代表新增合同已验收。
+
 > **2026-09-05 用户最新裁决：允许 AI 扩写。** 新生成的工作台 v3 简历采用 `factuality_policy=ai_expansion`，允许超出已确认事实补充内容，也允许仅凭目标画像创建草稿。缺少事实支持、新主张和未达成状态不再阻止生成、预览或导出；来源 ID 归属、结构及版面仍需通过检查。AI 补充记录 `verification_status=ai_generated`、`achieved=false` 作为内部来源状态，但在工作台、导出和指南不显示“待核验”标记，不自动写入已确认事实库。`submittable` 的界面名称改为“求职版”。本裁决覆盖本文此前相冲突的事实限制；旧 v1/v2 接口保持兼容。
 
 ## Purpose
@@ -92,3 +94,24 @@
 #### Scenario: User opens a new interview guide
 - **WHEN** 用户查看新生成的指南
 - **THEN** 页面展示准备内容而不要求填写答案、提交评分或预约顾问
+
+### Requirement: Guide tasks are durable and independent of resume workers
+系统 MUST 将双版本可交付结果与两份指南任务在同一数据库事务内持久化，以所有者、简历版本、目标快照、语义哈希和指南类型绑定输入，并通过数据库唯一性避免自动重复排队。父任务 MUST 在保存结果及排队后结束，不等待指南调用；指南 SHALL 使用独立消费者与同一数据库，可复用同一 worker 程序，无需 Redis/Celery。指南任务 MUST 独立领取、续租、重试并校验 claim token 及当前哈希。历史已可交付但缺任务的版本 SHALL 幂等补排，旧哈希结果 MUST NOT 覆盖当前指南。
+
+自动两份指南 SHALL 包含在父生成操作额度中，恢复和重放不额外扣费；用户主动重生成按其他 AI 操作规则结算。queued 子任务 MUST 允许同时保存，执行仍遵守每用户并发上限。单份指南失败 MUST NOT 重生成简历或影响另一份指南。内部故障诊断 MUST 保留且不展示在主界面。
+
+#### Scenario: Worker exits immediately after saving resumes
+- **WHEN** 双版本与指南排队事务提交后，简历 worker 立即退出
+- **THEN** 独立指南消费者仍从持久队列生成两份指南，不依赖页面打开或重新生成简历
+
+#### Scenario: One guide needs a retry
+- **WHEN** 一份指南失败或运行中断而另一份已完成
+- **THEN** 系统仅恢复或重试该指南，保留已完成交付物，自动恢复不重复扣费
+
+#### Scenario: Old guide finishes after a content change
+- **WHEN** 指南任务完成时其绑定内容哈希已过期
+- **THEN** 提交不能覆盖新哈希指南或成为当前可用结果，按历史过期结果处理
+
+#### Scenario: Automatic enqueue is replayed
+- **WHEN** 并发请求或补排重复处理同一版本、哈希及指南类型
+- **THEN** 数据库约束保证复用同一自动任务，不重复生成交付记录或扣除额度

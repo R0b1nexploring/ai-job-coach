@@ -1,3 +1,5 @@
+> **当前范围（2026-09-18）**：完整业务路线按主计划顶部 R0–R6 与 tasks 第17节执行。恢复最小邀请试用、持久任务与真实文件验收；旧“上线暂缓”范围被覆盖，固定规模实验、原型库及完整编辑器仍延期。历史实现勾选不代表新增合同已验收。
+
 > **2026-09-05 用户最新裁决：允许 AI 扩写。** 新生成的工作台 v3 简历采用 `factuality_policy=ai_expansion`，允许超出已确认事实补充内容，也允许仅凭目标画像创建草稿。缺少事实支持、新主张和未达成状态不再阻止生成、预览或导出；来源 ID 归属、结构及版面仍需通过检查。AI 补充记录 `verification_status=ai_generated`、`achieved=false` 作为内部来源状态，但在工作台、导出和指南不显示“待核验”标记，不自动写入已确认事实库。`submittable` 的界面名称改为“求职版”。本裁决覆盖本文此前相冲突的事实限制；旧 v1/v2 接口保持兼容。
 
 ## Purpose
@@ -7,6 +9,8 @@
 ## ADDED Requirements
 
 ### Requirement: Local density selection is reproducible
+本新三档模板要求继续作为后续改版规划；当前仅复用保存快照允许的间距调整并按下方真实交付要求验收。
+
 新模板版本 SHALL 提供 `spacious/balanced/compact` 三档受限间距，通过固定 Chromium 与字体的实际布局测量选择可容纳正文的最宽松档位。系统 MUST 保存可复现的模板版本和选定配置，预览与 Chromium PDF 使用同一配置；字号、正文、锁定内容不得因选档改变。旧模板快照 MUST 保持原渲染行为，不补套未定义档位。运行时模型 MUST NOT 输出 HTML/CSS 或排版参数。
 
 #### Scenario: Content needs a denser layout
@@ -18,6 +22,8 @@
 - **THEN** 系统返回可定位的溢出问题，遵循独立内容调整流程，不缩字号、不隐式删改正文
 
 ### Requirement: Visual quality is verified on rendered artifacts
+下述固定12份案例规模属于后续模板发布实验；当前闭环必须验证真实截图与PDF质量，覆盖主计划输入类型但不恢复固定数量。
+
 模板发布 SHALL 使用至少 12 份固定虚构正文覆盖短中长、长中英文、联系方式换行、多经历、技能与蓝图页脚，保存人工认可的截图基线。验收 MUST 检查层级、对齐、留白、完整显示及实际 PDF 物理质量，并记录实际转换器。备用转换器通过 MUST NOT 被记录为 Chromium 转换通过。
 
 #### Scenario: PDF is technically valid but visually poor
@@ -98,3 +104,28 @@
 #### Scenario: Export without a portrait
 - **WHEN** 用户未上传证件照
 - **THEN** 模板自动回收照片区域且保持单页布局
+
+### Requirement: PDF exports are durable private artifacts
+PDF SHALL 由独立持久任务读取已保存内容与模板快照生成，创建返回202，成功后提供鉴权下载。文件身份 MUST 绑定所有者、版本、内容哈希、模板快照哈希、格式及渲染器版本。并发相同导出 MUST 复用在途任务或有效产物；物理检查及私有上传都成功后才可记录可下载。下载或文件重建 MUST NOT 调用文案模型、修改简历或扣AI额度。
+
+#### Scenario: Storage succeeds but database persistence fails
+- **WHEN** 文件已上传但产物记录事务失败
+- **THEN** 系统不宣布下载成功，重试保持幂等，孤儿文件进入延迟清理
+
+#### Scenario: A previously generated file is missing
+- **WHEN** 用户下载的有效记录对应对象已缺失
+- **THEN** 系统允许重新排队该格式导出，不要求重生成简历或支付AI额度
+
+### Requirement: Minimal content adjustment resolves overflow without a full editor
+确认正文容量溢出且合法间距不能容纳时，界面 SHALL 提供简短“调整篇幅”动作，由用户主动触发异步内容调整。调整 MUST 保留锁定内容，重新校验并原子更新正文/语义哈希及指南过期状态；失败保留原版本。PDF技术故障 MUST 只提供导出重试，不触发改稿。此能力复用既有内容调整，不要求新增完整编辑器。
+
+#### Scenario: Content reduction cannot preserve locked text
+- **WHEN** 用户主动调整篇幅但保留锁定内容仍不能合格交付
+- **THEN** 调整任务失败，原成稿及其他可用格式仍保留，不能静默删改锁定要点
+
+### Requirement: Trial exports pass actual Chromium and viewport checks
+邀请试用 SHALL 使用固定Chromium与中文字体生成两版PDF并完成单页A4、裁切、字体嵌入、Unicode与全文检查，同时验证HTML/DOCX/PDF正文、章节和蓝图标识一致。桌面及390px窄屏预览 MUST 完整显示页面；生产缺转换器不可跳过验收或将503算成功。首版无需恢复固定12份案例或新三档模板实验，现有快照允许的间距调整必须可复现。
+
+#### Scenario: Local tests pass with another converter
+- **WHEN** 本地LibreOffice转换成功但生产Chromium未验证
+- **THEN** 记录本地通过与生产未验证，不能据此开放邀请或宣称Chromium路径成功

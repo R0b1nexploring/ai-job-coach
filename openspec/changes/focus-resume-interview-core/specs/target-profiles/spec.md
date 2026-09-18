@@ -1,3 +1,5 @@
+> **当前范围（2026-09-18）**：完整业务路线按主计划顶部 R0–R6 与 tasks 第17节执行。恢复最小邀请试用、持久任务与真实文件验收；旧“上线暂缓”范围被覆盖，固定规模实验、原型库及完整编辑器仍延期。历史实现勾选不代表新增合同已验收。
+
 ## Purpose
 
 目标画像把用户提供的一份或多份 JD 转换成可追溯的岗位要求合同，为双轨简历、质量评审和面试指南提供唯一目标上下文，并防止 AI 添加输入中不存在的岗位要求。
@@ -49,3 +51,10 @@
 #### Scenario: A source JD changes after generation
 - **WHEN** 目标画像已用于生成简历包后，其来源 Job 被修改
 - **THEN** 既有简历包继续引用生成时的目标快照，新生成请求使用更新后的画像版本
+
+### Requirement: JD persistence precedes asynchronous analysis
+单JD主操作 SHALL 先保存原文并获取独立岗位ID，再创建画像分析任务；新流程保存JD不得等待模型分析。系统 MUST 保留原文与job_ids的类型边界，支持1份或2–10份有效来源，失败后可复用已保存来源重试。任务冻结对应输入revision，后续源编辑不得改变进行中的分析。
+
+#### Scenario: Analysis fails after JD storage succeeds
+- **WHEN** 岗位原文已保存但模型分析失败或页面断网
+- **THEN** 用户可基于同一已保存岗位重试，不重复创建岗位，不把原文拼入job_ids
