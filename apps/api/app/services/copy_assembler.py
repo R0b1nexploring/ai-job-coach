@@ -218,22 +218,50 @@ def _assemble_project_story(raw: object, *, item: dict, bullets: list[dict], req
     task = raw.get("task") if isinstance(raw.get("task"), dict) else {}
     result = raw.get("result") if isinstance(raw.get("result"), dict) else {}
     first_bullet = _story_text(bullets[0].get("text"))
+    # Local defaults must stay project-specific. A canned phrase is a known
+    # placeholder under the STAR delivery contract, so deriving these from the
+    # bound requirement and the assembled bullet keeps a sparse input
+    # deliverable instead of silently degrading to filler.
+    focus = target_requirement or first_bullet or title
     context = _story_text(situation.get("context")) or (
-        f"围绕「{target_requirement}」补齐可展示的项目能力" if target_requirement else "围绕目标岗位设计一段可验证的项目实践"
+        f"围绕「{focus}」的实际使用场景、输入数据与既有约束展开"
+        if focus
+        else "围绕目标岗位设计一段可验证的项目实践"
     )
     problem = _story_text(situation.get("problem")) or (
-        "需要把岗位要求转为可拆分、可验证的项目产出" if not achieved else "需要在既有项目约束下完成可复盘的交付"
+        f"需要把「{focus}」转成可拆分、可验证的项目交付"
+        if focus
+        else "需要把岗位要求转为可拆分、可验证的项目产出"
     )
-    role = _story_text(task.get("role")) or ("计划负责人" if not achieved else (_story_text(item.get("role_title")) or "项目参与者"))
+    # A short entry-level label ("成员") is not a project role under the STAR
+    # contract, so fall through to a focus-derived description instead of
+    # persisting a value the delivery gate must reject.
+    role = _story_text(task.get("role")) or _detailed_or(
+        _story_text(item.get("role_title")),
+        f"负责「{focus}」的方案与执行"
+        if focus
+        else ("计划负责人" if not achieved else "项目参与者"),
+    )
     goal = _story_text(task.get("goal")) or (
-        f"形成能对应{target_requirement}的完整交付与验证记录" if target_requirement else "形成可演示、可复盘的项目交付"
+        f"产出可验证的{focus}交付物并记录验证方式"
+        if focus
+        else "形成可演示、可复盘的项目交付"
     )
-    constraints = _text_list(task.get("constraints")) or ["以已保存的素材和岗位要求为边界，不把计划写成已完成经历"]
+    constraints = _text_list(task.get("constraints")) or [
+        f"以「{focus}」相关的已保存素材和岗位要求为边界，不把计划写成已完成经历"
+        if focus
+        else "以已保存的素材和岗位要求为边界，不把计划写成已完成经历"
+    ]
     actions = _story_actions(raw.get("actions"), achieved=achieved, first_bullet=first_bullet, target_requirement=target_requirement)
     deliverables = _text_list(result.get("deliverables")) or [
-        "可演示的项目产出", "过程记录与版本说明"
+        f"{focus}的交付物" if focus else "可演示的项目产出",
+        f"{focus}的过程记录与版本说明" if focus else "过程记录与版本说明",
     ]
-    verification_method = _story_text(result.get("verification_method")) or "用交付物、过程记录和验收条件逐项核验"
+    verification_method = _story_text(result.get("verification_method")) or (
+        f"用{focus}的交付物与过程记录逐项核对其验收条件"
+        if focus
+        else "用交付物、过程记录和验收条件逐项核验"
+    )
     metrics = _story_metrics(result.get("metrics"), achieved=achieved)
     return {
         "schema_version": STAR_CONTRACT_VERSION,
@@ -285,10 +313,14 @@ def _story_actions(raw: object, *, achieved: bool, first_bullet: str, target_req
     return [
         {
             "step": f"将「{focus}」拆成可执行的工作包与验收项",
-            "method": "先定义输入、输出和验证方式，再按阶段保留过程记录",
-            "rationale": "让每个行动都能追溯到岗位要求和最终交付",
-            "difficulty": "在时间、素材与技术边界内做取舍",
-            "contribution": "本人负责的已确认部分" if achieved else "计划负责方案拆解、执行记录与验证",
+            "method": f"围绕「{focus}」先定义输入、输出与验证方式，再按阶段保留过程记录",
+            "rationale": f"让「{focus}」的每个行动都能追溯到岗位要求和最终交付",
+            "difficulty": f"在「{focus}」相关的时间、素材与技术边界内做取舍",
+            "contribution": (
+                f"本人负责「{focus}」的已确认部分"
+                if achieved
+                else f"计划负责「{focus}」的方案拆解、执行记录与验证"
+            ),
         }
     ]
 
@@ -340,6 +372,11 @@ def _text_list(value: object) -> list[str]:
 
 def _story_text(value: object) -> str:
     return str(value or "").strip()
+
+
+def _detailed_or(value: str, fallback: str) -> str:
+    """Prefer a value that can pass the STAR detail gate over a short label."""
+    return value if len(value.strip()) >= 4 else fallback
 
 
 def _story_title(item: dict) -> str:

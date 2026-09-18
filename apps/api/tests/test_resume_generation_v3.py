@@ -335,6 +335,24 @@ def _structured_llm_response(payload: dict) -> httpx.Response:
     )
 
 
+def _complete_critic_response() -> httpx.Response:
+    """A critique that assessed every required dimension.
+
+    Only a complete review can leave a version at ``ready``; a partial or
+    unavailable one keeps it at ``degraded`` (tasks 15.18 / 17.5).
+    """
+    from app.services.quality_service import QUALITY_DIMENSIONS
+
+    return _structured_llm_response(
+        {
+            "dimensions": {
+                name: {"score": 85, "notes": []} for name in QUALITY_DIMENSIONS
+            },
+            "summary": "ok",
+        }
+    )
+
+
 def _is_resume_copy_payload(payload: dict) -> bool:
     if payload.get("pair"):
         return True
@@ -499,7 +517,7 @@ def test_initial_critic_failure_is_explicitly_degraded(client, db, monkeypatch):
         "bundle-critic-failure",
     )
     assert processed["status"] == "degraded"
-    assert "critic_unavailable_deterministic_fallback" in processed["generation_metadata_json"]["repair_history"]
+    assert "critic_unavailable_submittable" in processed["generation_metadata_json"]["repair_history"]
     report = client.get(
         f"/api/resume-versions/{processed['versions']['submittable']['id']}/studio"
     ).json()["quality_report_json"]
@@ -570,7 +588,8 @@ def test_quality_repair_that_passes_is_ready_and_keeps_history(client, db, monke
         if written is not None:
             return written
         if "hard_passed" in payload:
-            return _structured_llm_response({"dimensions": {}, "summary": "ok"})
+            # A complete critique is required for the copy to reach ready.
+            return _complete_critic_response()
         if "bullets" in payload:
             return _structured_llm_response({"kind": payload.get("kind") or "submittable", "cards": []})
         return _structured_llm_response({"kind": payload.get("kind") or "submittable", "cards": []})

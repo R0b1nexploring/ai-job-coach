@@ -267,6 +267,15 @@ class QualityRecommendationOutput(BaseModel):
 class ProjectStoryReviewOutput(BaseModel):
     project_id: str = ""
     bullet_ids: list[str] = Field(default_factory=list)
+    # Classifies the finding so only concrete semantic content errors trigger a
+    # background repair. An empty or unknown code stays explanatory, which
+    # keeps low scores and style preferences out of the repair loop.
+    issue_code: Literal[
+        "",
+        "star_missing",
+        "plan_contradiction",
+        "action_result_mismatch",
+    ] = ""
     diagnosis: str = Field(min_length=1, max_length=500)
     suggestions: list[str] = Field(default_factory=list, max_length=5)
 

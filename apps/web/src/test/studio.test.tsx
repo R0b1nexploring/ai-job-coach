@@ -281,7 +281,14 @@ test('无旧简历也可生成，并轮询 queued 状态', async () => {
         title: '真实能力',
         guard_status: 'passed',
         content_hash: 'h1',
-        quality_report_json: { status: 'passed', reviewer: 'model', reviewer_note: '模型评审（mock）' },
+        quality_report_json: {
+          status: 'passed',
+          reviewer: 'model',
+          reviewer_note: '模型评审（mock）',
+          recommendations: [{ bullet_id: 'b-lock', suggestion: '补充验证方式' }],
+          star_diagnostics: [{ field: 'actions.0.rationale', message: '缺少取舍' }],
+          issues: ['内部质量问题'],
+        },
         content_json: {
           kind: 'submittable',
           factuality_policy: 'ai_expansion',
@@ -312,7 +319,7 @@ test('无旧简历也可生成，并轮询 queued 状态', async () => {
   expect(screen.queryByText(/待核验/)).not.toBeInTheDocument()
 })
 
-test('模型异常后的 degraded 会显示确定性降级原因', async () => {
+test('模型异常后的降级版本不向用户暴露内部降级原因', async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
     if (url.endsWith('/api/jobs')) return json({ items: [], total: 0 })
@@ -342,7 +349,10 @@ test('模型异常后的 degraded 会显示确定性降级原因', async () => {
       <ResumeStudio />
     </QueryClientProvider>,
   )
-  expect(await screen.findByText(/模型不可用，已使用确定性检查并通过硬门禁/)).toBeVisible()
+  // The bundle still loads as a deliverable, but the internal degraded reason
+  // and reviewer diagnostics stay off the user-facing workspace (task 15.20).
+  await waitFor(() => expect(screen.queryByText(/模型不可用/)).not.toBeInTheDocument())
+  expect(screen.queryByText(/降级/)).not.toBeInTheDocument()
 })
 
 test('生成失败会显示原因并可重试', async () => {
@@ -450,7 +460,14 @@ test('锁定后整份重生成会发出重生成请求，非首条可局部重�
   await waitFor(() => expect(generateButton).toBeEnabled())
   await user.click(generateButton)
   expect(await screen.findByText('完成点检')).toBeVisible()
-  expect(screen.getAllByText('已通过').length).toBeGreaterThan(0)
+  // The workspace reports deliverability, not the internal quality verdict.
+  expect(screen.queryByText('已通过')).not.toBeInTheDocument()
+  expect(screen.queryByText('降级可用')).not.toBeInTheDocument()
+  // Critic scores, STAR diagnostics and repair history stay internal (15.20).
+  expect(screen.queryByText('模型评审（mock）')).not.toBeInTheDocument()
+  expect(screen.queryByText('补充验证方式')).not.toBeInTheDocument()
+  expect(screen.queryByText(/缺少取舍/)).not.toBeInTheDocument()
+  expect(screen.queryByText('内部质量问题')).not.toBeInTheDocument()
   expect(screen.getAllByText('已关联 1 条素材事实')).toHaveLength(2)
   expect(screen.queryByText('来源 f1')).not.toBeInTheDocument()
   const rewriteButtons = screen.getAllByRole('button', { name: '重写本条' })

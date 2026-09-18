@@ -123,7 +123,11 @@ def test_compatible_provider_uses_task_model_retries_and_logs_no_sensitive_text(
     assert "JSON Schema" in requests[-1]["messages"][0]["content"]
     assert "结构示例" in requests[-1]["messages"][0]["content"]
     assert '"value"' in requests[-1]["messages"][0]["content"]
-    assert "上一次响应未通过" in requests[-1]["messages"][-1]["content"]
+    # A transport retry repeats the same content request. It must not append a
+    # JSON-repair instruction: a 503 is not a malformed-output problem.
+    assert len(requests[-1]["messages"]) == len(requests[0]["messages"])
+    assert "上一次响应未通过" not in json.dumps(requests[-1], ensure_ascii=False)
+    assert requests[-1]["messages"] == requests[0]["messages"]
     assert "mock_response" not in requests[-1]["messages"][1]["content"]
     assert "不得外发的回退内容" not in json.dumps(requests[-1], ensure_ascii=False)
     assert "task=resume_rewrite" in caplog.text

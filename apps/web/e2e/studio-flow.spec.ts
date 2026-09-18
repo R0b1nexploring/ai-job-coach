@@ -64,6 +64,12 @@ test('新用户从粘贴 JD 走到双轨简历、导出和两份指南', async (
   expect(desktopPreview?.width).toBeLessThanOrEqual(794)
   await expect(page.getByRole('button', { name: '求职版', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '蓝图 Plus', exact: true })).toBeVisible()
+  // The workspace shows the finished copy, not the internal quality verdict:
+  // no critic score, STAR diagnostic, degraded reason or repair history.
+  await expect(page.getByText('质量状态')).toHaveCount(0)
+  await expect(page.getByText('可改进之处')).toHaveCount(0)
+  await expect(page.getByText(/降级/)).toHaveCount(0)
+  await expect(page.getByText(/模型评审/)).toHaveCount(0)
 
   // Deliverables live in the fourth workspace step in the progressive UI.
   await page.getByRole('button', { name: /导出与指南/ }).click()
