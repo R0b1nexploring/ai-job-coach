@@ -241,3 +241,53 @@
 #### Scenario: A recovered task has exhausted its deadline
 - **WHEN** 另一worker接管过期租约但任务总期限也已耗尽
 - **THEN** 不再发起模型调用，按既有内容合同合格回退或失败并完成一次额度收尾
+
+### Requirement: Undergraduate project generation respects available resources
+系统 SHALL 主要面向本科生，按实际经历、个人贡献与可用资源决定项目深度，MUST NOT 因学历低估能力或将其默认写成研究突破/生产级团队成果。无明确依据时，AI新增项目（含蓝图）MUST NOT 依赖专用实验室、样品制备、仪器表征、实验实测或企业内部数据，亦不得以有限元、多物理场、CFD、材料分子模拟等专业仿真作为默认项目。系统 MUST NOT 编造实验/仿真数据、条件、记录或成果；未来标识不能豁免资源约束。
+
+默认方案 SHALL 使用明确可获得的资料、合法公开数据或普通电脑可实现的工具、分析、设计与测试产物；保留必要资源及数据来源，不把公开/合成数据冒充本人实验。用户实际提供的实验/仿真经历 SHALL 保留其有依据的个人贡献；仅有专业/课程/软件关键词不得推断做过具体实验或仿真。明确拥有资源但未完成的工作仍为计划。普通算法演示或数值计算不一概禁止，但不得包装成专业仿真或实物验证。
+
+#### Scenario: Blank materials for a materials-related job
+- **WHEN** 用户投材料相关岗位但未提供实验经历、实验室或数据条件
+- **THEN** 系统可设计公开参数选型与约束比较等具体任务，不设计依赖样品制备/表征/性能实测才能完成的经历，不编造研究成果
+
+#### Scenario: A mechanical JD mentions simulation
+- **WHEN** JD要求有限元或CFD，而用户只提供CAD课程或没有相关经历
+- **THEN** 系统不得补写仿真模型、云图、收敛记录或验证结论，改用有资源依据的设计任务，目标能力缺口仍如实保留
+
+#### Scenario: An undergraduate provides genuine simulation work
+- **WHEN** 用户提供确实完成的仿真项目、个人职责、条件与结果素材
+- **THEN** 系统按实际边界表达，不因本科身份删除，不扩成材料未支持的研究突破或生产验证
+
+#### Scenario: A complex software project has adequate evidence
+- **WHEN** 本科用户提供可解释的复杂软件实现与测试依据
+- **THEN** 系统保留有依据的技术深度和个人贡献，不强制降为入门练习，也不推断团队或生产规模
+
+### Requirement: Writing strategy follows job evidence rather than discipline labels
+系统 SHALL 在项目方案和正文写作前形成内部岗位写作策略，以实际JD职责、交付物、明确招聘场景及候选人素材/资源判断要证明的能力。学科与软件关键词 MUST NOT 单独决定选材或能力水平。JD明确要求、内部通用写作建议、候选人事实/草稿/未来内容 MUST 可区分；策略建议不得成为虚构岗位要求或个人事实。
+
+#### Scenario: The same materials target different jobs
+- **WHEN** 同一候选素材分别匹配职责与交付物明确不同的两份JD
+- **THEN** 系统按来源依据改变相关经历的选用、写作角度或篇幅，不只替换岗位名称；同样有价值的素材可保留
+
+#### Scenario: Job direction is uncertain
+- **WHEN** 岗位标题含糊且素材不能确定专门方向
+- **THEN** 系统采用通用证据策略并内部记录原因，不推断公司隐藏偏好或因本科身份降低能力
+
+### Requirement: Material selection explains what each experience proves
+系统 SHALL 按任务、交付物、约束和个人贡献映射要求，保存每段素材展开/压缩/不选的理由及篇幅意图，保留必要教育和锁定内容。词项重合只能帮助召回，MUST NOT 作为最终相关性的唯一依据。写作不得强制每个组织同样展开或将统一60字上限作为质量标准；原素材、固定章节顺序、来源隔离和版面合同不变。
+
+#### Scenario: Tool names match but the work does not
+- **WHEN** 一段素材仅重复JD工具名，另一段实际完成了相近任务和交付物
+- **THEN** 选材依据实际任务证据，不仅因关键词更多优先第一段；内部记录映射理由
+
+#### Scenario: An unrelated experience is locked
+- **WHEN** 已锁定内容与当前写作重点不一致
+- **THEN** 系统保留其内容、位置与归属并在其他可修改内容分配篇幅，不自动改写或删除锁定项
+
+### Requirement: One saved strategy connects copy critique and guides
+系统 SHALL 版本化保存策略、输入及规则版本，使writer、critic和指南消费同一策略；创建任务不得等待策略模型调用。幂等请求哈希 MUST 使用输入及规则版本，已生成策略另存语义指纹，恢复复用有效策略。策略叙事角度/选材/资源边界语义变化 MUST 参与指南过期判断，诊断或纯排版变化不得无故失效。旧版本缺少策略 SHALL 继续基于原正文及来源读取。
+
+#### Scenario: A task resumes after strategy preparation
+- **WHEN** worker已保存当前输入和规则版本的策略后中断
+- **THEN** 恢复使用保存策略而不改变目标或选材，重复请求仍复用同一任务

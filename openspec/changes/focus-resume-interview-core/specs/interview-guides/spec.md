@@ -115,3 +115,17 @@
 #### Scenario: Automatic enqueue is replayed
 - **WHEN** 并发请求或补排重复处理同一版本、哈希及指南类型
 - **THEN** 数据库约束保证复用同一自动任务，不重复生成交付记录或扣除额度
+
+### Requirement: Preparation stays within the saved resource boundary
+指南 MUST 继承项目已保存的资源、数据与个人贡献边界，不得为了补全讲解新增实验、专业仿真过程或结果。无实验室条件的项目 SHALL 提供可使用已有资料与普通电脑执行的准备步骤；需要但尚未具备的岗位能力保持缺口，不伪造项目填满。真实已提供的实验/仿真经历可围绕其实际过程追问，不因本科身份回避技术深度。
+
+#### Scenario: A selection report is expanded into an interview guide
+- **WHEN** 简历项目是基于公开材料参数的选型报告
+- **THEN** 指南围绕参数来源、约束、比较方法和选择依据展开，不新增样品制备、显微表征或本人性能实验
+
+### Requirement: Guide questions follow the adopted writing angle
+指南 SHALL 使用版本保存的策略、实际正文与项目方案，针对所采用的能力证据组织个人动作、选择理由和产物验证的追问。系统 MUST NOT 独立重选岗位方向或加入正文未采用的成果。历史无策略版本继续使用正文与来源。
+
+#### Scenario: One experience is framed differently for two roles
+- **WHEN** 同一素材在两份岗位版本中分别突出设计约束和工序规划
+- **THEN** 对应指南分别围绕实际表达重点展开，不复用同一组泛化问答，不补造工厂或实验验证

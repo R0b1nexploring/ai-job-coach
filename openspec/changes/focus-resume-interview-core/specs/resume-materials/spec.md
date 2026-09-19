@@ -81,3 +81,10 @@
 #### Scenario: A user generates with no personal details
 - **WHEN** 用户仅有有效画像而未提供姓名、联系方式或素材
 - **THEN** 系统允许生成草稿，隐藏缺失个人字段，不伪造姓名/电话/学校，也不输出填写占位文字
+
+### Requirement: Clarification follows the selected evidence need
+素材追问 SHALL 优先询问会影响岗位选材与表达的缺失信息，复用现有入口且不是强制生成前置。问题 MUST 基于具体素材和目标，不统一追问提升百分比，不诱导填写未知实验、仿真或量产成绩。没有回答时保持未知并缩小方案范围。
+
+#### Scenario: A public-data selection project lacks its decision rationale
+- **WHEN** 素材说明做过参数比较但没有解释选择依据
+- **THEN** 系统追问数据出处、约束或取舍，不要求提供本人实验性能提升数据

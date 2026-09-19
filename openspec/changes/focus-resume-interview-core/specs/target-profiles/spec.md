@@ -58,3 +58,14 @@
 #### Scenario: Analysis fails after JD storage succeeds
 - **WHEN** 岗位原文已保存但模型分析失败或页面断网
 - **THEN** 用户可基于同一已保存岗位重试，不重复创建岗位，不把原文拼入job_ids
+
+### Requirement: Strategy advice does not invent target requirements
+岗位写作策略 SHALL 引用画像中已有要求及其证据。通用岗位经验 MUST 标记为内部建议，不能写回画像成为该雇主硬条件。多JD SHALL 保留逐JD依据，以有证据的共同或互补要求形成一致目标；显式互斥且无法一致时提示拆分并保留已存JD，分类不确定或模型评分低不能单独拒绝。
+
+#### Scenario: Strategy infers a useful practice absent from the JD
+- **WHEN** 策略建议讨论测试或设计取舍但JD没有明确要求
+- **THEN** 系统将其作为写作建议，不添加虚构JD证据、频次或招聘门槛
+
+#### Scenario: Multiple jobs have incompatible explicit targets
+- **WHEN** JD明确职责或条件互斥，无法形成一致的目标叙事
+- **THEN** 系统提示用户分开生成，保留来源，不拼接为不存在的职位，也不捏造候选人同时具备所有条件
