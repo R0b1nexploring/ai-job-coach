@@ -96,7 +96,13 @@ RESUME_REWRITE_PAIR_PROMPT = (
     "先展开 project_story 项目方案，再将同一方案压缩为 bullets，不能从漂亮的成果句倒编过程。"
     "project_story_inputs 按项目隔离事实与草稿细节，只能在各自项目内引用；"
     "每个输入的 design_supplement 说明该项目的设计边界，按来源区分已确认事实、草稿与虚拟目标，不得越界。"
+    "writer_profile 描述本人真实背景：declared_background/declared_tools/past_work 是本人已声明的信息，"
+    "设计项目时必须与之一致，用本人已有的工具和课程基础，不要设计需要本人未接触过的软件或条件的项目。"
+    "writer_profile.resource_boundary 是硬边界：forbidden 中的条件在本人素材没有对应依据时"
+    "不得写进项目，也不得作为项目成立的前提；evidence_required 列出因此无法证明的岗位能力，"
+    "这些能力在蓝图中如实保留为目标缺口，不要为了覆盖率编造项目。"
     "无素材时围绕目标要求设计边界清楚的小项目，明确输入、输出和具体问题；"
+    "项目规模要像本科生在课余可以独立完成的练习或课程任务，不是实验室课题或企业项目；"
     "信息不足时缩小项目范围，而不是补出未经验证的细节或数字。"
     "每个关键行动说明操作对象、方法、选择理由和难点处理；结果说明产物如何检验。"
     "project_story 用 design_assumptions 记录没有个人来源、由 AI 补充的设计细节，"
@@ -451,6 +457,130 @@ def build_project_story_inputs(
             }
         )
     return rows
+
+
+def build_writer_profile(
+    facts, draft_materials: list[dict], requirements: list[dict]
+) -> dict:
+    """Summarize who the candidate actually is, so a designed project fits them.
+
+    The blueprint track invents a practice project. Without this summary the
+    writer can only see the job requirements, so it reaches for generic or
+    over-scoped work. This profile carries the candidate's own declared
+    background, tools and past work into the prompt, and states the resource
+    boundary explicitly.
+
+    It is derived only from material the user already provided. It never
+    upgrades a draft into a confirmed fact.
+    """
+    rows = list(_brief_material_candidates(facts, draft_materials))
+    background: list[str] = []
+    tools: list[str] = []
+    past_work: list[str] = []
+    for row in rows:
+        text = " ".join([row.get("title") or "", *(row.get("texts") or [])])
+        if row.get("organization"):
+            label = str(row.get("organization"))
+            role = _meaningful_role(row.get("role_title"))
+            entry = f"{label}（{role}）" if role else label
+            if row.get("source") == "confirmed_fact" and row.get("kind") == "education":
+                if entry not in background:
+                    background.append(entry)
+            elif entry not in past_work:
+                past_work.append(entry)
+        for tool in _KNOWN_TOOLS:
+            if tool.casefold() in text.casefold() and tool not in tools:
+                tools.append(tool)
+    declared = [str(row.get("title") or "") for row in rows if row.get("title")]
+    return {
+        "profile_version": 1,
+        "declared_background": background,
+        "declared_tools": tools,
+        "past_work": past_work,
+        "material_titles": declared,
+        "resource_boundary": _resource_boundary(facts, draft_materials, requirements),
+    }
+
+
+# Software and equipment names a student commonly already has access to. Used
+# only to echo the candidate's own words back into the prompt; absence here is
+# not a claim about the candidate.
+_KNOWN_TOOLS = (
+    "SolidWorks", "AutoCAD", "UG", "NX", "Creo", "Pro/E", "CATIA", "Inventor",
+    "ANSYS", "Abaqus", "COMSOL", "MATLAB", "Python", "C", "C++", "Java",
+    "Excel", "Origin", "ADAMS", "Keil", "Arduino", "STM32", "PLC",
+)
+
+
+def _meaningful_role(value: object) -> str:
+    """Drop a role label that only restates "I was there".
+
+    ``本人``/``学生`` and other two-character placeholders add nothing to the
+    writer profile and read as noise next to a real organization.
+    """
+    text = str(value or "").strip()
+    if len(text) < 4 or text in {"本人", "学生", "成员", "参与者"}:
+        return ""
+    return text
+
+
+def _resource_boundary(facts, draft_materials: list[dict], requirements: list[dict]) -> dict:
+    """State what the designed project may assume the candidate can access.
+
+    The default is a student's own computer plus publicly available material.
+    Anything beyond that must already appear in the user's own material; we
+    never infer laboratory, simulation or production access from a job ad.
+    """
+    declared_text = " ".join(
+        [
+            *[
+                " ".join(
+                    [
+                        str(getattr(fact, "label", "") or ""),
+                        _fact_text(fact),
+                        str(getattr(fact, "organization", "") or ""),
+                    ]
+                )
+                for fact in facts
+            ],
+            *[
+                " ".join([str(m.get("summary") or ""), *[str(v) for v in (m.get("details") or {}).values()]])
+                for m in draft_materials or []
+            ],
+        ]
+    ).casefold()
+    evidence_required: list[str] = []
+    for item in requirements:
+        text = str(item.get("text") or "")
+        for capability, needles in _EVIDENCE_REQUIRED_CAPABILITIES:
+            if any(needle.casefold() in text.casefold() for needle in needles):
+                if not any(needle.casefold() in declared_text for needle in needles):
+                    entry = f"{capability}：{text}"
+                    if entry not in evidence_required:
+                        evidence_required.append(entry)
+    return {
+        "assume_available": [
+            "本人电脑上的常规设计、编程与文档工具",
+            "合法可查的公开资料、手册与标准",
+        ],
+        "evidence_required": evidence_required,
+        "forbidden": [
+            "专用实验室、样品制备、仪器表征或实测数据",
+            "有限元、多物理场、CFD、分子模拟等专业仿真",
+            "企业内部数据、量产良率、产线或现场工艺验证",
+        ],
+        "note": (
+            "以上禁止项仅指没有个人依据时不得新增；"
+            "用户已提供的真实实验、仿真或复杂软件经历按实际证据保留，不因学历降级。"
+        ),
+    }
+
+
+_EVIDENCE_REQUIRED_CAPABILITIES = (
+    ("实验室实测", ("实验", "实测", "表征", "样品", "测试台")),
+    ("专业仿真", ("仿真", "有限元", "CFD", "流体", "多物理场", "分子模拟", "云图")),
+    ("量产或现场", ("量产", "良率", "产线", "车间", "现场工艺", "工艺验证")),
+)
 
 
 def _design_supplement(source: object) -> str:
@@ -1155,6 +1285,7 @@ async def _compose_pair(inputs: dict) -> dict:
     requirements = inputs["requirements"]
     job_context = inputs.get("job_context") or []
     writing_brief = build_writing_brief(facts, draft_materials, requirements, job_context)
+    writer_profile = build_writer_profile(facts, draft_materials, requirements)
     project_story_inputs = build_project_story_inputs(
         facts, draft_materials, requirements, job_context
     )
@@ -1172,6 +1303,7 @@ async def _compose_pair(inputs: dict) -> dict:
         job_context=job_context,
         writing_brief=writing_brief,
         project_story_inputs=project_story_inputs,
+        writer_profile=writer_profile,
     )
     if sub_source == "fallback" or tgt_source == "fallback":
         degraded = True
@@ -1236,6 +1368,7 @@ async def _compose_pair(inputs: dict) -> dict:
                 job_context=job_context,
                 writing_brief=writing_brief,
                 project_story_inputs=project_story_inputs,
+                writer_profile=writer_profile,
                 current_submittable=submittable,
                 current_target=target,
                 repair_issues=repair_issues,
@@ -1494,6 +1627,7 @@ async def _write_pair(
     job_context: list | None = None,
     writing_brief: dict | None = None,
     project_story_inputs: list[dict] | None = None,
+    writer_profile: dict | None = None,
     current_submittable: dict | None = None,
     current_target: dict | None = None,
     repair_issues: list | None = None,
@@ -1538,6 +1672,7 @@ async def _write_pair(
                 "job_context": deepcopy(job_context or []),
                 "writing_brief": deepcopy(writing_brief or {}),
                 "project_story_inputs": deepcopy(project_story_inputs or []),
+                "writer_profile": deepcopy(writer_profile or {}),
                 "current_submittable": current_submittable,
                 "current_target": current_target,
                 "repair_issues": list(repair_issues or []),

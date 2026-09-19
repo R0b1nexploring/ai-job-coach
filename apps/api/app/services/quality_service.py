@@ -412,6 +412,46 @@ def _structure_issues(content: dict) -> list[str]:
 _VAGUE_STAR_VALUES = frozenset({"负责相关工作", "完成项目", "提升效果", "取得成果", "若干", "相关内容"})
 
 
+# Resource dependencies a student cannot be assumed to have. A designed project
+# that needs one of these is out of scope unless the candidate's own material
+# already evidences it (in which case the project carries fact ids and this
+# check does not run).
+_RESOURCE_DEPENDENCIES = (
+    ("实验室实测", ("实验室", "样品制备", "表征", "仪器", "测试台", "实测数据", "性能实测", "拉伸试验", "显微")),
+    ("专业仿真", ("有限元", "CFD", "多物理场", "分子模拟", "云图", "网格无关", "收敛曲线", "仿真模型", "流场仿真", "热仿真")),
+    ("量产或现场", ("量产", "良率", "产线", "车间", "现场工艺", "工艺验证", "批量生产", "试产")),
+)
+
+
+def _resource_overreach(story: dict, bullets: list[dict]) -> list[str]:
+    """Locate designed-project content that needs resources the user lacks.
+
+    Only deterministic, explicit dependency words are flagged. This is
+    deliberately narrow: it is not a judgement about the candidate's ability,
+    and a real project that already carries source facts is never checked here.
+    """
+    parts: list[str] = []
+    situation = story.get("situation") or {}
+    task = story.get("task") or {}
+    result = story.get("result") or {}
+    parts.extend([situation.get("context"), situation.get("problem"), task.get("goal")])
+    for action in story.get("actions") or []:
+        if isinstance(action, dict):
+            parts.extend([action.get("step"), action.get("method"), action.get("difficulty")])
+    parts.extend(result.get("deliverables") or [])
+    parts.append(result.get("verification_method"))
+    for metric in result.get("metrics") or []:
+        if isinstance(metric, dict):
+            parts.extend([metric.get("name"), metric.get("value"), metric.get("conditions")])
+    parts.extend(bullet.get("text") for bullet in bullets if isinstance(bullet, dict))
+    text = " ".join(str(part or "") for part in parts)
+    findings = []
+    for capability, needles in _RESOURCE_DEPENDENCIES:
+        if any(needle in text for needle in needles):
+            findings.append(capability)
+    return findings
+
+
 def _project_star_issues(content: dict, mode: str) -> list[str]:
     """Hard-check locally owned STAR shape and provenance for new blueprints."""
     if mode != "target" or not has_star_contract(content):
@@ -477,6 +517,13 @@ def _project_star_issues(content: dict, mode: str) -> list[str]:
                 for metric in result.get("metrics") or []:
                     if isinstance(metric, dict) and metric.get("kind") == "observed":
                         issues.append(f"项目 {label} 的未达成结果不能标为已观察指标")
+            # A designed (not personally evidenced) project must stay inside the
+            # resources the candidate actually has. `achieved: false` marks a
+            # result as unearned; it does not make an unreachable plan valid.
+            if not fact_ids:
+                overreach = _resource_overreach(story, bullets)
+                for finding in overreach:
+                    issues.append(f"项目 {label} 超出本人可及资源：{finding}")
     return list(dict.fromkeys(issues))
 
 
