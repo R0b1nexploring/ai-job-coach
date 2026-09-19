@@ -201,3 +201,29 @@ def test_fact_category_is_restricted_to_the_canonical_vocabulary():
         assert FactCreateIn(category=category, label="示例", value_json={}).category == category
     with pytest.raises(ValidationError):
         FactCreateIn(category="internships", label="示例", value_json={})
+
+
+def test_only_the_blueprint_marks_unachieved_bullets():
+    """Spec: the submittable resume must not display the unachieved marker.
+
+    Regression: the marker rule exempted AI-expansion bullets only when they
+    cited no requirement, but the submittable path clears requirement ids, so
+    blueprint-style gaps leaked a visible `*` into the job-seeking version.
+    """
+    from app.services.resume_style import blueprint_footer, should_mark_unachieved
+
+    cited = {"achieved": False, "verification_status": "ai_generated", "requirement_ids": ["p-1"]}
+    uncited = {"achieved": False, "verification_status": "ai_generated", "requirement_ids": []}
+    submittable = {"kind": "submittable", "factuality_policy": "ai_expansion", "content_version": 3}
+    target = {"kind": "target", "factuality_policy": "ai_expansion", "content_version": 3}
+
+    assert should_mark_unachieved(submittable, cited) is False
+    assert should_mark_unachieved(submittable, uncited) is False
+    # The blueprint keeps the marker on its gaps only.
+    assert should_mark_unachieved(target, cited) is True
+    assert should_mark_unachieved(target, uncited) is False
+
+    sub_content = {**submittable, "sections": [{"items": [{"bullets": [cited]}]}]}
+    tgt_content = {**target, "sections": [{"items": [{"bullets": [cited]}]}]}
+    assert blueprint_footer(sub_content) == ""
+    assert blueprint_footer(tgt_content)

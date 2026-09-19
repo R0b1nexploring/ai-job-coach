@@ -327,6 +327,25 @@ def _kind_issues(content: dict, mode: str) -> list[str]:
     return list(dict.fromkeys(issues))
 
 
+def _header_value_unsupported(value: object, fact_values: list) -> bool:
+    """Whether a written header value has no support in the cited facts.
+
+    Empty text is not an invention, and a value that overlaps a cited fact in
+    either direction is treated as the same information written differently.
+    Only a wholly unrelated value counts as an added claim.
+    """
+    text = unicodedata.normalize("NFKC", str(value or "")).strip().casefold()
+    if not text:
+        return False
+    for candidate in fact_values:
+        other = unicodedata.normalize("NFKC", str(candidate or "")).strip().casefold()
+        if not other:
+            continue
+        if text == other or text in other or other in text:
+            return False
+    return True
+
+
 def _expansion_guard(content: dict, facts: list, requirements: list[dict], strict: dict) -> dict:
     """Use fact checks as provenance diagnostics, not a delivery veto."""
     fact_ids = {str(fact.id) for fact in facts}
@@ -341,8 +360,12 @@ def _expansion_guard(content: dict, facts: list, requirements: list[dict], stric
             issues.append("引用了不属于当前生成上下文的来源")
         # Also cover generated entry headers; the legacy guard only checks bullet text.
         cited = [fact for fact in facts if str(fact.id) in cited_facts]
-        header_added = any(
-            item.get(field) and not any(str(getattr(fact, field, "") or "") == str(item[field]) for fact in cited)
+        # An entry header is only "added" when the writer invented a value that
+        # no cited fact supports. A header that merely differs in wording (the
+        # project name in `organization`, a reworded role) is a normal model
+        # variation and must not downgrade the candidate's own confirmed facts.
+        header_added = bool(cited) and any(
+            _header_value_unsupported(item.get(field), [getattr(fact, field, "") for fact in cited])
             for field in ("organization", "role_title", "location", "start_date", "end_date")
         )
         unverified = bool(result["issues"] or not cited_facts or header_added or bullet.get("verification_status") == "ai_generated")

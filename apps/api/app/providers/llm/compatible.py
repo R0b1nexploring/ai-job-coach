@@ -14,7 +14,12 @@ from .base import ProviderError, log_call
 from .json_repair import loads_lenient
 
 MIN_OUTPUT_TOKENS = 256
-MAX_OUTPUT_TOKENS = 8192
+# Reasoning models spend part of the completion budget on hidden reasoning
+# tokens before writing any content. A resume-sized structured answer can use
+# well over 20k reasoning tokens, so a low ceiling truncates the response and
+# yields empty content with finish_reason=length. This is only an upper clamp;
+# the effective value still comes from LLM_MAX_OUTPUT_TOKENS.
+MAX_OUTPUT_TOKENS = 65536
 TRANSIENT_STATUS_CODES = {408, 425, 429}
 
 # Content-failure classification. These are deliberately distinct from

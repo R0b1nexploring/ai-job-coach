@@ -106,6 +106,7 @@ def _assemble_item(
 ) -> list[dict]:
     kept: list[dict] = []
     independent: list[dict] = []
+    kept_fact_header: dict = {}
     header = {
         "organization": str(item.get("organization") or ""),
         "role_title": str(item.get("role_title") or ""),
@@ -117,7 +118,7 @@ def _assemble_item(
         if not isinstance(bullet, dict):
             continue
         try:
-            assembled, attach = _assemble_bullet(
+            assembled, attach, fact_header = _assemble_bullet(
                 bullet,
                 header=header,
                 facts_by_id=facts_by_id,
@@ -129,6 +130,8 @@ def _assemble_item(
             continue
         if attach:
             kept.append(assembled)
+            if not kept_fact_header and fact_header:
+                kept_fact_header = fact_header
         else:
             independent.append(
                 {
@@ -140,7 +143,9 @@ def _assemble_item(
     rows = []
     raw_story = item.get("project_story") if isinstance(item.get("project_story"), dict) else None
     if kept:
-        row = {**header, "bullets": kept}
+        # Confirmed facts own the entry header for supported bullets. The model
+        # header is only a fallback for text it wrote itself.
+        row = {**(kept_fact_header or header), "bullets": kept}
         # Internal project plans belong to the blueprint only.  A job-seeking
         # resume must not inherit blueprint project stories from the model.
         if raw_story and kind == "target":
@@ -391,7 +396,7 @@ def _assemble_bullet(
     req_ids: set[str],
     kind: str,
     current_by_id: dict,
-) -> tuple[dict, bool]:
+) -> tuple[dict, bool, dict]:
     current = current_by_id.get(str(bullet.get("id") or ""))
     current_bullet = current[2] if current else {}
     cited_facts = [str(item) for item in (bullet.get("source_fact_ids") or []) if str(item)]
@@ -402,24 +407,28 @@ def _assemble_bullet(
         if str(item)
     ]
     valid_reqs = [req_id for req_id in cited_reqs if req_id in req_ids]
-    experience_keys = {_experience_key(facts_by_id[fact_id]) for fact_id in valid_facts}
-    cross_experience = len(experience_keys) > 1
-    matched_header = True
-    if valid_facts and not cross_experience:
-        fact = facts_by_id[valid_facts[0]]
-        matched_header = _organization_matches(
-            header.get("organization"),
-            getattr(fact, "organization", ""),
-        )
-    attach = bool(valid_facts) and not cross_experience and matched_header
-    if cross_experience or not matched_header:
+    # Only facts spanning genuinely different experiences are a splice. The
+    # model's header text is a placement hint, not evidence: a writer that puts
+    # the project name in `organization` must not silently downgrade a bullet
+    # that cites the candidate's own confirmed facts.
+    cross_experience = len({_experience_key(facts_by_id[f]) for f in valid_facts}) > 1
+    if cross_experience:
         valid_facts = []
-        attach = False
+    host_header = _fact_header(valid_facts, facts_by_id)
+    attach = bool(valid_facts) and not cross_experience
+    if not attach and not cross_experience and kind == "target" and valid_reqs:
+        # A blueprint gap bullet cites only a job requirement. It belongs to the
+        # item the writer grouped it under, so the project story stays intact.
+        attach = True
     new_claims = [str(item) for item in (bullet.get("new_claims") or []) if str(item)]
     supported = bool(valid_facts) and not new_claims
     verification = "source_based" if supported else "ai_generated"
     achieved = bool(current_bullet.get("achieved")) if current_bullet else (kind == "submittable" and supported)
-    if verification == "ai_generated" or valid_reqs:
+    # A requirement reference means "this bullet proves that job requirement".
+    # In the submittable resume that is normal for every supported bullet, so it
+    # must not mark the copy as unachieved; only the blueprint treats a
+    # requirement-only bullet as a gap.
+    if verification == "ai_generated" or (kind == "target" and valid_reqs):
         achieved = False
     incoming_id = str(bullet.get("id") or "")
     bullet_id = incoming_id if incoming_id in current_by_id else new_bullet_id()
@@ -440,7 +449,7 @@ def _assemble_bullet(
     if verification == "ai_generated":
         normalized["verification_status"] = "ai_generated"
         normalized["achieved"] = False
-    return normalized, attach or bool(valid_reqs and kind == "target" and matched_header)
+    return normalized, attach, host_header
 
 
 def _restore_locked(grouped: dict[str, list[dict]], current_content: dict) -> None:
@@ -522,11 +531,20 @@ def _organization_matches(header_org, fact_org) -> bool:
 
 
 def _experience_key(fact) -> tuple[str, str, str, str]:
+    """Identify the experience a fact belongs to.
+
+    Facts are grouped by organization, not by material id. Two separate
+    material entries for the same organization (a course design and a
+    selection report, say) are the same experience on the resume, and a bullet
+    may legitimately cite both. Including the material id or the role label
+    made those look like cross-experience splicing and silently downgraded the
+    copy to ``ai_generated``.
+    """
     return (
-        str(getattr(fact, "material_id", "") or ""),
         str(getattr(fact, "organization", "") or ""),
-        str(getattr(fact, "role_title", "") or ""),
         str(getattr(fact, "start_date", "") or ""),
+        str(getattr(fact, "end_date", "") or ""),
+        "",
     )
 
 
@@ -543,6 +561,29 @@ def _header_from_bullet(bullet: dict, header: dict) -> dict:
         "location": "",
         "start_date": "",
         "end_date": "",
+    }
+
+
+def _fact_header(valid_facts: list[str], facts_by_id: dict) -> dict:
+    """Build an entry header from the candidate's own confirmed facts.
+
+    The saved facts are authoritative for organization and dates. This keeps a
+    supported bullet attached to the real experience even when the model's
+    header text is wrong or empty, and it never invents a value that is absent
+    from the facts.
+    """
+    if not valid_facts:
+        return {}
+    facts = [facts_by_id[fact_id] for fact_id in valid_facts if fact_id in facts_by_id]
+    if not facts:
+        return {}
+    first = facts[0]
+    return {
+        "organization": str(getattr(first, "organization", "") or ""),
+        "role_title": str(getattr(first, "role_title", "") or ""),
+        "location": str(getattr(first, "location", "") or ""),
+        "start_date": str(getattr(first, "start_date", "") or ""),
+        "end_date": str(getattr(first, "end_date", "") or ""),
     }
 
 
