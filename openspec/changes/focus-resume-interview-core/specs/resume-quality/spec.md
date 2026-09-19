@@ -97,7 +97,7 @@
 - **THEN** 主界面展示成稿，不展示评分、STAR 诊断、模型协议错误或修复记录；内部保留绑定版本的报告供开发者排查，不新增用户诊断页面
 
 ### Requirement: High-priority requirements cannot disappear silently
-目标画像中的高优先级要求 MUST 在求职版中有事实证据，或在蓝图 Plus 中有未达成目标。求职版的 AI 扩写不得计为已经具备该能力的事实证据。系统 MUST 在质量报告中列出未覆盖要求。
+目标画像中的高优先级要求 MUST 在求职版中有事实证据，或在蓝图 Plus 中有未达成目标。求职版的 AI 扩写不得计为已经具备该能力的事实证据。系统 MUST 在内部质量报告中列出未覆盖要求。若要求依赖用户未具备的实验室或专业仿真资源，资源边界优先：允许明确保留该目标缺口，不得为满足覆盖率编造经历、设计不可执行项目或仅因该资源缺口阻止其余合格内容交付。
 
 #### Scenario: No fact supports a must-have requirement
 - **WHEN** 真实素材无法支持一项高优先级要求
@@ -138,3 +138,25 @@
 #### Scenario: Mock passes while the real blank-input path falls back to placeholders
 - **WHEN** mock/协议测试通过但真实模型空白输入仅得到占位或失败
 - **THEN** 记录合同测试已验证、真实核心能力未完成，相关任务保持未勾选，不宣布完整闭环可用
+
+### Requirement: Resource feasibility is checked without stereotyping ability
+质量检查 SHALL 核对新增项目所需资源、数据来源和结论边界。明确未经支持的实验室/专业仿真依赖或编造成果 MUST 作为内容错误触发定向修复，不能仅以achieved=false或open_questions放行；已知来源/状态错误由本地拦截，语义越界须定位项目、要点和具体依据。无法修复不得交付。真实实验/仿真素材和可完成的深入工程项目 MUST NOT 因本科标签被拒绝。
+
+#### Scenario: A future marker hides inaccessible resources
+- **WHEN** 蓝图项目标记未达成但核心仍依赖用户未具备的表征仪器或专业仿真数据
+- **THEN** 系统缩小范围或换成资源可行的方法，不因有星号就允许交付原方案
+
+#### Scenario: Public data is presented as personal measurements
+- **WHEN** 项目使用公开或合成数据却声称本人完成实验测量
+- **THEN** 系统定位来源与结论越界并修复，不能靠更高critic评分放行
+
+### Requirement: Role strategy improvement requires observable writing differences
+策略验收 SHALL 比较相同素材在不同明确JD下的选材、证据角度、篇幅与指南，并以真实模型旧/新链路对照人工检查差异是否有JD依据、内容是否更有用、资源和事实边界是否保持。标签变化、策略字段齐全、prompt存在或模型自评分 MUST NOT 作为改进证据。首次失败及回退须保留，不以只挑成功样例宣布全学科适用。
+
+#### Scenario: Strategy differs but final writing stays generic
+- **WHEN** 内部策略记录不同重点，但双版正文与指南仍只是工具列表及通用问答
+- **THEN** 该改进尚未验收，需修复策略传递或选材表达；合同测试通过不代表真实效果通过
+
+#### Scenario: Critic only prefers another writing style
+- **WHEN** critic认为另一种侧重点更好，但没有来源错误、资源越界或有依据的内容矛盾
+- **THEN** 内部记录建议，不因偏好或低分触发无限自动重写
