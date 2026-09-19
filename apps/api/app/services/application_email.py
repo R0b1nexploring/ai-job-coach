@@ -132,23 +132,24 @@ def guard_email_match_points(points: list[dict], facts: list) -> tuple[str, list
         if not ids or any(value not in facts_by_id for value in ids):
             issues.append(f"第 {index + 1} 条匹配点引用了未确认事实")
             continue
-        corpus = " ".join(
-            " ".join(
-                [
-                    str(facts_by_id[value].value_json or {}),
-                    str(facts_by_id[value].source_text or ""),
-                    str(facts_by_id[value].organization or ""),
-                    str(facts_by_id[value].role_title or ""),
-                ]
+        fields = [
+            value
+            for fact_id in ids
+            for value in (
+                str((facts_by_id[fact_id].value_json or {}).get("text") or ""),
+                str(facts_by_id[fact_id].source_text or ""),
+                str(facts_by_id[fact_id].organization or ""),
+                str(facts_by_id[fact_id].role_title or ""),
             )
-            for value in ids
-        )
+            if value.strip()
+        ]
+        corpus = " ".join(fields)
         for entity in extract_claim_entities(text):
             if not corpus_contains(corpus, entity):
                 issues.append(f"第 {index + 1} 条匹配点包含无来源实体：{entity}")
         issues.extend(
             f"第 {index + 1} 条匹配点包含无来源中文主张：{claim}"
-            for claim in unsupported_chinese_claims(text, corpus)
+            for claim in unsupported_chinese_claims(text, fields)
         )
     return ("blocked" if issues else "passed", sorted(set(issues)))
 
