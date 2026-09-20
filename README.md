@@ -136,6 +136,20 @@ Greenhouse 的企业标识是公开招聘页 URL 中 `boards/` 后的 token；Le
 
 外部简历优化项目的参考范围、许可证注意事项和安全适配见 [`docs/integrations.md`](docs/integrations.md)。
 
-## 生产迁移
+## 生产部署（Docker Compose）
 
-笔记本/WSL 仅用于开发和少量授权测试，不应公网暴露。正式运营应部署到 HTTPS Linux 服务，将 `DATABASE_URL` 切换为 PostgreSQL、将 Storage Provider 切换为私有对象存储，并配置真实 LLM Provider、密钥管理、备份及监控。支付系统整体推迟到 MVP-2。Alembic 迁移不依赖 SQLite 专有路径。
+单机生产编排在 `docker-compose.prod.yml`，包含 Caddy 入口、API、独立 worker、PostgreSQL、私有 S3 兼容存储（MinIO）和一次性迁移服务。PostgreSQL 与 MinIO 只在内部网络，公网只暴露 Caddy 的 80/443。
+
+```bash
+cp .env.production.example .env      # 填真实密钥；生产必须 APP_ENV=production
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml exec api python scripts/prod_preflight.py
+```
+
+- 生产配置自检在启动时强制：必须 PostgreSQL、`STORAGE_PROVIDER=s3` 且 S3 配置完整、`REGISTRATION_REQUIRE_INVITE=true`、`AUTH_COOKIE_SECURE=true`、HTTPS `FRONTEND_ORIGIN`、真实 LLM。缺项会拒绝启动，不能靠切 development 绕过。
+- 对外访问两种模式：设置 `SITE_ADDRESS=域名` 让 Caddy 自动申请 HTTPS；或留空并用 `--profile tunnel` 启动 Cloudflare Tunnel（免公网 IP，TLS 由 Cloudflare 终止）。
+- 首次迁移由 `migrate` 服务执行一次，API/worker 等它成功后才启动；不要让每个进程各自迁移。
+- 备份：`scripts/backup.sh` 导出 PostgreSQL 与 MinIO 桶，默认保留 14 天；`scripts/restore.sh <目录>` 恢复。正式环境用 cron/systemd timer 每天调用，并定期演练恢复。
+- 生产镜像内置固定 Chromium、`poppler-utils` 和 Noto CJK 字体，PDF 导出必须实际通过单页 A4、字体嵌入、Unicode 与文本完整性检查。
+
+WSL 仅用于开发和少量授权测试，不应公网暴露。Alembic 迁移不依赖 SQLite 专有路径。支付系统整体推迟到 MVP-2。

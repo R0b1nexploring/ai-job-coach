@@ -1,0 +1,22 @@
+# SITE_ADDRESS controls the ingress mode:
+#   - unset  -> listen on :80 (use behind Cloudflare Tunnel, which terminates TLS)
+#   - set    -> e.g. coach.example.com; Caddy obtains and renews HTTPS automatically
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv/www
+		try_files {path} /index.html
+		file_server
+	}
+}
