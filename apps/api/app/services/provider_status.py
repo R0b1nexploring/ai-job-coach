@@ -1,4 +1,24 @@
-from app.config import get_settings
+from app.config import Settings, get_settings
+
+
+def _storage_status(settings: Settings) -> dict:
+    provider = settings.storage_provider.strip().lower()
+    if provider == "s3":
+        missing = settings.s3_missing_configuration()
+        return {
+            "provider": "s3",
+            "operational": not missing,
+            "production_ready": not missing,
+            "missing_configuration": missing,
+            "notice": "私有 S3 兼容对象存储；配置不完整时拒绝启动。",
+        }
+    return {
+        "provider": provider or "unknown",
+        "operational": provider == "local",
+        "production_ready": False,
+        "missing_configuration": [],
+        "notice": "本地私有存储仅用于开发和测试；生产模式必须使用 s3。",
+    }
 
 
 def provider_status() -> dict:
@@ -65,14 +85,7 @@ def provider_status() -> dict:
             "public_jsonld_configured": bool(settings.allowed_job_source_hosts()),
             "notice": "只读取公开企业职位接口和白名单 JSON-LD；外部失败时回退本地样例。",
         },
-        "storage": {
-            "provider": settings.storage_provider,
-            "operational": settings.storage_provider == "local",
-            "production_ready": False,
-            "notice": (
-                "当前仅实现本地私有存储；生产模式会拒绝启动，直至接入真正的私有对象存储。"
-            ),
-        },
+        "storage": _storage_status(settings),
         "payment": {
             "provider": settings.payment_provider,
             "operational": settings.payment_provider == "disabled",

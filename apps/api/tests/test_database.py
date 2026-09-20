@@ -2,7 +2,31 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from app.config import normalize_database_url
 from app.database import make_engine
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("postgresql://coach:pw@db.example/coach", "postgresql+psycopg://coach:pw@db.example/coach"),
+        ("postgres://coach:pw@db.example/coach", "postgresql+psycopg://coach:pw@db.example/coach"),
+        ("postgresql+psycopg://coach@db.example/coach", "postgresql+psycopg://coach@db.example/coach"),
+        ("sqlite:///./var/app.db", "sqlite:///./var/app.db"),
+    ],
+)
+def test_database_url_normalization(raw, expected):
+    assert normalize_database_url(raw) == expected
+
+
+def test_postgresql_engine_uses_psycopg_driver():
+    engine = make_engine("postgresql://coach:coach@db.example/coach")
+    try:
+        assert engine.dialect.name == "postgresql"
+        assert engine.dialect.driver == "psycopg"
+        assert engine.pool._pre_ping is True
+    finally:
+        engine.dispose()
 
 
 def test_sqlite_foreign_keys_are_enabled_for_every_connection(tmp_path):

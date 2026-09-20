@@ -4,7 +4,7 @@ from pathlib import Path
 
 from app.config import get_settings
 
-from .base import StorageProvider
+from .base import StorageObjectNotFound, StorageProvider
 
 
 class LocalStorage(StorageProvider):
@@ -33,6 +33,15 @@ class LocalStorage(StorageProvider):
     def path(self, key: str) -> Path:
         safe = Path(key).name
         return self.root / safe
+
+    def read(self, key: str) -> bytes:
+        try:
+            return self.path(key).read_bytes()
+        except FileNotFoundError as exc:
+            raise StorageObjectNotFound(key) from exc
+
+    def exists(self, key: str) -> bool:
+        return self.path(key).is_file()
 
     def delete(self, key: str) -> None:
         self.path(key).unlink(missing_ok=True)

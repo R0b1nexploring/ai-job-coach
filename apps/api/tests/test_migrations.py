@@ -42,6 +42,7 @@ REVISION_CHAIN = (
     ("0009_add_target_profiles_and_material_claims", "0008_add_experience_and_campus_catalog"),
     ("0010_add_resume_bundles_and_interview_guides", "0009_add_target_profiles_and_material_claims"),
     ("0011_add_persistent_resume_task_fields", "0010_add_resume_bundles_and_interview_guides"),
+    ("0012_add_invite_codes", "0011_add_persistent_resume_task_fields"),
 )
 
 
@@ -203,6 +204,16 @@ def _assert_revision_effect(revision: str, database_path: Path) -> None:
             "lease_expires_at",
             "heartbeat_at",
         } <= _column_names(database_path, "resume_bundle_runs")
+    elif revision == "0012_add_invite_codes":
+        assert "invite_codes" in snapshot
+        assert {
+            "code_hash",
+            "label",
+            "max_uses",
+            "used_count",
+            "expires_at",
+            "revoked_at",
+        } <= _column_names(database_path, "invite_codes")
 
 
 @pytest.mark.parametrize(("revision", "parent"), REVISION_CHAIN)

@@ -8,6 +8,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[3]
 
+
+def normalize_database_url(url: str) -> str:
+    """Force the psycopg v3 driver for bare PostgreSQL URLs.
+
+    SQLAlchemy defaults ``postgresql://`` to psycopg2, which is not installed.
+    Operators write the plain scheme in .env; the driver choice is an
+    implementation detail and must not be leaked into deployment config.
+    """
+    value = url.strip()
+    lowered = value.lower()
+    if lowered.startswith("postgres://"):
+        return "postgresql+psycopg://" + value[len("postgres://") :]
+    if lowered.startswith("postgresql://"):
+        return "postgresql+psycopg://" + value[len("postgresql://") :]
+    return value
+
+
 TASK_TIERS = {
     "jd_normalize": "cheap",
     "match_explain": "cheap",
@@ -35,6 +52,10 @@ class Settings(BaseSettings):
     app_name: str = "AI Job Coach"
     app_secret_key: SecretStr = SecretStr("development-only-secret-change-me-123456789")
     database_url: str = "sqlite:///./var/app.db"
+    # PostgreSQL connection pool. Ignored for SQLite.
+    db_pool_size: int = Field(default=5, ge=1)
+    db_max_overflow: int = Field(default=10, ge=0)
+    db_pool_recycle_seconds: int = Field(default=1800, ge=0)
     frontend_origin: str = "http://localhost:5173"
     auth_cookie_name: str = "ai_job_session"
     auth_cookie_secure: bool = False
@@ -57,11 +78,25 @@ class Settings(BaseSettings):
     payment_webhook_secret: SecretStr = SecretStr("demo-secret")
     storage_provider: str = "local"
     local_storage_path: str = "./var/uploads"
+    # Private S3-compatible object storage (production). Only read when
+    # storage_provider == "s3"; the secret is never logged or rendered.
+    s3_endpoint_url: str = ""
+    s3_bucket: str = ""
+    s3_region: str = ""
+    s3_access_key_id: SecretStr = SecretStr("")
+    s3_secret_access_key: SecretStr = SecretStr("")
+    s3_prefix: str = ""
+    s3_use_path_style: bool = False
     max_upload_mb: int = Field(default=10, gt=0)
     data_retention_days: int = Field(default=180, ge=0)
     deletion_grace_days: int = Field(default=7, ge=0)
     job_stale_days: int = Field(default=45, ge=0)
     job_source_allowed_hosts: str = ""
+    # Invite-only trial signup. Development and tests may keep open registration;
+    # production must require an invite code.
+    registration_require_invite: bool = False
+    invite_default_expires_days: int = Field(default=7, ge=1)
+    invite_resume_quota: int = Field(default=5, ge=0)
     demo_admin_email: str = "admin@example.test"
     demo_admin_password: SecretStr = SecretStr("ChangeMe123!")
     demo_advisor_email: str = "advisor@example.test"
@@ -82,10 +117,21 @@ class Settings(BaseSettings):
 
     def _reject_unimplemented_storage_provider(self) -> None:
         provider = self.storage_provider.strip().lower()
-        if provider != "local":
+        if provider not in {"local", "s3"}:
             raise UnsafeConfigurationError(
                 f"STORAGE_PROVIDER={provider or 'empty'} 尚未实现，应用拒绝启动"
             )
+
+    def s3_missing_configuration(self) -> list[str]:
+        """Names only; never returns or renders the secret value."""
+        missing: list[str] = []
+        if not self.s3_bucket.strip():
+            missing.append("S3_BUCKET")
+        if not self.s3_access_key_id.get_secret_value().strip():
+            missing.append("S3_ACCESS_KEY_ID")
+        if not self.s3_secret_access_key.get_secret_value().strip():
+            missing.append("S3_SECRET_ACCESS_KEY")
+        return missing
 
     def _reject_unsafe_production_defaults(self) -> None:
         if self.app_env.strip().lower() not in {"production", "prod"}:
@@ -125,13 +171,19 @@ class Settings(BaseSettings):
         ):
             errors.append("启用支付时必须替换 PAYMENT_WEBHOOK_SECRET")
         if not self.database_url.strip().lower().startswith(
-            ("postgresql://", "postgresql+")
+            ("postgresql://", "postgresql+", "postgres://")
         ):
             errors.append("生产环境必须使用 PostgreSQL")
-        # MVP currently implements LocalStorage only. Accepting a made-up provider
-        # here would still route every call to LocalStorage, so production remains
-        # deliberately unavailable until a real private-object provider lands.
-        errors.append("当前版本尚未实现生产级私有对象存储，禁止以 production 启动")
+        if self.storage_provider.strip().lower() != "s3":
+            errors.append("生产环境必须使用私有对象存储（STORAGE_PROVIDER=s3）")
+        else:
+            missing = self.s3_missing_configuration()
+            if missing:
+                errors.append(
+                    "生产环境 S3 配置不完整：" + "、".join(missing)
+                )
+        if not self.registration_require_invite:
+            errors.append("生产环境必须开启邀请码注册（REGISTRATION_REQUIRE_INVITE=true）")
         if self.llm_provider.strip().lower() != "compatible":
             errors.append("生产环境必须显式配置 compatible LLM Provider")
         if not all(
@@ -148,7 +200,7 @@ class Settings(BaseSettings):
     def resolved_database_url(self) -> str:
         if self.database_url == "sqlite:///./var/app.db":
             return f"sqlite:///{ROOT / 'var' / 'app.db'}"
-        return self.database_url
+        return normalize_database_url(self.database_url)
 
     def resolved_storage_path(self) -> Path:
         path = Path(self.local_storage_path)

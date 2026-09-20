@@ -692,6 +692,22 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class InviteCode(Base):
+    """Invite-only signup. Only the hash of the code is ever persisted."""
+
+    __tablename__ = "invite_codes"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    label: Mapped[str] = mapped_column(String(100), default="")
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    max_uses: Mapped[int] = mapped_column(Integer, default=1)
+    used_count: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class StorageDeletionTask(Base):
     """Durable locator for a private file that still needs physical deletion."""
 

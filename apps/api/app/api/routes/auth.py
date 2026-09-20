@@ -11,6 +11,8 @@ from app.dependencies import authenticated_user, current_user
 from app.errors import AppError
 from app.models.entities import AuditLog, User, UserProfile
 from app.security import create_token, hash_password, verify_password
+from app.services.invite_service import redeem_invite
+from app.services.quota_service import change, request_fingerprint
 
 from .common import dump
 
@@ -21,6 +23,7 @@ class RegisterIn(BaseModel):
     email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     password: str = Field(min_length=8, max_length=128)
     display_name: str = Field(min_length=1, max_length=100)
+    invite_code: str | None = Field(default=None, max_length=128)
 
 
 class LoginIn(BaseModel):
@@ -42,15 +45,24 @@ def set_session(response: Response, user: User):
 
 @router.post("/register", status_code=201)
 async def register(data: RegisterIn, response: Response, db: Session = Depends(get_db)):
+    settings = get_settings()
+    supplied_code = (data.invite_code or "").strip()
+    if settings.registration_require_invite and not supplied_code:
+        raise AppError("INVITE_REQUIRED", "注册需要邀请码。", 422)
     if db.scalar(select(User).where(User.email == data.email.lower())):
         raise AppError("EMAIL_ALREADY_REGISTERED", "该邮箱已注册。", 409)
+
+    # Redeem inside the signup transaction: if account creation fails, the
+    # redemption rolls back with it and the invite stays usable.
+    invite = redeem_invite(db, supplied_code) if supplied_code else None
+
     now = datetime.now(timezone.utc)
     user = User(
         email=data.email.lower(),
         password_hash=hash_password(data.password),
         display_name=data.display_name,
         last_active_at=now,
-        retention_expires_at=now + timedelta(days=get_settings().data_retention_days),
+        retention_expires_at=now + timedelta(days=settings.data_retention_days),
     )
     db.add(user)
     db.flush()
@@ -60,6 +72,34 @@ async def register(data: RegisterIn, response: Response, db: Session = Depends(g
             actor_user_id=user.id, action="auth.register", entity_type="user", entity_id=user.id
         )
     )
+    if invite is not None:
+        db.add(
+            AuditLog(
+                actor_user_id=user.id,
+                action="invite.redeemed",
+                entity_type="invite_code",
+                entity_id=invite.id,
+            )
+        )
+        if settings.invite_resume_quota > 0:
+            change(
+                db,
+                user_id=user.id,
+                quota_type="resume",
+                delta=settings.invite_resume_quota,
+                reason="邀请码注册赠送双版本额度",
+                idempotency_key=f"invite-signup:{invite.id}:{user.id}",
+                reference_type="invite_code",
+                reference_id=invite.id,
+                request_hash=request_fingerprint(
+                    {
+                        "operation": "invite.signup_quota",
+                        "invite_id": invite.id,
+                        "user_id": user.id,
+                        "amount": settings.invite_resume_quota,
+                    }
+                ),
+            )
     db.commit()
     set_session(response, user)
     return dump(user, {"password_hash"})

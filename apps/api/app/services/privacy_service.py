@@ -32,7 +32,7 @@ from app.models.entities import (
     User,
     UserProfile,
 )
-from app.providers.storage.local import LocalStorage
+from app.providers.storage.base import StorageProvider
 from app.services.job_access import owned_job_clause
 from app.services.storage_cleanup import enqueue_file_deletions, process_storage_deletions
 
@@ -40,7 +40,7 @@ from app.services.storage_cleanup import enqueue_file_deletions, process_storage
 def purge_user_data(
     db: Session,
     user: User,
-    storage: LocalStorage,
+    storage: StorageProvider,
     *,
     audit_action: str = "account.purged",
     actor_user_id: str | None = None,
@@ -67,7 +67,7 @@ def purge_user_data(
 def _purge_user_data(
     db: Session,
     user: User,
-    storage: LocalStorage,
+    storage: StorageProvider,
     *,
     audit_action: str,
     actor_user_id: str | None,

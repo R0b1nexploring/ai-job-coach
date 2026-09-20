@@ -18,7 +18,11 @@ def production_settings(**overrides) -> Settings:
         "demo_advisor_password": "Advisor-Production-Password!",
         "demo_user_password": "User-Production-Password!",
         "database_url": "postgresql+psycopg://coach@db.example/coach",
-        "storage_provider": "local",
+        "storage_provider": "s3",
+        "s3_bucket": "coach-private",
+        "s3_access_key_id": "production-s3-access-key",
+        "s3_secret_access_key": "production-s3-secret-key",
+        "registration_require_invite": True,
         "llm_provider": "compatible",
         "llm_api_base_url": "https://llm.example.com/v1",
         "llm_api_key": "production-llm-key",
@@ -62,17 +66,29 @@ def test_production_rejects_unsafe_security_defaults(overrides):
         production_settings(**overrides)
 
 
-def test_production_refuses_to_start_until_private_object_storage_is_implemented():
-    with pytest.raises(UnsafeConfigurationError, match="尚未实现生产级私有对象存储"):
-        production_settings()
+def test_production_requires_private_object_storage_with_complete_config():
+    with pytest.raises(UnsafeConfigurationError, match="私有对象存储"):
+        production_settings(storage_provider="local")
 
-    with pytest.raises(UnsafeConfigurationError, match="尚未实现"):
-        production_settings(storage_provider="private_object_storage")
+    with pytest.raises(UnsafeConfigurationError, match="S3 配置不完整"):
+        production_settings(s3_bucket="")
+
+    with pytest.raises(UnsafeConfigurationError, match="S3 配置不完整"):
+        production_settings(s3_secret_access_key="")
 
 
-def test_nonlocal_storage_provider_never_silently_falls_back_in_development():
+def test_production_settings_with_complete_s3_config_are_accepted():
+    settings = production_settings()
+    assert settings.storage_provider == "s3"
+    assert settings.s3_missing_configuration() == []
+
+
+def test_unknown_storage_provider_never_silently_falls_back_in_development():
     with pytest.raises(UnsafeConfigurationError, match="应用拒绝启动"):
         Settings(_env_file=None, storage_provider="typo-or-unimplemented")
+
+    with pytest.raises(UnsafeConfigurationError, match="应用拒绝启动"):
+        Settings(_env_file=None, storage_provider="private_object_storage")
 
 
 def test_production_error_does_not_retain_or_render_secret_values():
@@ -91,6 +107,7 @@ def test_production_error_does_not_retain_or_render_secret_values():
         {"storage_provider": "local"},
         {"llm_provider": "mock"},
         {"llm_api_key": ""},
+        {"registration_require_invite": False},
     ],
 )
 def test_production_rejects_demo_only_infrastructure(overrides):

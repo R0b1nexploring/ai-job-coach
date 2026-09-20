@@ -41,7 +41,8 @@ from app.models.entities import (
     UserProfile,
 )
 from app.providers.llm.schemas import ResumeContentOutput
-from app.providers.storage.local import LocalStorage
+from app.providers.storage.base import StorageObjectNotFound, StorageProvider
+from app.providers.storage.runtime import get_storage
 from app.services.bundle_service import dump_bundle, stale_guides_for_version
 from app.services.capability_service import build_targets, ensure_match_targets
 from app.services.content_contract import content_fingerprint, validate_content
@@ -757,7 +758,7 @@ async def update_version(
     db.commit()
     if old_export_file_key:
         try:
-            LocalStorage().delete(old_export_file_key)
+            get_storage().delete(old_export_file_key)
         except Exception as exc:  # best-effort orphan cleanup after the DB commit
             logger.warning(
                 "Failed to remove stale resume export after edit: %s",
@@ -845,7 +846,7 @@ def audit_export(db: Session, user: User, row: ResumeVersion, format: str) -> No
 
 
 def _discard_unreferenced_export(
-    db: Session, storage: LocalStorage, file_key: str
+    db: Session, storage: StorageProvider, file_key: str
 ) -> None:
     try:
         storage.delete(file_key)
@@ -859,12 +860,12 @@ def _discard_unreferenced_export(
             logger.exception("Failed to enqueue unreferenced resume export deletion")
 
 
-def _render_and_cache_docx(db: Session, row: ResumeVersion, storage: LocalStorage) -> bytes:
+def _render_and_cache_docx(db: Session, row: ResumeVersion, storage: StorageProvider) -> bytes:
     content = render_resume_docx(row.content_json, row.title)
     expected_key = row.export_file_key
     try:
         new_key = storage.save(content, ".docx")
-    except OSError as exc:
+    except Exception as exc:
         raise AppError(
             "EXPORT_STORAGE_UNAVAILABLE",
             "导出文件暂时无法保存，请稍后重试。",
@@ -929,8 +930,8 @@ async def download_version(
             headers=html_security_headers('attachment; filename="tailored-resume.html"'),
         )
     try:
-        storage = LocalStorage()
-    except OSError as exc:
+        storage = get_storage()
+    except Exception as exc:
         raise AppError(
             "EXPORT_STORAGE_UNAVAILABLE",
             "导出文件暂时不可用，请稍后重试。",
@@ -938,11 +939,11 @@ async def download_version(
         ) from exc
     if row.export_file_key:
         try:
-            content = storage.path(row.export_file_key).read_bytes()
-        except FileNotFoundError:
+            content = storage.read(row.export_file_key)
+        except StorageObjectNotFound:
             # A stale DB key must never turn a recoverable cache miss into a 500.
             content = _render_and_cache_docx(db, row, storage)
-        except OSError as exc:
+        except Exception as exc:
             raise AppError(
                 "EXPORT_STORAGE_UNAVAILABLE",
                 "导出文件暂时不可用，请稍后重试。",

@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from .config import get_settings
+from .config import get_settings, normalize_database_url
 
 
 class Base(DeclarativeBase):
@@ -158,10 +158,22 @@ def reject_inactive_owner_writes(session: Session, _flush_context, _instances) -
 
 
 def make_engine(url: str | None = None) -> Engine:
-    database_url = url or get_settings().resolved_database_url()
+    database_url = normalize_database_url(url or get_settings().resolved_database_url())
     is_sqlite = make_url(database_url).get_backend_name() == "sqlite"
-    connect_args = {"check_same_thread": False, "timeout": 30} if is_sqlite else {}
-    database_engine = create_engine(database_url, connect_args=connect_args)
+    if is_sqlite:
+        database_engine = create_engine(
+            database_url,
+            connect_args={"check_same_thread": False, "timeout": 30},
+        )
+    else:
+        settings = get_settings()
+        database_engine = create_engine(
+            database_url,
+            pool_pre_ping=True,
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
+            pool_recycle=settings.db_pool_recycle_seconds,
+        )
 
     if is_sqlite:
 

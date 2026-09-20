@@ -25,7 +25,7 @@ from app.models.entities import (
     User,
     UserProfile,
 )
-from app.providers.storage.local import LocalStorage
+from app.providers.storage.runtime import get_storage
 from app.services.job_access import owned_job_clause
 from app.services.maintenance_service import run_maintenance
 from app.services.privacy_service import purge_user_data
@@ -518,7 +518,7 @@ async def purge_account(
     purge_user_data(
         db,
         user,
-        LocalStorage(),
+        get_storage(),
         audit_action="account.purged",
         actor_user_id=actor.id,
     )

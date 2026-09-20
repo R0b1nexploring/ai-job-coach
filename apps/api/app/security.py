@@ -22,6 +22,15 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
+def hash_invite_code(code: str) -> str:
+    """Deterministic, non-reversible lookup hash for an invite code.
+
+    Invite codes are high-entropy random tokens, so a plain SHA-256 digest is
+    sufficient for equality lookup and safe to store.
+    """
+    return hashlib.sha256(code.strip().encode("utf-8")).hexdigest()
+
+
 def session_version(user_id: str, password_hash_value: str) -> str:
     settings = get_settings()
     message = f"{user_id}:{password_hash_value}".encode()

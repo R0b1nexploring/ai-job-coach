@@ -15,7 +15,8 @@ from app.models.entities import (
     ResumeVersion,
     User,
 )
-from app.providers.storage.local import LocalStorage
+from app.providers.storage.base import StorageProvider
+from app.providers.storage.runtime import get_storage
 from app.services.privacy_service import purge_user_data
 from app.services.quota_service import change, request_fingerprint, was_created
 from app.services.storage_cleanup import process_storage_deletions
@@ -275,7 +276,7 @@ def run_maintenance(
     *,
     execute: bool = False,
     now: datetime | None = None,
-    storage: LocalStorage | None = None,
+    storage: StorageProvider | None = None,
 ) -> dict:
     current = now or datetime.now(timezone.utc)
     candidates = maintenance_candidates(db, current)
@@ -296,7 +297,7 @@ def run_maintenance(
     }
     if not execute:
         return result
-    file_storage = storage or LocalStorage()
+    file_storage = storage or get_storage()
     try:
         process_storage_deletions(db, file_storage)
     except Exception:
