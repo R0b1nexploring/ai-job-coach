@@ -10,6 +10,9 @@ from app.services.content_contract import iter_project_stories
 from app.services.copy_assembler import assemble_model_copy
 from app.services.quality_service import (
     QUALITY_DIMENSIONS,
+    CRITIC_COMPLETE,
+    CRITIC_PARTIAL,
+    CRITIC_UNAVAILABLE,
     evaluate_version,
     evaluate_version_with_critic,
 )
@@ -110,15 +113,42 @@ def test_project_plan_inputs_carry_source_specific_design_boundaries():
     assert blank_row["story_boundary"].startswith("这是待完成的蓝图项目")
 
 
-def test_assembled_placeholder_story_is_diagnosed_even_when_structure_passes():
+def test_assembled_placeholder_story_fails_the_delivery_contract():
+    """Known filler must fail the gate, not merely be reported as a diagnostic.
+
+    Task 17.3 promotes the previously advisory placeholder diagnostics to hard
+    failures: a generic "fill this in" project is not a deliverable STAR story
+    and must never reach ready or degraded.
+    """
     content = _content()
-    report = _review(content)
-    assert report["hard_passed"] is True
-    diagnostics = report["star_diagnostics"]
-    assert diagnostics, "Local filler must not conceal missing project details"
-    fields = {item["field"] for item in diagnostics}
-    assert {"actions.0.rationale", "actions.0.difficulty", "result.metrics.0.conditions"} <= fields
     story = next(iter_project_stories(content))[2]
+    story.update(
+        {
+            "situation": {
+                "context": "围绕目标岗位设计一段可验证的项目实践",
+                "problem": "需要把岗位要求转为可拆分、可验证的项目产出",
+            },
+            "task": {"role": "计划负责人", "goal": "形成可演示、可复盘的项目交付"},
+            "actions": [
+                {
+                    "step": "先定义输入、输出和验证方式，再按阶段保留过程记录",
+                    "method": "说明该方法如何服务项目目标",
+                    "contribution": "本人负责的已确认部分",
+                }
+            ],
+            "result": {
+                "deliverables": ["可演示的项目产出"],
+                "verification_method": "用交付物、过程记录和验收条件逐项核验",
+            },
+        }
+    )
+    report = _review(content)
+    assert report["hard_passed"] is False
+    assert report["status"] == "blocked"
+    assert any("不具体" in issue or "不完整" in issue for issue in report["issues"])
+    # The filler is still located for the developer-facing report.
+    diagnostics = report["star_diagnostics"]
+    assert diagnostics
     assert all(item["project_id"] == story["project_id"] for item in diagnostics)
     assert all(item["bullet_ids"] == story["bullet_ids"] for item in diagnostics)
 
@@ -327,7 +357,107 @@ def test_critic_unavailable_falls_back_to_deterministic_report(monkeypatch):
         )
     )
     assert report["critic_unavailable"] is True
+    assert report["critic_status"] == CRITIC_UNAVAILABLE
+    # An unavailable review is recorded as incomplete, never as "no problem".
+    assert report["critic_missing_dimensions"] == list(QUALITY_DIMENSIONS)
+    assert report["semantic_issues"] == []
     assert report["reviewer"] == "deterministic"
     assert report["recommendations"] == []
     assert report["project_reviews"] == []
     assert all(item["score"] is not None for item in report["dimensions"].values())
+
+
+def test_complete_critique_is_reported_as_complete(monkeypatch):
+    content = _content()
+    story = _concrete_story(content)
+
+    async def fake_generate_structured(**_kwargs):
+        return _critic_output(project_id=story["project_id"], bullet_ids=story["bullet_ids"]), "compatible"
+
+    monkeypatch.setattr(
+        "app.services.quality_service.generate_structured", fake_generate_structured
+    )
+    report = asyncio.run(
+        evaluate_version_with_critic(
+            content=content, facts=[], requirements=REQUIREMENTS, mode="target"
+        )
+    )
+    assert report["critic_status"] == CRITIC_COMPLETE
+    assert report["critic_missing_dimensions"] == []
+
+
+def test_partial_critique_keeps_findings_and_never_implies_a_clean_review(monkeypatch):
+    """A missing dimension must not be read as "this part is fine"."""
+    content = _content()
+    story = _concrete_story(content)
+
+    async def fake_generate_structured(**_kwargs):
+        return _critic_output(
+            {"specificity": {"score": 30, "notes": ["过于笼统"]}},
+            project_id=story["project_id"],
+            bullet_ids=story["bullet_ids"],
+        ), "compatible"
+
+    monkeypatch.setattr(
+        "app.services.quality_service.generate_structured", fake_generate_structured
+    )
+    report = asyncio.run(
+        evaluate_version_with_critic(
+            content=content, facts=[], requirements=REQUIREMENTS, mode="target"
+        )
+    )
+    assert report["critic_status"] == CRITIC_PARTIAL
+    assert "specificity" not in report["critic_missing_dimensions"]
+    assert "interview_defensibility" in report["critic_missing_dimensions"]
+    # Usable findings survive a partial review.
+    assert report["project_reviews"]
+
+
+def test_only_classified_semantic_issues_justify_a_background_repair(monkeypatch):
+    content = _content()
+    story = _concrete_story(content)
+
+    async def unclassified(**_kwargs):
+        return _critic_output(
+            project_id=story["project_id"], bullet_ids=story["bullet_ids"]
+        ), "compatible"
+
+    monkeypatch.setattr(
+        "app.services.quality_service.generate_structured", unclassified
+    )
+    report = asyncio.run(
+        evaluate_version_with_critic(
+            content=content, facts=[], requirements=REQUIREMENTS, mode="target"
+        )
+    )
+    # A diagnosis without a recognised issue code stays explanatory.
+    assert report["project_reviews"][0]["diagnosis"]
+    assert report["semantic_issues"] == []
+
+    def classified(dimensions=None, **kwargs):
+        output = _critic_output(dimensions, **kwargs)
+        output.project_reviews[0].issue_code = "action_result_mismatch"
+        return output
+
+    async def with_code(**_kwargs):
+        return classified(
+            project_id=story["project_id"], bullet_ids=story["bullet_ids"]
+        ), "compatible"
+
+    monkeypatch.setattr(
+        "app.services.quality_service.generate_structured", with_code
+    )
+    report = asyncio.run(
+        evaluate_version_with_critic(
+            content=content, facts=[], requirements=REQUIREMENTS, mode="target"
+        )
+    )
+    assert report["semantic_issues"] == [
+        {
+            "code": "action_result_mismatch",
+            "project_id": story["project_id"],
+            "bullet_ids": story["bullet_ids"],
+            "diagnosis": "行动使用固定区间去重，却声称消除了全部异常，因果不成立",
+            "suggestions": ["说明异常判定的测量口径"],
+        }
+    ]

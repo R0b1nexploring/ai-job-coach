@@ -28,6 +28,22 @@ QUALITY_DIMENSIONS = (
     "interview_defensibility",
 )
 
+# Critic completeness. A partial critique keeps its usable findings but must
+# never be reported as a clean review.
+CRITIC_COMPLETE = "complete"
+CRITIC_PARTIAL = "partial"
+CRITIC_UNAVAILABLE = "unavailable"
+
+# Semantic content problems the critic may locate. Only these trigger the
+# background targeted repair contract; style or low scores never do.
+SEMANTIC_ISSUE_CODES = frozenset(
+    {
+        "star_missing",
+        "plan_contradiction",
+        "action_result_mismatch",
+    }
+)
+
 
 def report_guard_passed(report: dict) -> bool:
     """Return the independent provenance result from a quality report.
@@ -91,6 +107,13 @@ def evaluate_version(
         "content_version": content.get("content_version"),
         "reviewer": "deterministic",
         "reviewer_note": "使用确定性检查",
+        # Local checks never stand in for a semantic review. Reporting the
+        # critic as unavailable here prevents "no local issue" from being read
+        # as "semantically verified".
+        "critic_status": CRITIC_UNAVAILABLE,
+        "critic_unavailable": True,
+        "critic_missing_dimensions": list(QUALITY_DIMENSIONS),
+        "semantic_issues": [],
         "warnings": list(guard.get("warnings") or []) + [
             {"bullet_id": "", "message": warning} for warning in layout_warnings
         ],
@@ -127,6 +150,15 @@ async def evaluate_version_with_critic(
                 "必须评价全部质量维度；对可改进的具体要点给出带 bullet_id 的、可执行的修改建议。"
                 "如存在 project_story，逐项评价背景/任务/行动/结果是否具体、行动是否能支撑结果、"
                 "个人贡献和技术取舍是否可追问，并用 project_id 和关联 bullet_ids 定位问题。"
+                "蓝图（kind=target）项目按设计即为未来计划：achieved=false、结果为预期交付物、"
+                "指标 kind=target，这属于正常状态，绝不算作矛盾或缺项；不要因为项目尚未完成、"
+                "或正文使用“计划”措辞而判定计划与正文矛盾。"
+                "只有在同一要点内部存在实质冲突时才填 issue_code："
+                "star_missing（必需要素确实缺失或只有空话）、"
+                "plan_contradiction（正文与已保存方案描述不一致）、"
+                "action_result_mismatch（所述行动在方法上无法支撑所声称的结果）。"
+                "仅是建议改进、措辞、时态、数值锚点不足或风格偏好时，issue_code 必须留空，"
+                "把建议写进 suggestions；不要用 issue_code 表达改进意见。"
                 "输出严格 JSON。"
             ),
             user_payload={
@@ -178,6 +210,20 @@ async def evaluate_version_with_critic(
         )
         report["critic_summary"] = critic.summary
         report["critic_unavailable"] = provider != "compatible"
+        # A critique counts as complete only when the model assessed every
+        # required dimension. Anything less keeps its usable findings but is
+        # recorded as partial, so a missing dimension is never read as
+        # "no problem found".
+        missing_dimensions = [
+            name for name, item in dimensions.items() if not item.get("assessed")
+        ]
+        report["critic_missing_dimensions"] = missing_dimensions
+        if provider != "compatible":
+            report["critic_status"] = CRITIC_UNAVAILABLE
+        elif missing_dimensions:
+            report["critic_status"] = CRITIC_PARTIAL
+        else:
+            report["critic_status"] = CRITIC_COMPLETE
         valid_bullet_ids = {str(bullet.get("id") or "") for bullet in visible_bullets(content)}
         valid_project_ids = {
             str(story.get("project_id") or "")
@@ -199,19 +245,55 @@ async def evaluate_version_with_critic(
                 "bullet_ids": [bullet_id for bullet_id in item.bullet_ids if bullet_id in valid_bullet_ids],
                 "diagnosis": item.diagnosis,
                 "suggestions": list(item.suggestions or []),
+                "issue_code": item.issue_code,
             }
             for item in critic.project_reviews
             if item.project_id in valid_project_ids
         ]
+        report["semantic_issues"] = _semantic_issues(report["project_reviews"])
     except Exception:
         report["reviewer"] = "deterministic"
         report["reviewer_note"] = "模型不可用，使用确定性检查"
         report["critic_unavailable"] = True
+        report["critic_status"] = CRITIC_UNAVAILABLE
+        report["critic_missing_dimensions"] = list(QUALITY_DIMENSIONS)
         report["recommendations"] = []
         report["project_reviews"] = []
+        report["semantic_issues"] = []
     if not report.get("hard_passed"):
         report["status"] = "blocked"
     return report
+
+
+def _semantic_issues(project_reviews: list[dict]) -> list[dict]:
+    """Extract the critic findings that justify a targeted background repair.
+
+    The critic must point at a concrete project and bullet with a diagnosis and
+    a recognised issue code. An unclassified diagnosis stays explanatory only,
+    which keeps low scores and style preferences out of the repair loop.
+    """
+    issues = []
+    for review in project_reviews or []:
+        if not isinstance(review, dict):
+            continue
+        code = str(review.get("issue_code") or "").strip()
+        if code not in SEMANTIC_ISSUE_CODES:
+            continue
+        project_id = str(review.get("project_id") or "")
+        bullet_ids = [str(value) for value in review.get("bullet_ids") or [] if str(value)]
+        diagnosis = str(review.get("diagnosis") or "").strip()
+        if not project_id or not bullet_ids or not diagnosis:
+            continue
+        issues.append(
+            {
+                "code": code,
+                "project_id": project_id,
+                "bullet_ids": bullet_ids,
+                "diagnosis": diagnosis,
+                "suggestions": list(review.get("suggestions") or []),
+            }
+        )
+    return issues
 
 
 def apply_critic_cannot_override(report: dict, critic_score: float | None = None) -> dict:
@@ -245,6 +327,25 @@ def _kind_issues(content: dict, mode: str) -> list[str]:
     return list(dict.fromkeys(issues))
 
 
+def _header_value_unsupported(value: object, fact_values: list) -> bool:
+    """Whether a written header value has no support in the cited facts.
+
+    Empty text is not an invention, and a value that overlaps a cited fact in
+    either direction is treated as the same information written differently.
+    Only a wholly unrelated value counts as an added claim.
+    """
+    text = unicodedata.normalize("NFKC", str(value or "")).strip().casefold()
+    if not text:
+        return False
+    for candidate in fact_values:
+        other = unicodedata.normalize("NFKC", str(candidate or "")).strip().casefold()
+        if not other:
+            continue
+        if text == other or text in other or other in text:
+            return False
+    return True
+
+
 def _expansion_guard(content: dict, facts: list, requirements: list[dict], strict: dict) -> dict:
     """Use fact checks as provenance diagnostics, not a delivery veto."""
     fact_ids = {str(fact.id) for fact in facts}
@@ -259,8 +360,12 @@ def _expansion_guard(content: dict, facts: list, requirements: list[dict], stric
             issues.append("引用了不属于当前生成上下文的来源")
         # Also cover generated entry headers; the legacy guard only checks bullet text.
         cited = [fact for fact in facts if str(fact.id) in cited_facts]
-        header_added = any(
-            item.get(field) and not any(str(getattr(fact, field, "") or "") == str(item[field]) for fact in cited)
+        # An entry header is only "added" when the writer invented a value that
+        # no cited fact supports. A header that merely differs in wording (the
+        # project name in `organization`, a reworded role) is a normal model
+        # variation and must not downgrade the candidate's own confirmed facts.
+        header_added = bool(cited) and any(
+            _header_value_unsupported(item.get(field), [getattr(fact, field, "") for fact in cited])
             for field in ("organization", "role_title", "location", "start_date", "end_date")
         )
         unverified = bool(result["issues"] or not cited_facts or header_added or bullet.get("verification_status") == "ai_generated")
@@ -330,6 +435,46 @@ def _structure_issues(content: dict) -> list[str]:
 _VAGUE_STAR_VALUES = frozenset({"负责相关工作", "完成项目", "提升效果", "取得成果", "若干", "相关内容"})
 
 
+# Resource dependencies a student cannot be assumed to have. A designed project
+# that needs one of these is out of scope unless the candidate's own material
+# already evidences it (in which case the project carries fact ids and this
+# check does not run).
+_RESOURCE_DEPENDENCIES = (
+    ("实验室实测", ("实验室", "样品制备", "表征", "仪器", "测试台", "实测数据", "性能实测", "拉伸试验", "显微")),
+    ("专业仿真", ("有限元", "CFD", "多物理场", "分子模拟", "云图", "网格无关", "收敛曲线", "仿真模型", "流场仿真", "热仿真")),
+    ("量产或现场", ("量产", "良率", "产线", "车间", "现场工艺", "工艺验证", "批量生产", "试产")),
+)
+
+
+def _resource_overreach(story: dict, bullets: list[dict]) -> list[str]:
+    """Locate designed-project content that needs resources the user lacks.
+
+    Only deterministic, explicit dependency words are flagged. This is
+    deliberately narrow: it is not a judgement about the candidate's ability,
+    and a real project that already carries source facts is never checked here.
+    """
+    parts: list[str] = []
+    situation = story.get("situation") or {}
+    task = story.get("task") or {}
+    result = story.get("result") or {}
+    parts.extend([situation.get("context"), situation.get("problem"), task.get("goal")])
+    for action in story.get("actions") or []:
+        if isinstance(action, dict):
+            parts.extend([action.get("step"), action.get("method"), action.get("difficulty")])
+    parts.extend(result.get("deliverables") or [])
+    parts.append(result.get("verification_method"))
+    for metric in result.get("metrics") or []:
+        if isinstance(metric, dict):
+            parts.extend([metric.get("name"), metric.get("value"), metric.get("conditions")])
+    parts.extend(bullet.get("text") for bullet in bullets if isinstance(bullet, dict))
+    text = " ".join(str(part or "") for part in parts)
+    findings = []
+    for capability, needles in _RESOURCE_DEPENDENCIES:
+        if any(needle in text for needle in needles):
+            findings.append(capability)
+    return findings
+
+
 def _project_star_issues(content: dict, mode: str) -> list[str]:
     """Hard-check locally owned STAR shape and provenance for new blueprints."""
     if mode != "target" or not has_star_contract(content):
@@ -349,21 +494,30 @@ def _project_star_issues(content: dict, mode: str) -> list[str]:
             situation = story.get("situation") or {}
             task = story.get("task") or {}
             result = story.get("result") or {}
-            if not _specific_star_text(situation.get("context")) or not _specific_star_text(situation.get("problem")):
+            # Known filler must fail here, not merely appear in diagnostics: a
+            # placeholder project is not a deliverable STAR story, even when
+            # every field is technically non-empty.
+            if not _has_project_detail(situation.get("context")) or not _has_project_detail(
+                situation.get("problem")
+            ):
                 issues.append(f"项目 {label} 的 S（背景/问题）不具体")
-            if not _specific_star_text(task.get("role")) or not _specific_star_text(task.get("goal")):
+            if not _has_project_detail(task.get("role")) or not _has_project_detail(
+                task.get("goal")
+            ):
                 issues.append(f"项目 {label} 的 T（角色/目标）不具体")
             actions = story.get("actions") or []
             if not isinstance(actions, list) or not actions or not all(
                 isinstance(action, dict)
-                and _specific_star_text(action.get("step"))
-                and _specific_star_text(action.get("method"))
-                and _specific_star_text(action.get("contribution"))
+                and _has_project_detail(action.get("step"))
+                and _has_project_detail(action.get("method"))
+                and _has_project_detail(action.get("contribution"))
                 for action in actions
             ):
                 issues.append(f"项目 {label} 的 A（行动/方法/贡献）不完整")
             deliverables = result.get("deliverables") or []
-            if not _specific_star_values(deliverables) or not _specific_star_text(result.get("verification_method")):
+            if not _specific_star_values(deliverables) or not _has_project_detail(
+                result.get("verification_method")
+            ):
                 issues.append(f"项目 {label} 的 R（交付/验证）不完整")
             bullets = [bullet for bullet in item.get("bullets") or [] if isinstance(bullet, dict)]
             bullet_ids = [str(bullet.get("id") or "") for bullet in bullets if bullet.get("id")]
@@ -386,6 +540,13 @@ def _project_star_issues(content: dict, mode: str) -> list[str]:
                 for metric in result.get("metrics") or []:
                     if isinstance(metric, dict) and metric.get("kind") == "observed":
                         issues.append(f"项目 {label} 的未达成结果不能标为已观察指标")
+            # A designed (not personally evidenced) project must stay inside the
+            # resources the candidate actually has. `achieved: false` marks a
+            # result as unearned; it does not make an unreachable plan valid.
+            if not fact_ids:
+                overreach = _resource_overreach(story, bullets)
+                for finding in overreach:
+                    issues.append(f"项目 {label} 超出本人可及资源：{finding}")
     return list(dict.fromkeys(issues))
 
 
@@ -406,9 +567,19 @@ _STAR_PLACEHOLDERS = _VAGUE_STAR_VALUES | frozenset({
 })
 
 
+# Shortest value that can still name a concrete role, goal or method. Shorter
+# labels ("成员", "建模") cannot be distinguished from filler.
+_MIN_PROJECT_DETAIL_LENGTH = 4
+
+
 def _has_project_detail(value: object) -> bool:
     text = str(value or "").strip().rstrip("。.!！;；")
-    return _specific_star_text(text) and text not in _STAR_PLACEHOLDERS
+    # A two- or three-character label ("成员", "建模") is not a project role or
+    # goal; it cannot be told apart from filler, so it fails the detail check.
+    return (
+        len(text) >= _MIN_PROJECT_DETAIL_LENGTH
+        and text not in _STAR_PLACEHOLDERS
+    )
 
 
 def _project_star_diagnostics(content: dict, mode: str) -> list[dict]:

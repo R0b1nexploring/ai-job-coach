@@ -12,7 +12,8 @@ from app.services.content_contract import validate_content, visible_bullets
 from app.services.quality_service import evaluate_version
 from conftest import register
 from test_resume_generation_v3 import (
-    _grant_resume_quota, _import_job, _install_compatible_provider,
+    _complete_critic_response, _grant_resume_quota, _import_job,
+    _install_compatible_provider,
     _pair_rewrite_output, _rewrite_output_from_payload, _structured_llm_response,
     process_created_bundle, setup_bundle,
 )
@@ -27,7 +28,8 @@ def test_provider_expansion_survives_delivery_without_confirming_facts(client, d
     def handler(request):
         payload = json.loads(json.loads(request.content)["messages"][1]["content"])
         if "hard_passed" in payload:
-            return _structured_llm_response({"dimensions": {}, "summary": "表达清楚"})
+            # Only a complete critique leaves the copy at ready (17.5).
+            return _complete_critic_response()
         if "bullets" in payload:
             return _structured_llm_response({"kind": payload["kind"], "cards": []})
         captured.append(payload)

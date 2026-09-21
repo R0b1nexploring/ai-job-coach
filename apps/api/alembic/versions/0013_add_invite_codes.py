@@ -5,8 +5,8 @@ from sqlalchemy import inspect
 
 from alembic import op
 
-revision = "0012_add_invite_codes"
-down_revision = "0011_add_persistent_resume_task_fields"
+revision = "0013_add_invite_codes"
+down_revision = "0012_add_unified_tasks"
 branch_labels = None
 depends_on = None
 

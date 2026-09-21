@@ -370,6 +370,89 @@ class ResumeBundleRun(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class Task(Base):
+    """Unified persistent task record for the self-service workflow.
+
+    Migration step (tasks 17.2) creates and backfills this table from
+    ``resume_bundle_runs``. Until the claim authority is switched over (tasks
+    17.7), ``resume_bundle_runs`` still owns the claim and this row mirrors the
+    run state through :mod:`app.services.task_status`. There is never a second
+    claim owner: the legacy run remains the single writer of ``claim_token``.
+    """
+
+    __tablename__ = "tasks"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "idempotency_key",
+            name="uq_tasks_user_idempotency",
+        ),
+        # Automatic guide queuing must be idempotent per version/semantic hash/
+        # guide kind. NULLs stay distinct on both SQLite and PostgreSQL, so
+        # non-guide tasks are unaffected by this constraint.
+        UniqueConstraint(
+            "user_id",
+            "guide_version_id",
+            "guide_content_hash",
+            "guide_kind",
+            name="uq_tasks_auto_guide",
+        ),
+        CheckConstraint(
+            "status IN ('queued','running','succeeded','degraded','failed')",
+            name="ck_tasks_status",
+        ),
+        CheckConstraint(
+            "attempts >= 0 AND max_attempts >= 1",
+            name="ck_tasks_attempts",
+        ),
+        Index("ix_tasks_queue", "task_type", "status", "available_at", "created_at"),
+        Index("ix_tasks_user_status", "user_id", "status"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    task_type: Mapped[str] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    phase: Mapped[str] = mapped_column(String(40), default="queued")
+    resource_ids_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    input_snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    result_resources_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    request_hash: Mapped[str] = mapped_column(String(64), default="")
+    idempotency_key: Mapped[str] = mapped_column(String(200))
+    parent_task_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tasks.id"), nullable=True, index=True
+    )
+    retry_of_task_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tasks.id"), nullable=True, index=True
+    )
+    guide_version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    guide_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    guide_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    claim_token: Mapped[str] = mapped_column(String(36), default="")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    available_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    first_claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    deadline_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    public_error_code: Mapped[str] = mapped_column(String(60), default="")
+    internal_error_code: Mapped[str] = mapped_column(String(60), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now, onupdate=now
+    )
+
+
 class ResumeVersion(Base):
     __tablename__ = "resume_versions"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)

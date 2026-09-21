@@ -287,7 +287,17 @@ class FactIn(BaseModel):
 
 
 class FactCreateIn(BaseModel):
-    category: str = Field(default="other", min_length=1, max_length=50)
+    # Constrained to the canonical vocabulary: an unknown value used to be
+    # stored as-is and silently rendered under 项目/科研/竞赛, which misfiled
+    # employment history.
+    category: Literal[
+        "education",
+        "employment",
+        "projects",
+        "skills",
+        "certificates",
+        "other",
+    ] = "other"
     label: str = Field(min_length=1, max_length=200)
     value_json: dict
     source_text: str = Field(default="", max_length=5000)

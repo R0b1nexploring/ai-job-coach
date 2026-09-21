@@ -63,6 +63,28 @@ from app.database import Base, get_db, make_engine
 from app.main import app
 
 
+# Building the full schema costs ~0.3s per test (31 tables), which dominated the
+# suite: ~280 DB tests spent most of their time in create_all. The schema is
+# identical for every test, so it is built once per session and each test gets a
+# cheap file copy. Isolation is unchanged: every test still owns a private
+# database file that is removed with its test root.
+_SCHEMA_TEMPLATE = _PYTEST_SESSION_ROOT / "schema-template.db"
+_schema_template_ready = False
+
+
+def _ensure_schema_template() -> Path:
+    global _schema_template_ready
+    if not _schema_template_ready:
+        template_engine = make_engine(f"sqlite:///{_SCHEMA_TEMPLATE}")
+        try:
+            Base.metadata.create_all(template_engine)
+        finally:
+            # Dispose so the file is fully flushed before it is copied.
+            template_engine.dispose()
+        _schema_template_ready = True
+    return _SCHEMA_TEMPLATE
+
+
 @pytest.fixture(autouse=True)
 def isolated_test_environment(tmp_path, monkeypatch):
     test_root = (tmp_path / "isolated-runtime").resolve()
@@ -96,16 +118,16 @@ def isolated_test_environment(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def db(isolated_test_environment):
+    # Copy the pre-built schema instead of recreating 31 tables (~0.3s -> <1ms).
+    database_url = get_settings().resolved_database_url()
+    database_path = Path(make_url(database_url).database or "")
+    shutil.copyfile(_ensure_schema_template(), database_path)
     engine = make_engine()
-    Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, expire_on_commit=False)
     try:
         with Session() as session:
             yield session
     finally:
-        with engine.begin() as connection:
-            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
-        Base.metadata.drop_all(engine)
         engine.dispose()
 
 

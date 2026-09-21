@@ -45,10 +45,17 @@ def guard_content(
         if invalid_fact_ids:
             issues.append("引用了未确认或不属于当前用户的事实")
 
+        # ``requirement_ids`` records which job requirement a bullet proves,
+        # which the v3 contract sets on every supported submittable bullet.
+        # Only ``source_target_ids`` means "this bullet is about an unachieved
+        # target", so only that may block a submittable resume.
+        cited_source_target_ids = _source_ids(bullet, "source_target_ids")
         invalid_target_ids = [
-            target_id for target_id in target_ids if target_id not in targets_by_id
+            target_id
+            for target_id in cited_source_target_ids
+            if target_id not in targets_by_id
         ]
-        if target_ids and mode == "submittable":
+        if cited_source_target_ids and mode == "submittable":
             issues.append("可投递简历不得引用未达成目标")
         elif invalid_target_ids:
             issues.append("引用了不属于当前用户或已经失效的学习目标")
@@ -59,26 +66,30 @@ def guard_content(
             if bullet.get("achieved") is not False:
                 issues.append("未达成条目缺少 achieved 标记")
 
-        corpus = " ".join(
-            [
-                *(
-                    _fact_corpus(facts_by_id[fact_id])
-                    for fact_id in fact_ids
-                    if fact_id in facts_by_id
-                ),
-                *(
-                    _target_corpus(targets_by_id[target_id])
-                    for target_id in valid_target_ids
-                    if mode == "target"
-                ),
-            ]
-        )
+        # Keep the source fields separate as well as joined: the Chinese-claim
+        # check needs field boundaries, because a joined string can split a
+        # single field mid-sentence and produce fragments that match a claim by
+        # accident.
+        source_fields = [
+            *(
+                _fact_fields(facts_by_id[fact_id])
+                for fact_id in fact_ids
+                if fact_id in facts_by_id
+            ),
+            *(
+                [_target_corpus(targets_by_id[target_id])]
+                for target_id in valid_target_ids
+                if mode == "target"
+            ),
+        ]
+        fields = [value for group in source_fields for value in group if value]
+        corpus = " ".join(fields)
         for entity in extract_claim_entities(str(bullet.get("text") or "")):
             if not corpus_contains(corpus, entity):
                 issues.append(f"未经来源支持的实体：{entity}")
         issues.extend(
             f"未经来源支持的中文主张：{claim}"
-            for claim in unsupported_chinese_claims(str(bullet.get("text") or ""), corpus)
+            for claim in unsupported_chinese_claims(str(bullet.get("text") or ""), fields)
         )
         issues.extend(
             f"显式标记的新主张：{claim}"
@@ -134,9 +145,10 @@ def _source_ids(item: dict, field: str) -> list[str]:
     return list(dict.fromkeys(str(value) for value in values if str(value)))
 
 
-def _fact_corpus(fact) -> str:
+def _fact_fields(fact) -> list[str]:
+    """The individual source fields of a fact, in citation order."""
     value_json = getattr(fact, "value_json", {}) or {}
-    values = [
+    return [
         str(value_json.get("text") or ""),
         str(getattr(fact, "organization", "") or ""),
         str(getattr(fact, "role_title", "") or ""),
@@ -144,7 +156,10 @@ def _fact_corpus(fact) -> str:
         str(getattr(fact, "end_date", "") or ""),
         str(getattr(fact, "source_text", "") or ""),
     ]
-    return " ".join(value for value in values if value)
+
+
+def _fact_corpus(fact) -> str:
+    return " ".join(value for value in _fact_fields(fact) if value)
 
 
 def _target_corpus(target) -> str:

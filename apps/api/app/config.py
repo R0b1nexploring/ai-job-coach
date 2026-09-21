@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     llm_model_strong: str = ""
     llm_timeout_seconds: int = Field(default=300, gt=0)
     llm_max_retries: int = Field(default=1, ge=0)
+    # Transport retry backoff for transient failures. Jitter is added on top so
+    # several workers do not retry a rate-limited upstream in lockstep.
+    llm_retry_backoff_base_seconds: float = Field(default=1.0, ge=0)
+    llm_retry_backoff_max_seconds: float = Field(default=30.0, ge=0)
     llm_max_output_tokens: int = Field(default=8192, gt=0)
     llm_thinking_enabled: bool = False
     llm_reasoning_effort: Literal["", "high", "max"] = ""

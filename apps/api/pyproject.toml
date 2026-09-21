@@ -26,7 +26,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==8.3.4", "pytest-asyncio==0.24.0", "ruff>=0.6"]
+dev = [
+  "pytest==8.3.4",
+  "pytest-asyncio==0.24.0",
+  "pytest-xdist>=3.6",
+  "ruff>=0.6",
+]
 pdf = ["playwright>=1.40"]
 
 [tool.setuptools.packages.find]
@@ -34,7 +39,10 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# Distribute across CPU cores. The suite is DB-heavy and each test owns an
+# isolated database file, so workers do not contend; measured 102s -> ~15s.
+# Override with `-n 0` for a serial debugging run.
+addopts = "-q -n auto"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]

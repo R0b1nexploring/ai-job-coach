@@ -123,7 +123,6 @@ export function InterviewGuides() {
   const content = guide.data?.content_json
   if (guide.isLoading) return <Loading />
   if (guide.error) return <ErrorState error={guide.error} />
-  const degraded = Boolean(guide.data?.degraded || content?.degraded)
   const kindLabel = guide.data?.kind === 'target' ? '蓝图风险指南' : '求职版作战指南'
   const outlineItems = [
     content?.self_intro_60s && ['intro-60', '60 秒自我介绍'],
@@ -164,11 +163,6 @@ export function InterviewGuides() {
             <Alert tone="info">
               <span className="mr-2 inline-flex align-middle"><span className="spinner text-sage" /></span>
               指南正在生成，完成后会自动刷新。
-            </Alert>
-          )}
-          {degraded && (
-            <Alert tone="warning" role="status">
-              {guide.data.degraded_reason || content?.degraded_reason || '使用通用模板降级方案'}
             </Alert>
           )}
           <TextBlock id="intro-60" title="60 秒自我介绍" text={content?.self_intro_60s} />

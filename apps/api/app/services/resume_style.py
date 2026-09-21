@@ -39,10 +39,14 @@ def unachieved_mark(content: dict | None) -> str:
 def should_mark_unachieved(content: dict | None, bullet: dict | None) -> bool:
     """Only blueprint gaps get a visible asterisk.
 
-    AI expansion keeps its internal provenance status, but it is no longer
-    presented as a pending-verification label in the resume itself.
+    The marker belongs to the blueprint, whose gaps are the point of that
+    document. The submittable resume is the version a candidate sends to an
+    employer, so it must not carry an unachieved marker at all: an AI-expanded
+    line there keeps its internal provenance status without a visible label.
     """
     if not isinstance(bullet, dict) or bullet.get("achieved") is not False:
+        return False
+    if (content or {}).get("kind") != "target":
         return False
     if (
         (content or {}).get("factuality_policy") == "ai_expansion"

@@ -24,19 +24,6 @@ type Profile = {
 
 type StudioJob = Job & { raw_jd?: string }
 
-const qualityStatusLabels: Record<string, string> = {
-  passed: '已通过',
-  ready: '已通过',
-  degraded: '降级可用',
-  failed: '未通过',
-  pending: '检查中',
-}
-
-function qualityStatusLabel(status?: string) {
-  if (!status) return '待检查'
-  return qualityStatusLabels[status] || status
-}
-
 function SourceReferences({ ids }: { ids?: string[] }) {
   if (!ids?.length) return null
   return (
@@ -570,7 +557,7 @@ export function ResumeStudio() {
     onSuccess: (created) => {
       setBundleId(created.id)
       setActiveStep('resume')
-      setMessage(created.status === 'queued' || created.status === 'generating' ? '已排队生成，正在后台处理。' : created.status === 'degraded' ? '已生成基础降级版本，请查看质量提示。' : '双轨简历已生成。')
+      setMessage(created.status === 'queued' || created.status === 'generating' ? '已排队生成，正在后台处理。' : '双轨简历已生成。')
       client.invalidateQueries({ queryKey: ['resume-bundle'] })
       client.invalidateQueries({ queryKey: ['resume-bundles'] })
     },
@@ -656,11 +643,9 @@ export function ResumeStudio() {
   const error = jobs.error || resumes.error || selectedResumeDetail.error || resumeFacts.error || materialFacts.error || generate.error || createProfile.error || analyzeTarget.error || createMaterial.error || saveMaterial.error || clarifyMaterial.error || confirmMaterial.error || uploadResume.error || confirmResume.error || editFact.error || confirmFact.error || answerClarifications.error || retry.error || lock.error || regenerate.error || reorder.error || undo.error || regenerateGuide.error
   const status = bundle.data?.status
   const degraded = status === 'degraded'
-  const qualityGateBypassed = bundle.data?.generation_metadata_json?.quality_gate_bypassed === true
   const failed = status === 'failed'
   const pending = status === 'queued' || status === 'generating'
   const content = version.data?.content_json
-  const reviewerNote = version.data?.quality_report_json.reviewer_note
   const deliverable = Boolean(versionId && (status === 'ready' || status === 'degraded'))
   const stepStatus = (step: WorkspaceStep, complete: boolean, available: boolean): TaskStatus => {
     if (activeStep === step) return 'current'
@@ -697,12 +682,10 @@ export function ResumeStudio() {
           </div>
         }
       />
-      {(error || message || degraded || qualityGateBypassed || failed || pending) && (
+      {(error || message || failed || pending) && (
         <div className="mt-5 space-y-3">
           {error && <ErrorState error={error} />}
           {message && <Alert tone="success">{message}</Alert>}
-          {degraded && <Alert tone="warning" role="status">当前为降级版本：{bundle.data?.generation_metadata_json?.degraded_reason || '模型不可用，使用已通过硬门禁的本地基础内容。'}</Alert>}
-          {qualityGateBypassed && <Alert tone="warning" role="status">本地调试模式：质量硬门禁已暂时关闭，仅保留事实来源检查。</Alert>}
           {failed && (
             <Alert tone="danger" role="alert">
               生成失败：{bundle.data?.error || '请重试。'}
@@ -958,7 +941,7 @@ export function ResumeStudio() {
         eyebrow="03 · 双版简历"
         title="生成与调整"
         description="在求职版和蓝图 Plus 之间切换，并对每个要点进行锁定、排序或局部重写。"
-        status={pending ? <StatusChip tone="info">{bundleStageLabel(bundle.data?.run?.phase)}</StatusChip> : deliverable ? <StatusChip tone={degraded ? 'warning' : 'success'}>{degraded ? '降级可用' : '已通过'}</StatusChip> : undefined}
+        status={pending ? <StatusChip tone="info">{bundleStageLabel(bundle.data?.run?.phase)}</StatusChip> : deliverable ? <StatusChip tone="success">可交付</StatusChip> : undefined}
         actions={<>
           <button className="btn" disabled={!selectedProfile || generate.isPending} onClick={() => generate.mutate()}>{version.data ? '重新生成双版本' : '生成求职版和蓝图 Plus'}</button>
           {failed && bundle.data?.can_retry && (
@@ -974,16 +957,6 @@ export function ResumeStudio() {
         )}
         {version.data && (
           <div className="mt-5">
-            <div className="flex flex-wrap items-center gap-2 text-sm text-ink-secondary"><span>质量状态</span><StatusChip tone={version.data.quality_report_json.status === 'passed' ? 'success' : 'warning'}>{qualityStatusLabel(version.data.quality_report_json.status || version.data.guard_status)}</StatusChip>{reviewerNote && <span>{reviewerNote}</span>}</div>
-            {!!version.data.quality_report_json.issues?.length && <p className="alert alert-warning mt-2">质量问题：{version.data.quality_report_json.issues.join('；')}</p>}
-            {!!version.data.quality_report_json.recommendations?.length && (
-              <div className="mt-2 rounded-lg bg-sage/5 px-3 py-2 text-sm text-ink-secondary">
-                <p className="font-semibold">可改进之处</p>
-                <ul className="mt-1 list-disc pl-5">
-                  {version.data.quality_report_json.recommendations.map((item, index) => <li key={`${item.bullet_id || 'general'}-${index}`}>{item.suggestion}</li>)}
-                </ul>
-              </div>
-            )}
             <div className="soft-panel mt-4" aria-label="编辑要点">
               <h3 className="text-sm font-semibold">编辑要点</h3>
               <p className="mt-1 text-xs text-ink-secondary">所有操作都会重新执行质量检查，并同步右侧 A4 预览。</p>

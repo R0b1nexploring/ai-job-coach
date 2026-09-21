@@ -42,7 +42,8 @@ REVISION_CHAIN = (
     ("0009_add_target_profiles_and_material_claims", "0008_add_experience_and_campus_catalog"),
     ("0010_add_resume_bundles_and_interview_guides", "0009_add_target_profiles_and_material_claims"),
     ("0011_add_persistent_resume_task_fields", "0010_add_resume_bundles_and_interview_guides"),
-    ("0012_add_invite_codes", "0011_add_persistent_resume_task_fields"),
+    ("0012_add_unified_tasks", "0011_add_persistent_resume_task_fields"),
+    ("0013_add_invite_codes", "0012_add_unified_tasks"),
 )
 
 
@@ -204,7 +205,42 @@ def _assert_revision_effect(revision: str, database_path: Path) -> None:
             "lease_expires_at",
             "heartbeat_at",
         } <= _column_names(database_path, "resume_bundle_runs")
-    elif revision == "0012_add_invite_codes":
+    elif revision == "0012_add_unified_tasks":
+        assert "tasks" in snapshot
+        assert {
+            "task_type",
+            "status",
+            "phase",
+            "resource_ids_json",
+            "input_snapshot_json",
+            "result_resources_json",
+            "idempotency_key",
+            "parent_task_id",
+            "retry_of_task_id",
+            "guide_version_id",
+            "guide_content_hash",
+            "guide_kind",
+            "claim_token",
+            "attempts",
+            "max_attempts",
+            "available_at",
+            "lease_expires_at",
+            "heartbeat_at",
+            "first_claimed_at",
+            "deadline_at",
+            "public_error_code",
+            "internal_error_code",
+        } <= _column_names(database_path, "tasks")
+        assert ("user_id", "idempotency_key") in _unique_column_sets(
+            database_path, "tasks"
+        )
+        assert (
+            "user_id",
+            "guide_version_id",
+            "guide_content_hash",
+            "guide_kind",
+        ) in _unique_column_sets(database_path, "tasks")
+    elif revision == "0013_add_invite_codes":
         assert "invite_codes" in snapshot
         assert {
             "code_hash",
@@ -262,6 +298,34 @@ def test_head_has_no_pending_model_schema_operations(migration_database):
     config, _database_path = migration_database
     command.upgrade(config, "head")
     command.check(config)
+
+
+def test_version_table_accepts_the_longest_revision_id(migration_database):
+    """A fresh database must store revision ids longer than Alembic's default.
+
+    Alembic 1.14+ creates ``alembic_version.version_num`` as VARCHAR(32), but
+    this chain contains ids up to 44 characters. On PostgreSQL the default
+    width aborts ``upgrade head`` with a string-truncation error, so the
+    environment pre-creates the table with a width that fits.
+    """
+    config, database_path = migration_database
+    command.upgrade(config, "head")
+
+    longest = max(
+        len(revision)
+        for revision, _parent in REVISION_CHAIN
+    )
+    engine = make_engine(f"sqlite:///{database_path}")
+    try:
+        column = next(
+            column
+            for column in inspect(engine).get_columns("alembic_version")
+            if column["name"] == "version_num"
+        )
+    finally:
+        engine.dispose()
+    assert longest > 32, "this test is meaningless while revision ids fit VARCHAR(32)"
+    assert column["type"].length >= longest
 
 
 def test_migrated_foreign_keys_are_enforced(migration_database):
@@ -484,5 +548,171 @@ def test_0007_downgrade_refuses_owner_identity_collision_without_partial_schema_
             assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
                 "0007_harden_integrity"
             )
+    finally:
+        engine.dispose()
+
+
+def test_0012_backfills_bundle_runs_into_unified_tasks_without_touching_legacy_rows(
+    migration_database,
+):
+    """The migration projects existing runs; it must not rewrite or drop them."""
+    config, database_path = migration_database
+    command.upgrade(config, "0011_add_persistent_resume_task_fields")
+    engine = make_engine(f"sqlite:///{database_path}")
+    now = "2026-09-18 10:00:00"
+    runs = (
+        ("b-queued", "queued", "tok-1", 0, ""),
+        ("b-generating", "generating", "tok-2", 2, ""),
+        ("b-ready", "ready", "tok-3", 1, ""),
+        ("b-degraded", "degraded", "tok-4", 1, ""),
+        ("b-failed", "failed", "tok-5", 3, "hard_gates_failed"),
+    )
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users "
+                    "(id,email,password_hash,display_name,role,status,timezone,"
+                    "created_at,updated_at) VALUES "
+                    "('u','u@example.test','x','U','user','active','Asia/Shanghai',"
+                    ":now,:now)"
+                ),
+                {"now": now},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO resumes "
+                    "(id,user_id,original_file_key,original_media_type,display_name,"
+                    "parse_status,parsed_text,parser_version,facts_confirmed_at,"
+                    "created_at,updated_at) "
+                    "VALUES ('r','u','','','R','parsed','t','1',:now,:now,:now)"
+                ),
+                {"now": now},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO target_profiles "
+                    "(id,user_id,mode,title,snapshot_json,input_hash,"
+                    "quality_metadata_json,version,created_at,updated_at) "
+                    "VALUES ('tp','u','single_jd','T','{}','ih','{}',1,:now,:now)"
+                ),
+                {"now": now},
+            )
+            for bundle_id, status, token, attempts, last_error in runs:
+                connection.execute(
+                    text(
+                        "INSERT INTO resume_bundles "
+                        "(id,user_id,base_resume_id,target_profile_id,status,"
+                        "facts_snapshot_json,target_snapshot_json,template_snapshot_json,"
+                        "request_hash,idempotency_key,generation_metadata_json,"
+                        "portrait_file_key,created_at,updated_at) "
+                        "VALUES (:id,'u','r','tp',:status,'{}','{}','{}','rh',:key,"
+                        "'{}','',:now,:now)"
+                    ),
+                    {
+                        "id": bundle_id,
+                        "status": status,
+                        "key": f"key-{bundle_id}",
+                        "now": now,
+                    },
+                )
+                connection.execute(
+                    text(
+                        "INSERT INTO resume_bundle_runs "
+                        "(bundle_id,user_id,status,task_type,phase,claim_token,"
+                        "request_hash,input_snapshot_json,result_resources_json,"
+                        "provider,last_error,public_error_code,attempts,retry_count,"
+                        "max_attempts,lease_expires_at,heartbeat_at,created_at,updated_at) "
+                        "VALUES (:id,'u',:status,'resume_generation','writing',:token,"
+                        "'rh','{\"facts\": []}','{}','compatible',:last_error,'',"
+                        ":attempts,0,3,NULL,NULL,:now,:now)"
+                    ),
+                    {
+                        "id": bundle_id,
+                        "status": status,
+                        "token": token,
+                        "attempts": attempts,
+                        "last_error": last_error,
+                        "now": now,
+                    },
+                )
+    finally:
+        engine.dispose()
+
+    command.upgrade(config, "0012_add_unified_tasks")
+    engine = make_engine(f"sqlite:///{database_path}")
+    try:
+        with engine.connect() as connection:
+            assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
+            migrated = {
+                row[0]: row[1]
+                for row in connection.execute(
+                    text("SELECT id, status FROM tasks ORDER BY id")
+                )
+            }
+            assert migrated == {
+                "task_migrated_b-degraded": "degraded",
+                "task_migrated_b-failed": "failed",
+                "task_migrated_b-generating": "running",
+                "task_migrated_b-queued": "queued",
+                "task_migrated_b-ready": "succeeded",
+            }
+            # The legacy rows keep their own status, claim token and attempts.
+            assert connection.scalar(
+                text("SELECT COUNT(*) FROM resume_bundle_runs")
+            ) == len(runs)
+            assert sorted(
+                row[0]
+                for row in connection.execute(
+                    text("SELECT status FROM resume_bundle_runs")
+                )
+            ) == sorted(status for _id, status, _t, _a, _e in runs)
+            assert connection.scalar(
+                text("SELECT claim_token FROM resume_bundle_runs WHERE bundle_id='b-generating'")
+            ) == "tok-2"
+            assert connection.scalar(
+                text("SELECT attempts FROM resume_bundle_runs WHERE bundle_id='b-failed'")
+            ) == 3
+            # A claim token is copied so a migrated task cannot be double-claimed.
+            assert connection.scalar(
+                text("SELECT claim_token FROM tasks WHERE id='task_migrated_b-generating'")
+            ) == "tok-2"
+            assert connection.scalar(
+                text(
+                    "SELECT internal_error_code FROM tasks "
+                    "WHERE id='task_migrated_b-failed'"
+                )
+            ) == "hard_gates_failed"
+    finally:
+        engine.dispose()
+
+
+def test_0012_backfill_is_idempotent_when_reapplied(migration_database):
+    config, database_path = migration_database
+    command.upgrade(config, "0012_add_unified_tasks")
+    engine = make_engine(f"sqlite:///{database_path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users "
+                    "(id,email,password_hash,display_name,role,status,timezone,"
+                    "created_at,updated_at) VALUES "
+                    "('u','u@example.test','x','U','user','active','Asia/Shanghai',"
+                    ":now,:now)"
+                ),
+                {"now": "2026-09-18 10:00:00"},
+            )
+    finally:
+        engine.dispose()
+
+    # Re-running the same revision must not duplicate or fail. No bundle run
+    # exists here, so the backfill is a no-op in both directions.
+    command.downgrade(config, "0011_add_persistent_resume_task_fields")
+    command.upgrade(config, "0012_add_unified_tasks")
+    engine = make_engine(f"sqlite:///{database_path}")
+    try:
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT COUNT(*) FROM tasks")) == 0
     finally:
         engine.dispose()

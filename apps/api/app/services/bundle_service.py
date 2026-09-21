@@ -96,7 +96,13 @@ RESUME_REWRITE_PAIR_PROMPT = (
     "先展开 project_story 项目方案，再将同一方案压缩为 bullets，不能从漂亮的成果句倒编过程。"
     "project_story_inputs 按项目隔离事实与草稿细节，只能在各自项目内引用；"
     "每个输入的 design_supplement 说明该项目的设计边界，按来源区分已确认事实、草稿与虚拟目标，不得越界。"
+    "writer_profile 描述本人真实背景：declared_background/declared_tools/past_work 是本人已声明的信息，"
+    "设计项目时必须与之一致，用本人已有的工具和课程基础，不要设计需要本人未接触过的软件或条件的项目。"
+    "writer_profile.resource_boundary 是硬边界：forbidden 中的条件在本人素材没有对应依据时"
+    "不得写进项目，也不得作为项目成立的前提；evidence_required 列出因此无法证明的岗位能力，"
+    "这些能力在蓝图中如实保留为目标缺口，不要为了覆盖率编造项目。"
     "无素材时围绕目标要求设计边界清楚的小项目，明确输入、输出和具体问题；"
+    "项目规模要像本科生在课余可以独立完成的练习或课程任务，不是实验室课题或企业项目；"
     "信息不足时缩小项目范围，而不是补出未经验证的细节或数字。"
     "每个关键行动说明操作对象、方法、选择理由和难点处理；结果说明产物如何检验。"
     "project_story 用 design_assumptions 记录没有个人来源、由 AI 补充的设计细节，"
@@ -451,6 +457,130 @@ def build_project_story_inputs(
             }
         )
     return rows
+
+
+def build_writer_profile(
+    facts, draft_materials: list[dict], requirements: list[dict]
+) -> dict:
+    """Summarize who the candidate actually is, so a designed project fits them.
+
+    The blueprint track invents a practice project. Without this summary the
+    writer can only see the job requirements, so it reaches for generic or
+    over-scoped work. This profile carries the candidate's own declared
+    background, tools and past work into the prompt, and states the resource
+    boundary explicitly.
+
+    It is derived only from material the user already provided. It never
+    upgrades a draft into a confirmed fact.
+    """
+    rows = list(_brief_material_candidates(facts, draft_materials))
+    background: list[str] = []
+    tools: list[str] = []
+    past_work: list[str] = []
+    for row in rows:
+        text = " ".join([row.get("title") or "", *(row.get("texts") or [])])
+        if row.get("organization"):
+            label = str(row.get("organization"))
+            role = _meaningful_role(row.get("role_title"))
+            entry = f"{label}（{role}）" if role else label
+            if row.get("source") == "confirmed_fact" and row.get("kind") == "education":
+                if entry not in background:
+                    background.append(entry)
+            elif entry not in past_work:
+                past_work.append(entry)
+        for tool in _KNOWN_TOOLS:
+            if tool.casefold() in text.casefold() and tool not in tools:
+                tools.append(tool)
+    declared = [str(row.get("title") or "") for row in rows if row.get("title")]
+    return {
+        "profile_version": 1,
+        "declared_background": background,
+        "declared_tools": tools,
+        "past_work": past_work,
+        "material_titles": declared,
+        "resource_boundary": _resource_boundary(facts, draft_materials, requirements),
+    }
+
+
+# Software and equipment names a student commonly already has access to. Used
+# only to echo the candidate's own words back into the prompt; absence here is
+# not a claim about the candidate.
+_KNOWN_TOOLS = (
+    "SolidWorks", "AutoCAD", "UG", "NX", "Creo", "Pro/E", "CATIA", "Inventor",
+    "ANSYS", "Abaqus", "COMSOL", "MATLAB", "Python", "C", "C++", "Java",
+    "Excel", "Origin", "ADAMS", "Keil", "Arduino", "STM32", "PLC",
+)
+
+
+def _meaningful_role(value: object) -> str:
+    """Drop a role label that only restates "I was there".
+
+    ``本人``/``学生`` and other two-character placeholders add nothing to the
+    writer profile and read as noise next to a real organization.
+    """
+    text = str(value or "").strip()
+    if len(text) < 4 or text in {"本人", "学生", "成员", "参与者"}:
+        return ""
+    return text
+
+
+def _resource_boundary(facts, draft_materials: list[dict], requirements: list[dict]) -> dict:
+    """State what the designed project may assume the candidate can access.
+
+    The default is a student's own computer plus publicly available material.
+    Anything beyond that must already appear in the user's own material; we
+    never infer laboratory, simulation or production access from a job ad.
+    """
+    declared_text = " ".join(
+        [
+            *[
+                " ".join(
+                    [
+                        str(getattr(fact, "label", "") or ""),
+                        _fact_text(fact),
+                        str(getattr(fact, "organization", "") or ""),
+                    ]
+                )
+                for fact in facts
+            ],
+            *[
+                " ".join([str(m.get("summary") or ""), *[str(v) for v in (m.get("details") or {}).values()]])
+                for m in draft_materials or []
+            ],
+        ]
+    ).casefold()
+    evidence_required: list[str] = []
+    for item in requirements:
+        text = str(item.get("text") or "")
+        for capability, needles in _EVIDENCE_REQUIRED_CAPABILITIES:
+            if any(needle.casefold() in text.casefold() for needle in needles):
+                if not any(needle.casefold() in declared_text for needle in needles):
+                    entry = f"{capability}：{text}"
+                    if entry not in evidence_required:
+                        evidence_required.append(entry)
+    return {
+        "assume_available": [
+            "本人电脑上的常规设计、编程与文档工具",
+            "合法可查的公开资料、手册与标准",
+        ],
+        "evidence_required": evidence_required,
+        "forbidden": [
+            "专用实验室、样品制备、仪器表征或实测数据",
+            "有限元、多物理场、CFD、分子模拟等专业仿真",
+            "企业内部数据、量产良率、产线或现场工艺验证",
+        ],
+        "note": (
+            "以上禁止项仅指没有个人依据时不得新增；"
+            "用户已提供的真实实验、仿真或复杂软件经历按实际证据保留，不因学历降级。"
+        ),
+    }
+
+
+_EVIDENCE_REQUIRED_CAPABILITIES = (
+    ("实验室实测", ("实验", "实测", "表征", "样品", "测试台")),
+    ("专业仿真", ("仿真", "有限元", "CFD", "流体", "多物理场", "分子模拟", "云图")),
+    ("量产或现场", ("量产", "良率", "产线", "车间", "现场工艺", "工艺验证")),
+)
 
 
 def _design_supplement(source: object) -> str:
@@ -1055,6 +1185,76 @@ def _refund_bundle_reservation(db: Session, bundle_id: str) -> None:
         reservation.updated_at = now()
 
 
+def _semantic_repair_instruction(issue: dict) -> str:
+    """Turn a located semantic error into a scoped repair instruction.
+
+    The instruction names the project and bullet so the writer fixes only the
+    affected unlocked content instead of rewriting the whole resume. It never
+    tells the writer to delete the project to make the check pass.
+    """
+    return (
+        f"[{issue.get('code')}] 项目 {issue.get('project_id')} "
+        f"要点 {','.join(issue.get('bullet_ids') or [])}：{issue.get('diagnosis')}。"
+        "只修正受影响要点，保留其他内容、经历归属与锁定项，不要删除该项目。"
+    )
+
+
+def _critic_incomplete(report: dict) -> bool:
+    """Whether a review is anything less than a complete model critique.
+
+    A partial critique (missing dimensions) is not a clean review, so the copy
+    stays degraded and the gap is recorded internally.
+    """
+    status = str(report.get("critic_status") or "")
+    return status != "complete"
+
+
+def _record_critic_completeness(
+    *, sub_report: dict, tgt_report: dict, repair_history: list[str]
+) -> None:
+    """Record reviewer completeness per version without exposing it to users."""
+    for label, report in (("submittable", sub_report), ("target", tgt_report)):
+        status = str(report.get("critic_status") or "")
+        if status == "unavailable":
+            repair_history.append(f"critic_unavailable_{label}")
+        elif status == "partial":
+            missing = ",".join(report.get("critic_missing_dimensions") or [])
+            repair_history.append(f"critic_partial_{label}:{missing or 'unknown'}")
+
+
+def _enforce_semantic_resolution(
+    *, sub_report: dict, tgt_report: dict, repair_history: list[str]
+) -> tuple[dict, dict, bool, bool]:
+    """Keep a previously located semantic error open until a re-check clears it.
+
+    A later review that is unavailable or merely scores higher does not resolve
+    an earlier contradiction. Only a fresh review that assessed the revised
+    content and no longer reports that issue clears it.
+
+    Returns the two reports plus one flag per version, so the caller can retry
+    each side with a qualified fallback before failing the whole task.
+    """
+    flags: dict[str, bool] = {}
+    for label, report in (("submittable", sub_report), ("target", tgt_report)):
+        issues = report.get("semantic_issues") or []
+        if not issues:
+            flags[label] = False
+            continue
+        status = str(report.get("critic_status") or "")
+        if status != "complete":
+            # Without a complete re-review there is no evidence the issue was
+            # fixed, so it remains open and the delivery contract fails.
+            repair_history.append(f"semantic_unresolved_{label}:review_incomplete")
+            flags[label] = True
+            continue
+        for issue in issues:
+            repair_history.append(
+                f"semantic_unresolved_{label}:{issue.get('code')}"
+            )
+        flags[label] = True
+    return sub_report, tgt_report, flags["submittable"], flags["target"]
+
+
 async def _evaluate_with_critic(*, content: dict, facts, requirements: list[dict], mode: str) -> dict:
     """Keep local delivery gates authoritative while attaching model review."""
     report = evaluate_version(content=content, facts=facts, requirements=requirements, mode=mode)
@@ -1067,6 +1267,9 @@ async def _evaluate_with_critic(*, content: dict, facts, requirements: list[dict
         "reviewer_note",
         "critic_summary",
         "critic_unavailable",
+        "critic_status",
+        "critic_missing_dimensions",
+        "semantic_issues",
         "recommendations",
         "project_reviews",
         "star_diagnostics",
@@ -1082,6 +1285,7 @@ async def _compose_pair(inputs: dict) -> dict:
     requirements = inputs["requirements"]
     job_context = inputs.get("job_context") or []
     writing_brief = build_writing_brief(facts, draft_materials, requirements, job_context)
+    writer_profile = build_writer_profile(facts, draft_materials, requirements)
     project_story_inputs = build_project_story_inputs(
         facts, draft_materials, requirements, job_context
     )
@@ -1099,6 +1303,7 @@ async def _compose_pair(inputs: dict) -> dict:
         job_context=job_context,
         writing_brief=writing_brief,
         project_story_inputs=project_story_inputs,
+        writer_profile=writer_profile,
     )
     if sub_source == "fallback" or tgt_source == "fallback":
         degraded = True
@@ -1120,22 +1325,40 @@ async def _compose_pair(inputs: dict) -> dict:
     tgt_report = await _evaluate_with_critic(
         content=target, facts=facts, requirements=requirements, mode="target"
     )
-    if sub_report.get("critic_unavailable") or tgt_report.get("critic_unavailable"):
+    _record_critic_completeness(
+        sub_report=sub_report, tgt_report=tgt_report, repair_history=repair_history
+    )
+    if _critic_incomplete(sub_report) or _critic_incomplete(tgt_report):
+        # A missing dimension or an unavailable review is recorded internally
+        # and keeps the copy at degraded. It must never be presented as a
+        # complete review or as ready.
         degraded = True
-        repair_history.append("critic_unavailable_deterministic_fallback")
     if quality_gate_enabled:
-        need_sub_repair = not sub_report["hard_passed"]
-        need_tgt_repair = not tgt_report["hard_passed"]
+        # A targeted background repair responds to local hard-gate failures and
+        # to semantic content errors the critic located on a concrete project
+        # and bullet. A low score or a style preference never triggers it.
+        sub_semantic = sub_report.get("semantic_issues") or []
+        tgt_semantic = tgt_report.get("semantic_issues") or []
+        need_sub_repair = not sub_report["hard_passed"] or bool(sub_semantic)
+        need_tgt_repair = not tgt_report["hard_passed"] or bool(tgt_semantic)
         if need_sub_repair or need_tgt_repair:
             if need_sub_repair:
+                for issue in sub_semantic:
+                    repair_history.append(f"semantic_submittable:{issue['code']}")
                 repair_history.append(
                     f"repair_submittable:{'|'.join(sub_report.get('issues') or ['content_gate_failed'])}"
                 )
             if need_tgt_repair:
+                for issue in tgt_semantic:
+                    repair_history.append(f"semantic_target:{issue['code']}")
                 repair_history.append(
                     f"repair_target:{'|'.join(tgt_report.get('issues') or ['content_gate_failed'])}"
                 )
-            repair_issues = list(sub_report.get("issues") or []) + list(tgt_report.get("issues") or [])
+            repair_issues = (
+                list(sub_report.get("issues") or [])
+                + list(tgt_report.get("issues") or [])
+                + [_semantic_repair_instruction(issue) for issue in sub_semantic + tgt_semantic]
+            )
             submittable, target, sub_repair_source, tgt_repair_source, repair_error = await _write_pair(
                 facts,
                 requirements,
@@ -1145,6 +1368,7 @@ async def _compose_pair(inputs: dict) -> dict:
                 job_context=job_context,
                 writing_brief=writing_brief,
                 project_story_inputs=project_story_inputs,
+                writer_profile=writer_profile,
                 current_submittable=submittable,
                 current_target=target,
                 repair_issues=repair_issues,
@@ -1165,11 +1389,33 @@ async def _compose_pair(inputs: dict) -> dict:
             tgt_report = await _evaluate_with_critic(
                 content=target, facts=facts, requirements=requirements, mode="target"
             )
-            if sub_report.get("critic_unavailable") or tgt_report.get("critic_unavailable"):
+            _record_critic_completeness(
+                sub_report=sub_report,
+                tgt_report=tgt_report,
+                repair_history=repair_history,
+            )
+            if _critic_incomplete(sub_report) or _critic_incomplete(tgt_report):
                 degraded = True
-                repair_history.append("critic_unavailable_deterministic_fallback")
 
-        if not sub_report["hard_passed"]:
+        # A previously located semantic error must not disappear because a
+        # later review failed or simply scored the copy higher. Without a
+        # re-check that binds to the revised content, the issue stays open.
+        (
+            sub_report,
+            tgt_report,
+            sub_semantic_open,
+            tgt_semantic_open,
+        ) = _enforce_semantic_resolution(
+            sub_report=sub_report,
+            tgt_report=tgt_report,
+            repair_history=repair_history,
+        )
+
+        # Repair ended with an open semantic error or a hard-gate failure. Fall
+        # back to the deterministic content, which must satisfy the same STAR
+        # contract; a placeholder fallback is rejected below rather than
+        # delivered as degraded.
+        if not sub_report["hard_passed"] or sub_semantic_open:
             submittable = _fallback_version(
                 facts, requirements, kind="submittable", headline=headline, contact=contact
             )
@@ -1178,7 +1424,7 @@ async def _compose_pair(inputs: dict) -> dict:
             )
             degraded = True
             repair_history.append("deterministic_submittable_fallback")
-        if not tgt_report["hard_passed"]:
+        if not tgt_report["hard_passed"] or tgt_semantic_open:
             target = _fallback_version(
                 facts, requirements, kind="target", headline=headline, contact=contact
             )
@@ -1193,6 +1439,26 @@ async def _compose_pair(inputs: dict) -> dict:
                 "status": "failed",
                 "repair_history": repair_history,
                 "error": "hard_gates_failed",
+                "submittable": submittable,
+                "target": target,
+                "sub_report": sub_report,
+                "tgt_report": tgt_report,
+                "sub_source": sub_source,
+                "tgt_source": tgt_source,
+            }
+
+        # The fallback itself still carries a located semantic error. Known
+        # unresolved content errors must block delivery even at degraded.
+        if (sub_report.get("semantic_issues") or tgt_report.get("semantic_issues")):
+            for label, report in (("submittable", sub_report), ("target", tgt_report)):
+                for issue in report.get("semantic_issues") or []:
+                    repair_history.append(
+                        f"fallback_semantic_unresolved_{label}:{issue.get('code')}"
+                    )
+            return {
+                "status": "failed",
+                "repair_history": repair_history,
+                "error": "unresolved_semantic_issues",
                 "submittable": submittable,
                 "target": target,
                 "sub_report": sub_report,
@@ -1361,6 +1627,7 @@ async def _write_pair(
     job_context: list | None = None,
     writing_brief: dict | None = None,
     project_story_inputs: list[dict] | None = None,
+    writer_profile: dict | None = None,
     current_submittable: dict | None = None,
     current_target: dict | None = None,
     repair_issues: list | None = None,
@@ -1405,6 +1672,7 @@ async def _write_pair(
                 "job_context": deepcopy(job_context or []),
                 "writing_brief": deepcopy(writing_brief or {}),
                 "project_story_inputs": deepcopy(project_story_inputs or []),
+                "writer_profile": deepcopy(writer_profile or {}),
                 "current_submittable": current_submittable,
                 "current_target": current_target,
                 "repair_issues": list(repair_issues or []),
@@ -1436,6 +1704,12 @@ async def _write_pair(
         return submittable, target, source, source, ""
     except (ProviderError, AppError, Exception) as exc:
         error = str(getattr(exc, "code", "") or type(exc).__name__)
+        # Keep the content-failure class (truncated / refused / empty / json /
+        # structure) separate from transport errors so the internal record
+        # shows whether a retry or a content repair is the right response.
+        output_kind = str(getattr(exc, "output_kind", "") or "")
+        if output_kind:
+            error = f"{error}:{output_kind}"
         if current_submittable is not None and current_target is not None:
             return (
                 validate_content(deepcopy(current_submittable)),
