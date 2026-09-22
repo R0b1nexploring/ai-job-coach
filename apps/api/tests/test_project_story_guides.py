@@ -135,6 +135,47 @@ def test_job_seeking_assembly_drops_blueprint_project_story():
     assert _project_cards_for_version(SimpleNamespace(content_json=assembled)) == []
 
 
+def test_project_card_exposes_practice_structure_and_answer_points():
+    card = _project_cards_for_version(SimpleNamespace(content_json=_content()))[0]
+    assert card["schema_version"] == 2
+    assert card["purpose"]
+    assert card["knowledge"]
+    assert card["practice_plan"]
+    assert all(step["action"] and step["artifact"] and step["check"] for step in card["practice_plan"])
+    assert card["deliverables"] == ["项目甲交付物"]
+    assert card["deliverable_check"]
+    assert card["narrative"]
+    assert card["questions"]
+    assert card["answer_points"]
+    assert "项目甲专用方法" in str(card["answer_points"])
+    assert card["achieved"] is False
+    assert card["honest_boundary"]
+    assert not any("我已经完成" in str(value) for value in card["answer_points"])
+
+
+def test_old_project_card_without_practice_fields_renders_legacy_shape():
+    from app.services.interview_guide_service import _html_project_card
+
+    old = {
+        "project_id": "alpha",
+        "title": "项目甲",
+        "bullet_ids": ["b-alpha"],
+        "main_question": "请介绍项目甲",
+        "follow_up_chains": [{"question": "第一步？", "follow_ups": ["为什么"], "intent": "确认", "answer_points": ["说明方法"]}],
+        "result_verification": "按清单检查",
+        "knowledge_preparation": ["复盘方法"],
+        "practice_steps": ["讲一遍"],
+        "honest_boundary": "不能说成已完成",
+    }
+    html = _html_project_card(old)
+    assert "项目甲" in html
+    assert "知识准备" in html
+    assert "练习步骤" in html
+    # Legacy card must not fabricate the new practice sections.
+    assert "必要知识" not in html
+    assert "操作步骤" not in html
+
+
 def test_target_assembly_keeps_versioned_design_assumptions_and_open_questions():
     payload = {
         "headline": "数据分析实习生",

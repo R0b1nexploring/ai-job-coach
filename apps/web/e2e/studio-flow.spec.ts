@@ -35,7 +35,10 @@ test('新用户从粘贴 JD 走到双轨简历、导出和两份指南', async (
   await expect(page.getByRole('link', { name: '岗位' })).toHaveCount(0)
 
   await page.getByPlaceholder(/粘贴职位描述/).fill('负责机械结构设计。\n要求熟悉 SolidWorks 并能输出装配体。')
-  await page.getByRole('button', { name: '分析这个岗位' }).click()
+  // The default first-run action saves the JD, builds the profile and queues
+  // both versions in one click; the explicit analysis stays as a secondary step.
+  await expect(page.getByRole('button', { name: /生成我的简历/ })).toBeVisible()
+  await page.getByRole('button', { name: '只分析岗位' }).click()
   await expect(page.getByText('岗位已分析，可以直接生成简历。')).toBeVisible()
   await expect(page.getByRole('heading', { name: '目标 JD' })).toBeVisible()
   await expect(page.getByRole('heading', { name: '投递入口' })).toBeVisible()
@@ -130,7 +133,10 @@ test('新用户从粘贴 JD 走到双轨简历、导出和两份指南', async (
   await expect(page.getByRole('heading', { name: '面试指南' })).toBeVisible()
   await expect(page.locator('article.guide-block').first()).toBeVisible()
   await expect(page.locator('.guide-reader main').getByText('项目 STAR 讲述').first()).toBeVisible()
-  await expect(page.locator('.guide-reader main').getByText('项目连续追问').first()).toBeVisible()
+  // New project cards render the versioned practice structure.
+  await expect(page.locator('.guide-reader main').getByText('项目用途').first()).toBeVisible()
+  await expect(page.locator('.guide-reader main').getByText('操作步骤').first()).toBeVisible()
+  await expect(page.locator('.guide-reader main').getByText('面试追问').first()).toBeVisible()
   await expect(page.getByText(/面向单 JD 岗位画像/).first()).toBeVisible()
   await expect(page.getByText(/SolidWorks|装配体建模/).first()).toBeVisible()
 

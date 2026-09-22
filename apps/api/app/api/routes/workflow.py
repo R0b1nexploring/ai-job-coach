@@ -614,6 +614,12 @@ async def update_version(
 ):
     row = owned_version(db, user, version_id)
     old_content_hash = row.content_hash
+    if row.bundle_id:
+        from app.services.bundle_service import assert_bundle_mutable
+
+        bundle = db.get(ResumeBundle, row.bundle_id)
+        if bundle is not None:
+            assert_bundle_mutable(db, bundle)
     if row.review_status == "approved":
         raise AppError(
             "RESUME_ALREADY_APPROVED",

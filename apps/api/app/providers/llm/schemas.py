@@ -313,6 +313,14 @@ class ProjectGuideCardOutput(BaseModel):
     result_verification: str = ""
     knowledge_preparation: list[str] = Field(default_factory=list)
     practice_steps: list[str] = Field(default_factory=list)
+    purpose: str = ""
+    knowledge: list[str] = Field(default_factory=list)
+    practice_plan: list[dict[str, str]] = Field(default_factory=list)
+    deliverables: list[str] = Field(default_factory=list)
+    deliverable_check: str = ""
+    narrative: list[str] = Field(default_factory=list)
+    questions: list[str] = Field(default_factory=list)
+    answer_points: list[str] = Field(default_factory=list)
     achieved: bool = False
     honest_boundary: str = ""
 

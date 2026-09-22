@@ -163,7 +163,7 @@ test('保存 JD 不会把原文写进画像 job_ids', async () => {
   )
   const user = userEvent.setup()
   await user.type(await screen.findByPlaceholderText(/粘贴职位描述/), '负责机械结构设计。\n要求熟悉 SolidWorks。')
-  await user.click(screen.getByRole('button', { name: '分析这个岗位' }))
+  await user.click(screen.getByRole('button', { name: '只分析岗位' }))
   expect(await screen.findByText('岗位已分析，可以直接生成简历。')).toBeVisible()
 })
 
@@ -318,6 +318,64 @@ test('无旧简历也可生成，并轮询 queued 状态', async () => {
   )
   expect(screen.queryByText(/待核验/)).not.toBeInTheDocument()
 })
+
+test('一次点击即可保存岗位并开始生成双版本', async () => {
+  const calls: string[] = []
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    const method = init?.method || 'GET'
+    if (url.endsWith('/api/jobs') && method === 'GET') return json({ items: [], total: 0 })
+    if (url.endsWith('/api/resumes')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/experience')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/experience-facts')) return json({ items: [], total: 0 })
+    if (url.endsWith('/api/target-profiles') && method === 'GET') return json({ items: [], total: 0 })
+    if (url.endsWith('/api/jobs/import-text')) {
+      calls.push('import')
+      return json({ id: 'j1', company_name: '示例公司', title: '机械设计工程师', raw_jd: '负责机械结构设计' })
+    }
+    if (url.endsWith('/api/target-profiles') && method === 'POST') {
+      calls.push('profile')
+      return json({ id: 'p-first', title: '机械设计工程师', mode: 'single_jd' })
+    }
+    if (url.endsWith('/api/resume-bundles') && method === 'POST') {
+      calls.push('bundle')
+      return json({ id: 'b-first', status: 'queued', versions: {}, guides: {}, can_retry: true }, 202)
+    }
+    if (url.includes('/api/resume-bundles/b-first')) {
+      return json({
+        id: 'b-first',
+        status: 'ready',
+        versions: { submittable: { id: 'v-first', kind: 'submittable', status: 'passed', content_hash: 'h' } },
+        guides: { submittable: { id: 'g-first', status: 'ready' } },
+      })
+    }
+    if (url.includes('/studio')) {
+      return json({
+        id: 'v-first', kind: 'submittable', title: '真实能力', guard_status: 'passed', content_hash: 'h',
+        quality_report_json: { status: 'passed' },
+        content_json: {
+          kind: 'submittable', factuality_policy: 'ai_expansion', headline: '机械设计工程师',
+          sections: [{ name: '项目/科研/竞赛', items: [{ bullets: [{ id: 'b1', text: '完成装配体', achieved: false, locked: false, source_fact_ids: [], verification_status: 'ai_generated' }] }] }],
+        },
+      })
+    }
+    return json({ items: [], total: 0 })
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchInterval: 10 } } })
+  render(
+    <QueryClientProvider client={client}>
+      <ResumeStudio />
+    </QueryClientProvider>,
+  )
+  const user = userEvent.setup()
+  const jd = await screen.findByPlaceholderText(/粘贴职位描述/)
+  await user.type(jd, '负责机械结构设计')
+  await user.click(screen.getByRole('button', { name: /生成我的简历/ }))
+  expect(await screen.findByText(/已保存岗位并开始生成/)).toBeVisible()
+  expect(calls).toEqual(['import', 'profile', 'bundle'])
+})
+
 
 test('模型异常后的降级版本不向用户暴露内部降级原因', async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

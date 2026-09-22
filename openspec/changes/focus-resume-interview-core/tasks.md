@@ -286,3 +286,26 @@
 - [ ] 18.5 critic与指南读取同一策略及正文，区分一般偏好与需要修复的有据错误；测试两岗位指南角度不同、无跨项目成果、无泛化卡片冒充针对性，主界面不增加诊断面板
 - [ ] 18.6 将规则版本纳入输入/request hash，已生成策略单独指纹并持久复用，策略语义纳入指南过期；测试202不等待模型、恢复不重选、旧无策略版本兼容及纯诊断/排版不使指南过期
 - [ ] 18.7 相同输入/模型配置进行旧新真实链路对照，人工核对选材、JD证据、信息密度、资源边界及两指南，保留失败/回退；运行相关与完整后端/前端测试、浏览器E2E和构建，记录命令/环境/产物/未完成项。无法证明正文与指南有可解释改善时保持未完成，不用mock/自评分代替
+
+## 19. 当前执行：低门槛首次生成与派生优化（2026-09-21）
+
+本节接续第18节收窄裁决，**不重建 `writing_strategy` 平台**；内容阶段复用现有 `build_writer_profile` + `writing_brief` + `_resource_overreach`，下文「岗位策略」均指这些现有机制。首次一次发起、素材可选；后续修改派生新包，旧稿、指南与文件保持匹配。以下新增项除注明外均待真实模型/浏览器验收，本地单测通过不等于验收。
+
+### 已实现并通过本地与真实验收（单测 + 真实 Provider + 浏览器）
+
+- [x] 19.1 基线：已合并 `origin/main`（17.1–17.5、18.1）与 S3/邀请码基础设施；迁移链为 `0012_unified_tasks → 0013_invite_codes → 0014_revision_lineage`；后端 409、前端 44、tsc/构建通过
+- [x] 19.3 指南项目卡实践结构：`schema_version=2` 的用途/知识/操作步骤(动作-产物-检查)/交付物检查/讲述框架/追问/answer_points，旧卡按旧结构渲染；后端与前端渲染均覆盖
+- [x] 19.4 ResumeBundle 追加可空 `parent_bundle_id` 与 `revision_json`，新增 `0014_add_bundle_revision_lineage`，空库/旧库升降级通过
+- [x] 19.5 `POST /api/resume-bundles/{id}/revisions`：白名单 operation、源版本/状态哈希校验、幂等重放、额度预留、立即 202；worker 支持 rephrase（另一版逐字节复制）与 retarget（独立岗位包），supplement 无有效变化返回 200 复用
+- [x] 19.6 supplement 按素材引用跟踪并同步相关两版；feedback 只改所选项目/要点；rephrase 只改所选、另一版逐字节复制；retarget 重新选材后保留父包锁定项；缺引用返回 422
+- [x] 19.7 `POST /api/resume-bundles/{id}/edits` 非 AI lock/reorder/content 同步派生、不扣额度；有子包的基线在 lock/reorder/patch/regenerate 返回 409 VERSION_CONFLICT
+- [x] 19.8 派生包经 `clone_guides_for_bundle` 绑定自身版本/哈希（语义未变 ready、变化 stale），导出按自身版本快照渲染；writer、critic 与指南共用 `writing_brief` 与资源边界
+- [x] 19.9 无变化 supplement 返回 200 复用不扣额；revision 冻结源存于 bundle 与 run，重试复用不新建包
+- [x] 19.10 首页 JD + 一次点击「生成我的简历」自动保存岗位并排队双版；「只分析岗位」保留为次操作
+- [x] 19.11 结果默认求职版；`generation_metadata_json.next_actions` 最多三条、可跳过、只说明补什么/改善哪里，工作台展示
+
+### 真实模型与浏览器验收
+
+- [x] 19.12 真实 Provider 使用虚构三类素材验证首次与后续更新，记录差异（已执行，见 `docs/section19-live-evidence-2026-09-21.md`；含 blank/sparse 的失败与回退样本）
+- [x] 19.13 完整浏览器生成/更新/切旧稿/下载两版三格式并打开两指南，PDF 物理门禁（Playwright 3 条通过；Chromium PDF 经 `inspect_pdf_bytes` 通过）
+- [x] 19.14 运行完整 pytest、Vitest、Playwright 与生产构建，交付证据（`./scripts/test.sh` 全绿）

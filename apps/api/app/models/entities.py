@@ -324,6 +324,9 @@ class ResumeBundle(Base):
     target_profile_id: Mapped[str] = mapped_column(
         ForeignKey("target_profiles.id"), index=True
     )
+    parent_bundle_id: Mapped[str | None] = mapped_column(
+        ForeignKey("resume_bundles.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     status: Mapped[str] = mapped_column(String(20), default="queued")
     facts_snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
     target_snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -331,6 +334,7 @@ class ResumeBundle(Base):
     request_hash: Mapped[str] = mapped_column(String(64), default="")
     idempotency_key: Mapped[str] = mapped_column(String(200))
     generation_metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    revision_json: Mapped[dict] = mapped_column(JSON, default=dict)
     portrait_file_key: Mapped[str] = mapped_column(String(255), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)

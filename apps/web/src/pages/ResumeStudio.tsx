@@ -50,6 +50,7 @@ type Bundle = {
     degraded_reason?: string
     quality_gate_bypassed?: boolean
     writer?: Record<string, string>
+    next_actions?: Array<{ kind?: string; title?: string; reason?: string }>
   }
 }
 type ResumeFact = {
@@ -237,6 +238,7 @@ export function ResumeStudio() {
   const [showCompare, setShowCompare] = useState(false)
   const [previousContent, setPreviousContent] = useState<StudioVersion['content_json'] | null>(null)
   const [message, setMessage] = useState('')
+  const [suggestionsDismissed, setSuggestionsDismissed] = useState(false)
   const [showExperienceForm, setShowExperienceForm] = useState(false)
   const [experienceOrganization, setExperienceOrganization] = useState('')
   const [experienceProjectType, setExperienceProjectType] = useState('课程设计')
@@ -562,6 +564,37 @@ export function ResumeStudio() {
       client.invalidateQueries({ queryKey: ['resume-bundles'] })
     },
   })
+  const firstRun = useMutation({
+    mutationFn: async () => {
+      const job = await api<Job>('/api/jobs/import-text', {
+        method: 'POST',
+        body: JSON.stringify({ raw_jd: jdText }),
+      })
+      const profile = await api<Profile>('/api/target-profiles', {
+        method: 'POST',
+        body: JSON.stringify({ mode: 'single_jd', job_ids: [job.id] }),
+      })
+      const bundle = await api<Bundle>('/api/resume-bundles', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...(selectedResume ? { base_resume_id: selectedResume } : {}),
+          target_profile_id: profile.id,
+        }),
+      })
+      return { job, profile, bundle }
+    },
+    onSuccess: ({ profile, bundle }) => {
+      setSelectedProfile(profile.id)
+      setBundleId(bundle.id)
+      setJdText('')
+      setActiveStep('resume')
+      setMessage('已保存岗位并开始生成，完成后会自动刷新。')
+      client.invalidateQueries({ queryKey: ['jobs'] })
+      client.invalidateQueries({ queryKey: ['target-profiles'] })
+      client.invalidateQueries({ queryKey: ['resume-bundle'] })
+      client.invalidateQueries({ queryKey: ['resume-bundles'] })
+    },
+  })
   const retry = useMutation({
     mutationFn: () => api<Bundle>(`/api/resume-bundles/${bundleId}/retry`, { method: 'POST' }),
     onSuccess: () => {
@@ -640,7 +673,7 @@ export function ResumeStudio() {
   }
 
   if (jobs.isLoading || resumes.isLoading) return <Loading />
-  const error = jobs.error || resumes.error || selectedResumeDetail.error || resumeFacts.error || materialFacts.error || generate.error || createProfile.error || analyzeTarget.error || createMaterial.error || saveMaterial.error || clarifyMaterial.error || confirmMaterial.error || uploadResume.error || confirmResume.error || editFact.error || confirmFact.error || answerClarifications.error || retry.error || lock.error || regenerate.error || reorder.error || undo.error || regenerateGuide.error
+  const error = jobs.error || resumes.error || selectedResumeDetail.error || resumeFacts.error || materialFacts.error || generate.error || firstRun.error || createProfile.error || analyzeTarget.error || createMaterial.error || saveMaterial.error || clarifyMaterial.error || confirmMaterial.error || uploadResume.error || confirmResume.error || editFact.error || confirmFact.error || answerClarifications.error || retry.error || lock.error || regenerate.error || reorder.error || undo.error || regenerateGuide.error
   const status = bundle.data?.status
   const degraded = status === 'degraded'
   const failed = status === 'failed'
@@ -699,6 +732,22 @@ export function ResumeStudio() {
           )}
         </div>
       )}
+      {deliverable && !suggestionsDismissed && (bundle.data?.generation_metadata_json?.next_actions?.length || 0) > 0 && (
+        <div className="mt-5 rounded-2xl border border-line bg-ink/[0.02] p-4" aria-label="下一步建议">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold">下一步建议</h2>
+            <button className="text-xs text-ink-secondary hover:text-ink" onClick={() => setSuggestionsDismissed(true)}>跳过</button>
+          </div>
+          <ul className="mt-3 space-y-2 text-sm leading-6">
+            {(bundle.data?.generation_metadata_json?.next_actions || []).slice(0, 3).map((action, index) => (
+              <li className="rounded-xl bg-ink/[0.03] px-3 py-2" key={`${action.title}-${index}`}>
+                <span className="font-medium">{action.title}</span>
+                {action.reason && <span className="text-ink-secondary">　{action.reason}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <StudioWorkspace
         steps={workspaceSteps}
@@ -725,10 +774,14 @@ export function ResumeStudio() {
           onChange={(event) => setJdText(event.target.value)}
         />
         <div className="mt-4 flex flex-wrap gap-2">
-          <button className="btn" onClick={() => jdText && analyzeTarget.mutate(jdText)} disabled={!jdText.trim() || analyzeTarget.isPending}>
-            {analyzeTarget.isPending ? '正在分析…' : '分析这个岗位'}
+          <button className="btn" onClick={() => jdText && firstRun.mutate()} disabled={!jdText.trim() || firstRun.isPending}>
+            {firstRun.isPending ? '正在生成…' : '生成我的简历'}<Icon name="chevron-right" />
+          </button>
+          <button className="btn-secondary" onClick={() => jdText && analyzeTarget.mutate(jdText)} disabled={!jdText.trim() || analyzeTarget.isPending}>
+            {analyzeTarget.isPending ? '正在分析…' : '只分析岗位'}
           </button>
         </div>
+        <p className="mt-2 text-xs text-ink-muted">上传旧简历或补充经历是可选的，可直接生成后再补充。</p>
         {(profiles.data?.items || []).length > 0 && (
           <details className="mt-5 rounded-xl border border-line bg-ink/[0.02] p-3">
             <summary className="cursor-pointer text-sm font-semibold">使用之前分析过的岗位</summary>

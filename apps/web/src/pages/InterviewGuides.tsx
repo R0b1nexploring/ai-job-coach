@@ -41,6 +41,15 @@ type ProjectGuideCard = {
   project_id: string
   title?: string
   bullet_ids?: string[]
+  schema_version?: number
+  purpose?: string
+  knowledge?: string[]
+  practice_plan?: Array<{ action?: string; artifact?: string; check?: string }>
+  deliverables?: string[]
+  deliverable_check?: string
+  narrative?: string[]
+  questions?: string[]
+  answer_points?: string[]
   star_outline?: {
     situation?: Record<string, string>
     task?: { role?: string; goal?: string; constraints?: string[] }
@@ -181,6 +190,60 @@ export function InterviewGuides() {
                   <p className="text-xs font-semibold uppercase tracking-wider text-sage">项目 STAR 讲述</p>
                   <h2 className="mt-1 text-lg font-semibold tracking-tight">{card.title || '项目故事'}</h2>
                 </div>
+                {card.schema_version === 2 ? (
+                  <>
+                    {card.purpose && <p className="rounded-xl bg-ink/[0.03] px-3 py-2 text-sm leading-6"><span className="font-medium">项目用途：</span>{card.purpose}</p>}
+                    {!!card.knowledge?.length && (
+                      <div>
+                        <h3 className="text-sm font-semibold text-sage">必要知识</h3>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">{card.knowledge.map((item) => <li key={item}>{item}</li>)}</ul>
+                      </div>
+                    )}
+                    {!!card.practice_plan?.length && (
+                      <div>
+                        <h3 className="text-sm font-semibold text-sage">操作步骤</h3>
+                        <ol className="mt-2 space-y-2 text-sm leading-6">
+                          {card.practice_plan.map((step, index) => (
+                            <li className="rounded-xl bg-ink/[0.03] px-3 py-2" key={`${step.action}-${index}`}>
+                              <span className="font-medium">{step.action || '推进项目'}</span>
+                              <p className="text-ink-secondary">预期产物：{step.artifact || '过程记录'}</p>
+                              <p className="text-ink-secondary">检查方法：{step.check || '对照目标检查'}</p>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+                    {(!!card.deliverables?.length || card.deliverable_check) && (
+                      <div>
+                        <h3 className="text-sm font-semibold text-sage">交付物与检查方法</h3>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">
+                          {(card.deliverables || []).map((item) => <li key={item}>{item}</li>)}
+                          {card.deliverable_check && <li>检查方法：{card.deliverable_check}</li>}
+                        </ul>
+                      </div>
+                    )}
+                    {!!card.narrative?.length && (
+                      <div>
+                        <h3 className="text-sm font-semibold text-sage">讲述框架</h3>
+                        <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm leading-6">{card.narrative.map((item) => <li key={item}>{item}</li>)}</ol>
+                      </div>
+                    )}
+                    {!!card.answer_points?.length && (
+                      <div>
+                        <h3 className="text-sm font-semibold text-sage">回答要点</h3>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">{card.answer_points.map((item) => <li key={item}>{item}</li>)}</ul>
+                      </div>
+                    )}
+                    {!!card.questions?.length && (
+                      <div>
+                        <h3 className="text-sm font-semibold text-sage">面试追问</h3>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">{card.questions.map((item) => <li key={item}>{item}</li>)}</ul>
+                      </div>
+                    )}
+                    {card.honest_boundary && <p className="rounded-xl bg-amber-50 px-3 py-2 text-amber-800">{card.honest_boundary}</p>}
+                  </>
+                ) : (
+                  <>
                 <div className="grid gap-2 text-sm leading-6 sm:grid-cols-2">
                   {situation.context && <p className="rounded-xl bg-ink/[0.03] px-3 py-2"><span className="font-medium">背景：</span>{situation.context}</p>}
                   {situation.problem && <p className="rounded-xl bg-ink/[0.03] px-3 py-2"><span className="font-medium">问题：</span>{situation.problem}</p>}
@@ -207,6 +270,8 @@ export function InterviewGuides() {
                 {!!card.knowledge_preparation?.length && <div><h3 className="text-sm font-semibold text-sage">知识准备</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">{card.knowledge_preparation.map((item) => <li key={item}>{item}</li>)}</ul></div>}
                 {!!card.practice_steps?.length && <div><h3 className="text-sm font-semibold text-sage">练习步骤</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">{card.practice_steps.map((item) => <li key={item}>{item}</li>)}</ul></div>}
                 {card.honest_boundary && <p className="rounded-xl bg-amber-50 px-3 py-2 text-amber-800">{card.honest_boundary}</p>}
+                  </>
+                )}
               </article>
             )
           })}

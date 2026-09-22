@@ -16,6 +16,7 @@ from app.services.quality_service import evaluate_version, report_guard_passed
 
 def lock_bullet(db: Session, user: User, version_id: str, bullet_id: str, locked: bool) -> ResumeVersion:
     version = _owned_version(db, user, version_id)
+    _assert_editable(db, version)
     content = deepcopy(version.content_json or {})
     found = False
     for _section, _item, bullet in iter_bullets(content):
@@ -36,6 +37,7 @@ def reorder_bullet(
 ) -> ResumeVersion:
     """Move one bullet within its experience while re-running v3 gates."""
     version = _owned_version(db, user, version_id)
+    _assert_editable(db, version)
     content = deepcopy(version.content_json or {})
     found = False
     for _section, item, _bullet in iter_bullets(content):
@@ -63,6 +65,17 @@ def _owned_version(db: Session, user: User, version_id: str) -> ResumeVersion:
     if not version:
         raise AppError("RESUME_VERSION_NOT_FOUND", "简历版本不存在。", 404)
     return version
+
+
+def _assert_editable(db: Session, version: ResumeVersion) -> None:
+    if not version.bundle_id:
+        return
+    bundle = db.get(ResumeBundle, version.bundle_id)
+    if bundle is None:
+        return
+    from app.services.bundle_service import assert_bundle_mutable
+
+    assert_bundle_mutable(db, bundle)
 
 
 def _persist_local_edit(

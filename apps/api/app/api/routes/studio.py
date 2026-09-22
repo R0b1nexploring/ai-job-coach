@@ -1,7 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, Query
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,6 +13,8 @@ from app.errors import AppError
 from app.models.entities import ResumeBundle, ResumeVersion, TargetProfile, User
 from app.services.bundle_service import (
     create_bundle,
+    create_revision,
+    derive_local_edit,
     dump_bundle,
     owned_bundle,
     process_bundle,
@@ -180,6 +182,88 @@ async def create_resume_bundle(
     db.commit()
     db.refresh(bundle)
     return dump_bundle(db, bundle)
+
+
+class RevisionSelected(BaseModel):
+    kind: str | None = None
+    project_id: str | None = None
+    bullet_id: str | None = None
+
+
+class RevisionIn(BaseModel):
+    operation: str
+    source_version_hashes: dict[str, str] | None = None
+    source_state_hash: str | None = None
+    selected: RevisionSelected | None = None
+    feedback: str | None = None
+    material_ids: list[str] | None = None
+    target_profile_id: str | None = None
+
+
+@router.post("/resume-bundles/{bundle_id}/revisions", status_code=202)
+async def create_resume_bundle_revision(
+    bundle_id: str,
+    data: RevisionIn,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    child = create_revision(
+        db,
+        user,
+        bundle_id,
+        operation=data.operation,
+        source_version_hashes=data.source_version_hashes,
+        source_state_hash=data.source_state_hash,
+        selected=data.selected.model_dump(exclude_none=True) if data.selected else {},
+        feedback=data.feedback,
+        material_ids=data.material_ids,
+        target_profile_id=data.target_profile_id,
+        idempotency_key=idempotency_key,
+    )
+    if child is None:
+        parent = owned_bundle(db, user, bundle_id)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "unchanged",
+                "message": "没有检测到需要更新的内容，已返回当前版本。",
+                "bundle": dump_bundle(db, parent),
+            },
+        )
+    db.commit()
+    db.refresh(child)
+    return dump_bundle(db, child)
+
+
+class EditIn(BaseModel):
+    operation: Literal["lock", "reorder", "content"]
+    version_kind: Literal["submittable", "target"]
+    bullet_id: str | None = None
+    direction: Literal["up", "down"] | None = None
+    content: dict | None = None
+
+
+@router.post("/resume-bundles/{bundle_id}/edits", status_code=201)
+async def derive_resume_bundle_edit(
+    bundle_id: str,
+    data: EditIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    child = derive_local_edit(
+        db,
+        user,
+        bundle_id,
+        version_kind=data.version_kind,
+        operation=data.operation,
+        bullet_id=data.bullet_id,
+        direction=data.direction,
+        content=data.content,
+    )
+    db.commit()
+    db.refresh(child)
+    return dump_bundle(db, child)
 
 
 @router.post("/resume-bundles/{bundle_id}/retry", status_code=202)

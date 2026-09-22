@@ -1729,3 +1729,63 @@ def test_guide_download_includes_follow_ups_and_story(client, db):
     assert "六段式讲法" in page.text
     assert "核验材料" in page.text
     assert "90 秒自我介绍" in page.text
+
+
+def test_generation_metadata_exposes_at_most_three_skippable_suggestions(client, db):
+    _user, resume, profile = setup_bundle(client, db)
+    _created, bundle = process_created_bundle(
+        client,
+        {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+        "bundle-next-actions",
+    )
+    actions = bundle["generation_metadata_json"].get("next_actions")
+    assert isinstance(actions, list)
+    assert 0 < len(actions) <= 3
+    for action in actions:
+        assert action.get("title")
+        assert action.get("reason")
+        # Suggestions describe what to add, never a score or ability level.
+        assert "score" not in action
+        assert "grade" not in action
+
+
+def test_guides_consume_the_shared_writing_brief(client, db, monkeypatch):
+    captured = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        payload = json.loads(body["messages"][1]["content"])
+        if "writing_brief" in payload and "bullets" in payload and "profile_title" in payload:
+            captured.append(payload)
+            return _structured_llm_response(
+                {
+                    "kind": payload.get("kind") or "submittable",
+                    "cards": [],
+                    "project_cards": [],
+                    "self_intro_60s": "",
+                    "self_intro_90s": "",
+                    "jd_questions": [],
+                    "motivation": "",
+                    "questions_to_ask": [],
+                    "checklist": [],
+                }
+            )
+        written = _resume_copy_response(payload)
+        if written is not None:
+            return written
+        if "hard_passed" in payload:
+            return _structured_llm_response({"dimensions": {}, "summary": "ok"})
+        return _structured_llm_response({"kind": payload.get("kind") or "submittable", "cards": []})
+
+    _install_compatible_provider(monkeypatch, handler)
+    _user, resume, profile = setup_bundle(client, db)
+    _created, bundle = process_created_bundle(
+        client,
+        {"base_resume_id": resume["id"], "target_profile_id": profile["id"]},
+        "bundle-guide-strategy",
+    )
+    assert bundle["guides"]
+    assert captured, "guides must receive the shared writing brief and resource boundary"
+    for payload in captured:
+        assert payload["writing_brief"]["selected_materials"] or payload["writing_brief"]["per_job"]
+        assert "forbidden" in payload["resource_boundary"]

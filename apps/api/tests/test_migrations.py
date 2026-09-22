@@ -44,6 +44,7 @@ REVISION_CHAIN = (
     ("0011_add_persistent_resume_task_fields", "0010_add_resume_bundles_and_interview_guides"),
     ("0012_add_unified_tasks", "0011_add_persistent_resume_task_fields"),
     ("0013_add_invite_codes", "0012_add_unified_tasks"),
+    ("0014_add_bundle_revision_lineage", "0013_add_invite_codes"),
 )
 
 
@@ -250,6 +251,10 @@ def _assert_revision_effect(revision: str, database_path: Path) -> None:
             "expires_at",
             "revoked_at",
         } <= _column_names(database_path, "invite_codes")
+    elif revision == "0014_add_bundle_revision_lineage":
+        assert {"parent_bundle_id", "revision_json"} <= _column_names(
+            database_path, "resume_bundles"
+        )
 
 
 @pytest.mark.parametrize(("revision", "parent"), REVISION_CHAIN)

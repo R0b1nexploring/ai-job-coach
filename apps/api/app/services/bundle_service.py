@@ -38,6 +38,7 @@ from app.providers.llm.schemas import (
 from app.services.content_contract import (
     content_fingerprint,
     iter_bullets,
+    iter_project_stories,
     new_bullet_id,
     normalize_bullet,
     validate_content,
@@ -133,12 +134,19 @@ def dump_bundle(db: Session, bundle: ResumeBundle) -> dict:
     )
     run = db.get(ResumeBundleRun, bundle.id)
     status = _effective_bundle_status(bundle, run)
+    revision = bundle.revision_json or {}
+    state = bundle_source_state(db, bundle) if status in {"ready", "degraded"} else {}
     return {
         "id": bundle.id,
         "status": status,
         "base_resume_id": bundle.base_resume_id,
         "target_profile_id": bundle.target_profile_id,
+        "parent_bundle_id": bundle.parent_bundle_id,
+        "revision_operation": revision.get("operation") or "",
+        "change_summary": revision.get("change_summary") or "",
         "request_hash": bundle.request_hash,
+        "source_version_hashes": state.get("source_version_hashes") or revision.get("source_version_hashes") or {},
+        "source_state_hash": state.get("source_state_hash") or "",
         "generation_metadata_json": bundle.generation_metadata_json,
         "template_snapshot_json": {
             key: value
@@ -502,6 +510,54 @@ def build_writer_profile(
     }
 
 
+def build_next_actions(writing_brief: dict, writer_profile: dict) -> list[dict]:
+    """Derive at most three optional, skippable next steps from the same brief.
+
+    Suggestions describe what to add and where to improve; they never expose a
+    score or an ability level.
+    """
+    selected = [
+        row
+        for row in (writing_brief or {}).get("selected_materials") or []
+        if isinstance(row, dict)
+    ]
+    actions: list[dict] = []
+    if not selected:
+        actions.append(
+            {
+                "kind": "guide",
+                "title": "查看这个项目怎么做",
+                "reason": "从第一个可检查的步骤开始，完成后再把过程和产物补充到经历里。",
+            }
+        )
+    for row in selected[:2]:
+        title = str(row.get("title") or "这段经历")
+        reason = str(
+            row.get("reason")
+            or row.get("angle")
+            or "补充本人承担的部分，让这段经历更可信。"
+        )
+        actions.append(
+            {
+                "kind": "material",
+                "material_id": str(row.get("id") or ""),
+                "title": f"补充「{title}」的个人贡献与验证过程",
+                "reason": reason,
+            }
+        )
+    boundary = (writer_profile or {}).get("resource_boundary") or {}
+    evidence = [str(value) for value in boundary.get("evidence_required") or []]
+    if evidence:
+        actions.append(
+            {
+                "kind": "resource",
+                "title": "确认可用的资源与数据来源",
+                "reason": evidence[0],
+            }
+        )
+    return actions[:3]
+
+
 # Software and equipment names a student commonly already has access to. Used
 # only to echo the candidate's own words back into the prompt; absence here is
 # not a claim about the candidate.
@@ -814,6 +870,466 @@ def create_bundle(
     return bundle
 
 
+REVISION_OPERATIONS = frozenset({"supplement", "feedback", "rephrase", "retarget"})
+
+
+def bundle_source_state(db: Session, bundle: ResumeBundle) -> dict:
+    """Hash the delivered source so a revision can reject a changed baseline."""
+    versions = list(
+        db.scalars(select(ResumeVersion).where(ResumeVersion.bundle_id == bundle.id))
+    )
+    version_hashes: dict[str, str] = {}
+    locked_state: dict[str, list[str]] = {}
+    order_state: dict[str, list[str]] = {}
+    template_state: dict[str, dict] = {}
+    for version in versions:
+        version_hashes[version.kind] = version.content_hash or content_fingerprint(
+            version.content_json or {}
+        )
+        locked: list[str] = []
+        order: list[str] = []
+        for _section, _item, bullet in iter_bullets(version.content_json or {}):
+            bullet_id = str(bullet.get("id") or "")
+            order.append(bullet_id)
+            if bullet.get("locked"):
+                locked.append(bullet_id)
+        locked_state[version.kind] = locked
+        order_state[version.kind] = order
+        template_state[version.kind] = deepcopy(version.template_snapshot_json or {})
+    return {
+        "source_version_hashes": version_hashes,
+        "source_state_hash": request_fingerprint(
+            {
+                "operation": "resume_bundle.revision_state",
+                "version_hashes": version_hashes,
+                "locked": locked_state,
+                "order": order_state,
+                "template": template_state,
+            }
+        ),
+    }
+
+
+def _revision_request_hash(
+    *,
+    parent_id: str,
+    operation: str,
+    selected: dict,
+    feedback: str,
+    material_ids: list[str],
+    target_profile_id: str,
+    source_state_hash: str,
+) -> str:
+    return request_fingerprint(
+        {
+            "operation": "resume_bundle.revision",
+            "parent_id": parent_id,
+            "intent": operation,
+            "selected": selected,
+            "feedback": feedback,
+            "material_ids": material_ids,
+            "target_profile_id": target_profile_id,
+            "source_state_hash": source_state_hash,
+        }
+    )
+
+
+def _revision_selected_version(
+    db: Session, parent: ResumeBundle, selected: dict
+) -> tuple[ResumeVersion, dict]:
+    kind = str((selected or {}).get("kind") or "")
+    if kind not in {"submittable", "target"}:
+        raise AppError("REVISION_SELECTION_INVALID", "请选择要修改的版本。", 422)
+    version = db.scalar(
+        select(ResumeVersion).where(
+            ResumeVersion.bundle_id == parent.id, ResumeVersion.kind == kind
+        )
+    )
+    if version is None:
+        raise AppError("REVISION_SELECTION_INVALID", "所选版本不存在。", 422)
+    bullet_id = str((selected or {}).get("bullet_id") or "")
+    project_id = str((selected or {}).get("project_id") or "")
+    content = version.content_json or {}
+    if bullet_id:
+        for _section, _item, bullet in iter_bullets(content):
+            if bullet.get("id") == bullet_id:
+                if bullet.get("locked"):
+                    raise AppError("RESUME_BULLET_LOCKED", "已锁定要点不能修改。", 409)
+                return version, {"kind": kind, "bullet_id": bullet_id}
+        raise AppError("REVISION_SELECTION_INVALID", "所选要点不存在。", 422)
+    if project_id:
+        for _section, item, story in iter_project_stories(content):
+            if str(story.get("project_id") or "") == project_id:
+                return version, {
+                    "kind": kind,
+                    "project_id": project_id,
+                    "bullet_ids": [str(value) for value in story.get("bullet_ids") or []],
+                }
+        raise AppError("REVISION_SELECTION_INVALID", "所选项目不存在。", 422)
+    raise AppError("REVISION_SELECTION_INVALID", "请选择要修改的项目或要点。", 422)
+
+
+def create_revision(
+    db: Session,
+    user: User,
+    parent_id: str,
+    *,
+    operation: str,
+    source_version_hashes: dict | None = None,
+    source_state_hash: str | None = None,
+    selected: dict | None = None,
+    feedback: str | None = None,
+    material_ids: list[str] | None = None,
+    target_profile_id: str | None = None,
+    idempotency_key: str | None = None,
+) -> ResumeBundle | None:
+    """Create an immutable derived bundle for a targeted optimization.
+
+    Returns ``None`` when the request carries no effective change, which the
+    route reports as a 200 reuse of the existing bundle.
+    """
+    operation = str(operation or "").strip()
+    if operation not in REVISION_OPERATIONS:
+        raise AppError("REVISION_OPERATION_INVALID", "不支持的优化类型。", 422)
+    parent = owned_bundle(db, user, parent_id)
+    if parent.status not in {"ready", "degraded"}:
+        raise AppError("RESUME_BUNDLE_NOT_READY", "简历包尚未生成完成，暂时不能优化。", 409)
+    current = bundle_source_state(db, parent)
+    if source_version_hashes and dict(source_version_hashes) != current["source_version_hashes"]:
+        raise AppError("VERSION_CONFLICT", "来源版本已变化，请刷新后重试。", 409)
+    if source_state_hash and str(source_state_hash) != current["source_state_hash"]:
+        raise AppError("VERSION_CONFLICT", "来源内容已变化，请刷新后重试。", 409)
+
+    feedback_text = str(feedback or "").strip()[:2000]
+    selected_ref: dict = {}
+    profile = None
+    if operation == "retarget":
+        if not str(target_profile_id or "").strip():
+            raise AppError("REVISION_TARGET_REQUIRED", "换岗位优化需要新的目标画像。", 422)
+        profile = owned_profile(db, user, str(target_profile_id))
+        refresh_profile_if_sources_changed(db, profile)
+    else:
+        _version, selected_ref = _revision_selected_version(db, parent, selected or {})
+        if operation == "feedback" and not feedback_text:
+            raise AppError("REVISION_FEEDBACK_REQUIRED", "请填写具体反馈。", 422)
+        if operation == "supplement" and not material_ids and not feedback_text:
+            return None
+
+    payload_hash = _revision_request_hash(
+        parent_id=parent.id,
+        operation=operation,
+        selected=selected_ref,
+        feedback=feedback_text,
+        material_ids=[str(value) for value in material_ids or []],
+        target_profile_id=str(target_profile_id or ""),
+        source_state_hash=current["source_state_hash"],
+    )
+    key = (idempotency_key or "").strip() or f"resume-bundle-revision:{user.id}:{parent.id}:{payload_hash}"
+    existing = db.scalar(
+        select(ResumeBundle).where(
+            ResumeBundle.user_id == user.id,
+            ResumeBundle.idempotency_key == key,
+        )
+    )
+    if existing:
+        if existing.request_hash and existing.request_hash != payload_hash:
+            raise AppError(
+                "IDEMPOTENCY_CONFLICT", "同一幂等键不能用于不同的优化请求。", 409
+            )
+        return _reconcile_bundle_run(db, existing)
+
+    active = db.scalar(
+        select(ResumeBundle.id)
+        .where(
+            ResumeBundle.user_id == user.id,
+            ResumeBundle.status.in_(["queued", "generating"]),
+        )
+        .limit(1)
+    )
+    if active:
+        raise AppError(
+            "AI_TASK_IN_PROGRESS",
+            "已有简历任务正在处理中，请等待完成后再提交。",
+            409,
+        )
+
+    resume = resolve_generation_resume(db, user, parent.base_resume_id)
+    facts = confirmed_facts_for_generation(db, user, resume)
+    draft_materials = draft_materials_for_generation(db, user)
+    target_snapshot = deepcopy(parent.target_snapshot_json or {})
+    if operation == "retarget":
+        target_snapshot = deepcopy(profile.snapshot_json or {})
+        target_snapshot["title"] = profile.title
+        resolved_profile_id = profile.id
+    else:
+        resolved_profile_id = parent.target_profile_id
+    sources = list_profile_sources(db, resolved_profile_id)
+    headline = target_snapshot.get("title") or "目标岗位"
+    input_snapshot = {
+        "facts": [_fact_input(fact) for fact in facts],
+        "draft_materials": draft_materials,
+        "contact": deepcopy(resume.contact_json or {}),
+        "headline": headline,
+        "job_id": sources[0].job_id if len(sources) == 1 else None,
+    }
+    parent_versions = list(
+        db.scalars(select(ResumeVersion).where(ResumeVersion.bundle_id == parent.id))
+    )
+    revision = {
+        "schema_version": 1,
+        "operation": operation,
+        "parent_bundle_id": parent.id,
+        "source_version_hashes": current["source_version_hashes"],
+        "source_state_hash": current["source_state_hash"],
+        "selected": selected_ref,
+        "feedback": feedback_text,
+        "material_ids": [str(value) for value in material_ids or []][:50],
+        "target_profile_id": resolved_profile_id if operation == "retarget" else "",
+        "frozen_source": {
+            version.kind: deepcopy(version.content_json or {}) for version in parent_versions
+        },
+    }
+    bundle_id = uid()
+    ledger = change(
+        db,
+        user_id=user.id,
+        quota_type="resume",
+        delta=-1,
+        reason="针对性优化简历包",
+        idempotency_key=key,
+        reference_type="resume_bundle",
+        reference_id=bundle_id,
+        request_hash=payload_hash,
+    )
+    if not was_created(ledger) and ledger.reference_id:
+        reused = db.get(ResumeBundle, ledger.reference_id)
+        if reused:
+            return _reconcile_bundle_run(db, reused)
+    if not was_created(ledger):
+        raise AppError(
+            "IDEMPOTENCY_RESULT_UNAVAILABLE",
+            "相同请求仍在处理中，请稍后使用同一幂等键重试。",
+            409,
+        )
+    bundle = ResumeBundle(
+        id=bundle_id,
+        user_id=user.id,
+        base_resume_id=resume.id,
+        target_profile_id=resolved_profile_id,
+        parent_bundle_id=parent.id,
+        status="queued",
+        facts_snapshot_json={"ids": [fact.id for fact in facts], **input_snapshot},
+        target_snapshot_json=target_snapshot,
+        template_snapshot_json=deepcopy(parent.template_snapshot_json or template_snapshot()),
+        request_hash=payload_hash,
+        idempotency_key=key,
+        revision_json=revision,
+        generation_metadata_json={
+            "profile_version": getattr(profile, "version", parent.generation_metadata_json.get("profile_version")),
+            "revision_operation": operation,
+            "parent_bundle_id": parent.id,
+        },
+    )
+    db.add(bundle)
+    db.flush()
+    db.add(
+        QuotaReservation(
+            ledger_id=ledger.id,
+            user_id=user.id,
+            quota_type=ledger.quota_type,
+            amount=-ledger.delta,
+            resource_type="resume_bundle",
+            resource_id=bundle.id,
+        )
+    )
+    db.add(
+        ResumeBundleRun(
+            bundle_id=bundle.id,
+            user_id=user.id,
+            status="queued",
+            phase="queued",
+            request_hash=payload_hash,
+            input_snapshot_json={
+                "facts": input_snapshot["facts"],
+                "target": target_snapshot,
+                "contact": input_snapshot["contact"],
+                "headline": input_snapshot["headline"],
+                "job_id": input_snapshot["job_id"],
+                "revision": revision,
+            },
+            max_attempts=MAX_BUNDLE_ATTEMPTS,
+        )
+    )
+    db.flush()
+    return bundle
+
+
+LOCAL_EDIT_OPERATIONS = frozenset({"lock", "reorder", "content"})
+
+
+def bundle_has_children(db: Session, bundle_id: str) -> bool:
+    return (
+        db.scalar(
+            select(ResumeBundle.id)
+            .where(ResumeBundle.parent_bundle_id == bundle_id)
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def assert_bundle_mutable(db: Session, bundle: ResumeBundle) -> None:
+    """A bundle that already has descendants is a frozen historical baseline."""
+    if bundle_has_children(db, bundle.id):
+        raise AppError(
+            "VERSION_CONFLICT",
+            "该版本已作为历史基线，请派生新版本后再修改。",
+            409,
+        )
+
+
+def derive_local_edit(
+    db: Session,
+    user: User,
+    bundle_id: str,
+    *,
+    version_kind: str,
+    operation: str,
+    bullet_id: str | None = None,
+    direction: str | None = None,
+    content: dict | None = None,
+) -> ResumeBundle:
+    """Derive a child bundle for a non-AI lock/reorder/content edit.
+
+    No model call and no AI quota are consumed; the edited version is derived
+    so the delivered parent stays immutable.
+    """
+    operation = str(operation or "").strip()
+    if operation not in LOCAL_EDIT_OPERATIONS:
+        raise AppError("RESUME_EDIT_OPERATION_INVALID", "不支持的编辑类型。", 422)
+    parent = owned_bundle(db, user, bundle_id)
+    if parent.status not in {"ready", "degraded"}:
+        raise AppError("RESUME_BUNDLE_NOT_READY", "简历包尚未生成完成。", 409)
+    versions = {
+        version.kind: version
+        for version in db.scalars(
+            select(ResumeVersion).where(ResumeVersion.bundle_id == parent.id)
+        )
+    }
+    source = versions.get(version_kind)
+    if source is None:
+        raise AppError("RESUME_VERSION_NOT_FOUND", "简历版本不存在。", 404)
+    edited = deepcopy(source.content_json or {})
+    if operation == "lock":
+        found = False
+        for _section, _item, bullet in iter_bullets(edited):
+            if bullet.get("id") == bullet_id:
+                bullet["locked"] = True
+                found = True
+        if not found:
+            raise AppError("RESUME_BULLET_NOT_FOUND", "要点不存在。", 404)
+    elif operation == "reorder":
+        found = False
+        for _section, item, _bullet in iter_bullets(edited):
+            bullets = item.get("bullets") or []
+            index = next(
+                (i for i, row in enumerate(bullets) if row.get("id") == bullet_id), None
+            )
+            if index is None:
+                continue
+            target = index - 1 if direction == "up" else index + 1
+            if direction not in {"up", "down"} or target < 0 or target >= len(bullets):
+                raise AppError("RESUME_BULLET_EDGE", "该要点已经在当前位置。", 409)
+            bullets[index], bullets[target] = bullets[target], bullets[index]
+            found = True
+            break
+        if not found:
+            raise AppError("RESUME_BULLET_NOT_FOUND", "要点不存在。", 404)
+    elif operation == "content":
+        if not isinstance(content, dict):
+            raise AppError("RESUME_CONTENT_INVALID", "缺少有效的简历内容。", 422)
+        edited = deepcopy(content)
+    if int(edited.get("content_version") or 0) >= 3:
+        edited = validate_content(edited)
+
+    inputs = _generation_inputs(db, parent)
+    facts = inputs["facts"]
+    requirements = inputs["requirements"]
+    source_state = bundle_source_state(db, parent)
+    child_id = uid()
+    revision = {
+        "schema_version": 1,
+        "operation": operation,
+        "parent_bundle_id": parent.id,
+        "source_version_hashes": source_state["source_version_hashes"],
+        "source_state_hash": source_state["source_state_hash"],
+        "selected": {"kind": version_kind, "bullet_id": bullet_id or ""},
+        "feedback": "",
+        "material_ids": [],
+        "target_profile_id": "",
+        "change_summary": "已派生新版本，旧版本保持不变。",
+    }
+    child = ResumeBundle(
+        id=child_id,
+        user_id=user.id,
+        base_resume_id=parent.base_resume_id,
+        target_profile_id=parent.target_profile_id,
+        parent_bundle_id=parent.id,
+        status="ready",
+        facts_snapshot_json=deepcopy(parent.facts_snapshot_json or {}),
+        target_snapshot_json=deepcopy(parent.target_snapshot_json or {}),
+        template_snapshot_json=deepcopy(parent.template_snapshot_json or {}),
+        request_hash=request_fingerprint(
+            {
+                "operation": "resume_bundle.local_edit",
+                "parent_id": parent.id,
+                "version_kind": version_kind,
+                "edit": operation,
+                "source_state_hash": source_state["source_state_hash"],
+            }
+        ),
+        idempotency_key=f"resume-bundle-edit:{child_id}",
+        revision_json=revision,
+        generation_metadata_json={
+            "revision_operation": operation,
+            "parent_bundle_id": parent.id,
+            "local_edit": True,
+        },
+    )
+    db.add(child)
+    db.flush()
+    blocked = False
+    for kind in ("submittable", "target"):
+        source_version = versions.get(kind)
+        if source_version is None:
+            continue
+        kind_content = (
+            edited if kind == version_kind else deepcopy(source_version.content_json or {})
+        )
+        report = evaluate_version(
+            content=kind_content, facts=facts, requirements=requirements, mode=kind
+        )
+        if not report_guard_passed(report):
+            blocked = True
+        _upsert_version(
+            db,
+            child,
+            kind=kind,
+            content=kind_content,
+            report=report,
+            job_id=source_version.job_id,
+            snapshot=child.template_snapshot_json,
+            repair_history=[f"local_{operation}"],
+        )
+    if blocked:
+        child.status = "failed"
+    from app.services.interview_guide_service import clone_guides_for_bundle
+
+    clone_guides_for_bundle(db, parent, child)
+    db.flush()
+    return child
+
+
 def claim_bundle_run(db: Session, bundle_id: str, *, stale_after: timedelta | None = None) -> str | None:
     """Atomically claim a queued or stale generating run. Returns claim token or None."""
     token = uid()
@@ -938,7 +1454,11 @@ async def process_bundle(db: Session, bundle_id: str) -> ResumeBundle | None:
     db.commit()
     heartbeat_task = asyncio.create_task(_heartbeat_loop(db, bundle_id, token))
     try:
-        result = await _compose_pair(inputs)
+        operation = str((inputs.get("revision") or {}).get("operation") or "")
+        if operation:
+            result = await _process_revision(db, bundle, inputs)
+        else:
+            result = await _compose_pair(inputs)
     except Exception as exc:
         heartbeat_task.cancel()
         await _cancel_task(heartbeat_task)
@@ -1080,6 +1600,7 @@ def _generation_inputs(db: Session, bundle: ResumeBundle) -> dict:
     )
     return {
         "bundle_id": bundle.id,
+        "revision": task_snapshot.get("revision") or bundle.revision_json or {},
         "facts": facts,
         "draft_materials": list(snapshot.get("draft_materials") or task_snapshot.get("draft_materials") or []),
         "requirements": list(target_snapshot.get("requirements") or []),
@@ -1255,11 +1776,15 @@ def _enforce_semantic_resolution(
     return sub_report, tgt_report, flags["submittable"], flags["target"]
 
 
-async def _evaluate_with_critic(*, content: dict, facts, requirements: list[dict], mode: str) -> dict:
+async def _evaluate_with_critic(
+    *, content: dict, facts, requirements: list[dict], mode: str,
+    writing_brief: dict | None = None, resource_boundary: dict | None = None,
+) -> dict:
     """Keep local delivery gates authoritative while attaching model review."""
     report = evaluate_version(content=content, facts=facts, requirements=requirements, mode=mode)
     critic_report = await evaluate_version_with_critic(
-        content=content, facts=facts, requirements=requirements, mode=mode
+        content=content, facts=facts, requirements=requirements, mode=mode,
+        writing_brief=writing_brief, resource_boundary=resource_boundary,
     )
     for key in (
         "dimensions",
@@ -1286,6 +1811,10 @@ async def _compose_pair(inputs: dict) -> dict:
     job_context = inputs.get("job_context") or []
     writing_brief = build_writing_brief(facts, draft_materials, requirements, job_context)
     writer_profile = build_writer_profile(facts, draft_materials, requirements)
+    strategy_kwargs = {
+        "writing_brief": writing_brief,
+        "resource_boundary": writer_profile.get("resource_boundary") or {},
+    }
     project_story_inputs = build_project_story_inputs(
         facts, draft_materials, requirements, job_context
     )
@@ -1320,10 +1849,12 @@ async def _compose_pair(inputs: dict) -> dict:
         )
 
     sub_report = await _evaluate_with_critic(
-        content=submittable, facts=facts, requirements=requirements, mode="submittable"
+        content=submittable, facts=facts, requirements=requirements, mode="submittable",
+        **strategy_kwargs,
     )
     tgt_report = await _evaluate_with_critic(
-        content=target, facts=facts, requirements=requirements, mode="target"
+        content=target, facts=facts, requirements=requirements, mode="target",
+        **strategy_kwargs,
     )
     _record_critic_completeness(
         sub_report=sub_report, tgt_report=tgt_report, repair_history=repair_history
@@ -1384,10 +1915,12 @@ async def _compose_pair(inputs: dict) -> dict:
                 if repair_error:
                     repair_history.append(f"repair_target_fallback:{repair_error}")
             sub_report = await _evaluate_with_critic(
-                content=submittable, facts=facts, requirements=requirements, mode="submittable"
+                content=submittable, facts=facts, requirements=requirements, mode="submittable",
+                **strategy_kwargs,
             )
             tgt_report = await _evaluate_with_critic(
-                content=target, facts=facts, requirements=requirements, mode="target"
+                content=target, facts=facts, requirements=requirements, mode="target",
+                **strategy_kwargs,
             )
             _record_critic_completeness(
                 sub_report=sub_report,
@@ -1420,7 +1953,8 @@ async def _compose_pair(inputs: dict) -> dict:
                 facts, requirements, kind="submittable", headline=headline, contact=contact
             )
             sub_report = await _evaluate_with_critic(
-                content=submittable, facts=facts, requirements=requirements, mode="submittable"
+                content=submittable, facts=facts, requirements=requirements, mode="submittable",
+                **strategy_kwargs,
             )
             degraded = True
             repair_history.append("deterministic_submittable_fallback")
@@ -1429,7 +1963,8 @@ async def _compose_pair(inputs: dict) -> dict:
                 facts, requirements, kind="target", headline=headline, contact=contact
             )
             tgt_report = await _evaluate_with_critic(
-                content=target, facts=facts, requirements=requirements, mode="target"
+                content=target, facts=facts, requirements=requirements, mode="target",
+                **strategy_kwargs,
             )
             degraded = True
             repair_history.append("deterministic_target_fallback")
@@ -1488,6 +2023,8 @@ async def _compose_pair(inputs: dict) -> dict:
     return {
         "status": status,
         "repair_history": repair_history,
+        "writing_brief": writing_brief,
+        "writer_profile": writer_profile,
         "submittable": submittable,
         "target": target,
         "sub_report": sub_report,
@@ -1506,6 +2043,192 @@ async def _compose_pair(inputs: dict) -> dict:
             ]
             if reason
         ),
+        "job_id": inputs.get("job_id"),
+        "snapshot": inputs.get("snapshot") or template_snapshot(),
+    }
+
+
+def _bullet_locked(content: dict, bullet_id: str) -> bool:
+    return any(
+        bullet.get("id") == bullet_id and bullet.get("locked")
+        for _section, _item, bullet in iter_bullets(content)
+    )
+
+
+async def _restore_parent_locked(db: Session, bundle: ResumeBundle, result: dict, *, facts, requirements) -> None:
+    """Keep the parent's locked bullets in a regenerated (retarget) child."""
+    if not bundle.parent_bundle_id:
+        return
+    parent_versions = list(
+        db.scalars(
+            select(ResumeVersion).where(
+                ResumeVersion.bundle_id == bundle.parent_bundle_id
+            )
+        )
+    )
+    for version in parent_versions:
+        content = result.get(version.kind)
+        if not content:
+            continue
+        locked_ids = {
+            str(bullet.get("id"))
+            for _section, _item, bullet in iter_bullets(version.content_json or {})
+            if bullet.get("locked")
+        }
+        if not locked_ids:
+            continue
+        merged = _merge_locked(content, version.content_json or {}, locked_ids)
+        if merged == content:
+            continue
+        report = await _evaluate_with_critic(
+            content=merged, facts=facts, requirements=requirements, mode=version.kind,
+            writing_brief=(bundle.generation_metadata_json or {}).get("writing_brief") or {},
+            resource_boundary=((bundle.generation_metadata_json or {}).get("writer_profile") or {}).get("resource_boundary") or {},
+        )
+        result[version.kind] = merged
+        if version.kind == "submittable":
+            result["sub_report"] = report
+            result["sub_source"] = "locked_merged"
+        else:
+            result["tgt_report"] = report
+            result["tgt_source"] = "locked_merged"
+
+
+async def _process_revision(db: Session, bundle: ResumeBundle, inputs: dict) -> dict:
+    """Apply a targeted revision to a frozen parent snapshot.
+
+    Unaffected versions and bullets are inherited byte-for-byte. Only the
+    selected, unlocked reference is rewritten; a locked reference is preserved
+    and reported instead of silently moved or duplicated.
+    """
+    revision = inputs.get("revision") or {}
+    operation = str(revision.get("operation") or "")
+    frozen = revision.get("frozen_source") or {}
+    facts = inputs["facts"]
+    requirements = inputs["requirements"]
+    parent = db.get(ResumeBundle, bundle.parent_bundle_id) if bundle.parent_bundle_id else None
+    parent_meta = (parent.generation_metadata_json or {}) if parent is not None else {}
+    writing_brief = inputs.get("writing_brief") or parent_meta.get("writing_brief") or {}
+    writer_profile = parent_meta.get("writer_profile") or {}
+    strategy_kwargs = {
+        "writing_brief": writing_brief,
+        "resource_boundary": writer_profile.get("resource_boundary") or {},
+    }
+    if operation == "retarget":
+        result = await _compose_pair(inputs)
+        result["repair_history"] = ["revision_retarget", *list(result.get("repair_history") or [])]
+        result["change_summary"] = "已按新岗位重新选材并生成新版本，原岗位版本保持不变。"
+        await _restore_parent_locked(
+            db, bundle, result, facts=facts, requirements=requirements
+        )
+        return result
+
+    selected = revision.get("selected") or {}
+    feedback = str(revision.get("feedback") or "")
+    target_kind = str(selected.get("kind") or "")
+    bullet_ids = [
+        str(value)
+        for value in ([selected["bullet_id"]] if selected.get("bullet_id") else selected.get("bullet_ids") or [])
+    ]
+    repair_history = [f"revision_{operation}"]
+    if not target_kind or not bullet_ids:
+        return {
+            "status": "failed",
+            "error": "revision_selection_missing",
+            "repair_history": repair_history,
+        }
+    material_ids = {str(value) for value in revision.get("material_ids") or []}
+    extra_materials = [
+        material
+        for material in inputs.get("draft_materials") or []
+        if str(material.get("id") or "") in material_ids
+    ]
+    # supplement follows the material reference into both versions when the
+    # same source facts also appear in the other track; the other intents stay
+    # scoped to the explicitly selected version.
+    affected: dict[str, list[str]] = {target_kind: list(bullet_ids)}
+    if operation == "supplement":
+        selected_facts: set[str] = set()
+        for _section, _item, bullet in iter_bullets(frozen.get(target_kind) or {}):
+            if bullet.get("id") in bullet_ids:
+                selected_facts.update(str(value) for value in bullet.get("source_fact_ids") or [])
+        other_kind = "target" if target_kind == "submittable" else "submittable"
+        if selected_facts:
+            other_ids = [
+                str(bullet.get("id"))
+                for _section, _item, bullet in iter_bullets(frozen.get(other_kind) or {})
+                if set(str(value) for value in bullet.get("source_fact_ids") or [])
+                & selected_facts
+            ]
+            if other_ids:
+                affected[other_kind] = other_ids
+    contents: dict[str, dict] = {}
+    reports: dict[str, dict] = {}
+    sources: dict[str, str] = {}
+    headline = inputs.get("headline") or "目标岗位"
+    contact = inputs.get("contact") or {}
+    for kind in ("submittable", "target"):
+        content = deepcopy(frozen.get(kind) or {})
+        if not content:
+            return {
+                "status": "failed",
+                "error": "revision_source_missing",
+                "repair_history": repair_history,
+            }
+        source = "copied"
+        for bullet_id in affected.get(kind, []):
+            if _bullet_locked(content, bullet_id):
+                repair_history.append("locked_bullet_preserved")
+                continue
+            outcome = await _replace_bullet_from_writer(
+                content,
+                facts=facts,
+                requirements=requirements,
+                kind=kind,
+                headline=headline,
+                contact=contact,
+                bullet_id=bullet_id,
+                feedback=feedback,
+                extra_materials=extra_materials,
+            )
+            if outcome is None:
+                return {
+                    "status": "failed",
+                    "error": "revision_model_unavailable",
+                    "repair_history": repair_history,
+                }
+            source = outcome
+        contents[kind] = content
+        sources[kind] = source
+        reports[kind] = await _evaluate_with_critic(
+            content=content, facts=facts, requirements=requirements, mode=kind,
+            **strategy_kwargs,
+        )
+    if not all(report.get("hard_passed") for report in reports.values()):
+        return {
+            "status": "failed",
+            "error": "hard_gates_failed",
+            "repair_history": repair_history,
+            "submittable": contents["submittable"],
+            "target": contents["target"],
+            "sub_report": reports["submittable"],
+            "tgt_report": reports["target"],
+            "sub_source": sources["submittable"],
+            "tgt_source": sources["target"],
+        }
+    return {
+        "status": "ready",
+        "repair_history": repair_history,
+        "submittable": contents["submittable"],
+        "target": contents["target"],
+        "sub_report": reports["submittable"],
+        "tgt_report": reports["target"],
+        "sub_source": sources["submittable"],
+        "tgt_source": sources["target"],
+        "degraded_reason": "",
+        "change_summary": "仅更新所选内容，其余要点与旧稿一致；锁定内容保持不动。",
+        "writing_brief": writing_brief,
+        "writer_profile": writer_profile,
         "job_id": inputs.get("job_id"),
         "snapshot": inputs.get("snapshot") or template_snapshot(),
     }
@@ -1579,8 +2302,18 @@ def _apply_pair_result(db: Session, bundle_id: str, token: str, result: dict) ->
         repair_history=repair_history,
     )
     bundle.status = result["status"]
+    if bundle.revision_json:
+        bundle.revision_json = {
+            **(bundle.revision_json or {}),
+            "change_summary": result.get("change_summary") or "",
+        }
     bundle.generation_metadata_json = {
         "repair_history": repair_history,
+        "writing_brief": result.get("writing_brief") or {},
+        "writer_profile": result.get("writer_profile") or {},
+        "next_actions": build_next_actions(
+            result.get("writing_brief") or {}, result.get("writer_profile") or {}
+        ),
         "degraded": bundle.status == "degraded",
         "degraded_reason": result.get("degraded_reason") or "",
         "quality_gate_bypassed": not get_settings().resume_quality_gate_active(),
@@ -2094,6 +2827,7 @@ async def regenerate_scope(
     section_name: str | None = None,
 ) -> ResumeVersion:
     bundle = owned_bundle(db, user, bundle_id)
+    assert_bundle_mutable(db, bundle)
     version = db.scalar(
         select(ResumeVersion).where(
             ResumeVersion.id == version_id,
@@ -2181,8 +2915,11 @@ async def regenerate_scope(
         content = _merge_locked(rewritten, content, locked_ids)
     else:
         raise AppError("REGENERATE_SCOPE_INVALID", "只支持按要点、分区或整份重生成。", 422)
+    meta = bundle.generation_metadata_json or {}
     report = await evaluate_version_with_critic(
-        content=content, facts=facts, requirements=requirements, mode=version.kind
+        content=content, facts=facts, requirements=requirements, mode=version.kind,
+        writing_brief=meta.get("writing_brief") or {},
+        resource_boundary=(meta.get("writer_profile") or {}).get("resource_boundary") or {},
     )
     snapshot = version.template_snapshot_json or bundle.template_snapshot_json
     old_hash = version.content_hash
@@ -2201,7 +2938,10 @@ async def regenerate_scope(
     return updated
 
 
-async def _replace_bullet_from_writer(content, *, facts, requirements, kind, headline, contact, bullet_id):
+async def _replace_bullet_from_writer(
+    content, *, facts, requirements, kind, headline, contact, bullet_id,
+    feedback: str = "", extra_materials: list | None = None,
+):
     original = None
     for section, item, bullet in iter_bullets(content):
         if bullet.get("id") == bullet_id:
@@ -2230,10 +2970,18 @@ async def _replace_bullet_from_writer(content, *, facts, requirements, kind, hea
         "new_claims": list(bullet.get("new_claims") or []),
         "verification_status": bullet.get("verification_status") or "ai_generated",
     }
+    prompt = f"{RESUME_REWRITE_SYSTEM_PROMPT} {RESUME_REWRITE_EXISTING_PROMPT}"
+    if feedback:
+        prompt += (
+            " 只按用户反馈调整这一条要点：保留事实、所属经历与成果边界，"
+            "不得把未完成内容写成已完成。"
+        )
+    if extra_materials:
+        prompt += " 用户补充的素材只能用于完善这条要点，不得编造未提供的事实。"
     try:
         structured, provider = await generate_structured(
             task="resume_rewrite",
-            system_prompt=f"{RESUME_REWRITE_SYSTEM_PROMPT} {RESUME_REWRITE_EXISTING_PROMPT}",
+            system_prompt=prompt,
             user_payload={
                 "scope": "bullet",
                 "kind": kind,
@@ -2253,6 +3001,8 @@ async def _replace_bullet_from_writer(content, *, facts, requirements, kind, hea
                     for requirement in scoped_requirements
                     if isinstance(requirement, dict)
                 ],
+                "user_feedback": feedback,
+                "supplementary_materials": list(extra_materials or []),
                 "mock_response": mock,
             },
             response_model=ResumeBulletRewriteOutput,

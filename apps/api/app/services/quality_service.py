@@ -127,6 +127,8 @@ async def evaluate_version_with_critic(
     facts: list,
     requirements: list[dict],
     mode: str,
+    writing_brief: dict | None = None,
+    resource_boundary: dict | None = None,
 ) -> dict:
     report = evaluate_version(
         content=content, facts=facts, requirements=requirements, mode=mode
@@ -167,6 +169,8 @@ async def evaluate_version_with_critic(
                 "requirements": requirements,
                 "kind": mode,
                 "headline": content.get("headline"),
+                "writing_brief": writing_brief or {},
+                "resource_boundary": resource_boundary or {},
                 "bullet_count": len(visible_bullets(content)),
                 "bullets": [
                     {"id": bullet.get("id"), "text": bullet.get("text")}
