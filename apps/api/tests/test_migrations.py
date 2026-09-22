@@ -721,3 +721,81 @@ def test_0012_backfill_is_idempotent_when_reapplied(migration_database):
             assert connection.scalar(text("SELECT COUNT(*) FROM tasks")) == 0
     finally:
         engine.dispose()
+
+
+def test_0014_upgrades_populated_sqlite_with_child_bundle_rows(migration_database):
+    """An existing DB with bundle children must upgrade without losing rows."""
+    config, database_path = migration_database
+    command.upgrade(config, "0013_add_invite_codes")
+    engine = make_engine(f"sqlite:///{database_path}")
+    now = "2026-09-22 00:00:00"
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id,email,password_hash,display_name,role,status,"
+                    "timezone,created_at,updated_at) VALUES "
+                    "('u1','u1@example.test','x','U','user','active','Asia/Shanghai',:now,:now)"
+                ),
+                {"now": now},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO resumes (id,user_id,original_file_key,original_media_type,"
+                    "display_name,parse_status,parsed_text,parser_version,created_at,updated_at) "
+                    "VALUES ('r1','u1','k','application/pdf','r','parsed','t','1',:now,:now)"
+                ),
+                {"now": now},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO target_profiles (id,user_id,mode,snapshot_json,input_hash,"
+                    "quality_metadata_json,created_at,updated_at) VALUES "
+                    "('p1','u1','single_jd','{}','h','{}',:now,:now)"
+                ),
+                {"now": now},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO resume_bundles (id,user_id,base_resume_id,target_profile_id,"
+                    "facts_snapshot_json,target_snapshot_json,template_snapshot_json,"
+                    "idempotency_key,generation_metadata_json,created_at,updated_at) VALUES "
+                    "('b1','u1','r1','p1','{}','{}','{}','k','{}',:now,:now)"
+                ),
+                {"now": now},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO resume_versions (id,user_id,base_resume_id,title,kind,"
+                    "content_json,traceability_json,guard_status,review_status,export_file_key,"
+                    "content_hash,template_snapshot_json,quality_report_json,created_at,updated_at,"
+                    "bundle_id) VALUES "
+                    "('v1','u1','r1','t','submittable','{}','{}','passed','draft','','h','{}','{}',"
+                    ":now,:now,'b1')"
+                ),
+                {"now": now},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO interview_guides (id,user_id,resume_version_id,target_profile_id,"
+                    "kind,content_json,quality_report_json,created_at,updated_at) VALUES "
+                    "('g1','u1','v1','p1','submittable','{}','{}',:now,:now)"
+                ),
+                {"now": now},
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(config, "head")
+    engine = make_engine(f"sqlite:///{database_path}")
+    try:
+        with engine.connect() as connection:
+            assert {"parent_bundle_id", "revision_json"} <= _column_names(
+                database_path, "resume_bundles"
+            )
+            assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
+            assert connection.scalar(text("SELECT COUNT(*) FROM resume_versions WHERE id='v1'")) == 1
+            assert connection.scalar(text("SELECT COUNT(*) FROM interview_guides WHERE id='g1'")) == 1
+            assert connection.scalar(text("SELECT bundle_id FROM resume_versions WHERE id='v1'")) == "b1"
+    finally:
+        engine.dispose()

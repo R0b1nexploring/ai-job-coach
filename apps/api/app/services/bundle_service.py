@@ -1848,13 +1848,17 @@ async def _compose_pair(inputs: dict) -> dict:
             f"model_unavailable_local_fallback:{detail}" if detail else "model_unavailable_local_fallback"
         )
 
-    sub_report = await _evaluate_with_critic(
-        content=submittable, facts=facts, requirements=requirements, mode="submittable",
-        **strategy_kwargs,
-    )
-    tgt_report = await _evaluate_with_critic(
-        content=target, facts=facts, requirements=requirements, mode="target",
-        **strategy_kwargs,
+    # The two reviews are independent model calls; run them concurrently so a
+    # bundle waits for one review instead of two.
+    sub_report, tgt_report = await asyncio.gather(
+        _evaluate_with_critic(
+            content=submittable, facts=facts, requirements=requirements, mode="submittable",
+            **strategy_kwargs,
+        ),
+        _evaluate_with_critic(
+            content=target, facts=facts, requirements=requirements, mode="target",
+            **strategy_kwargs,
+        ),
     )
     _record_critic_completeness(
         sub_report=sub_report, tgt_report=tgt_report, repair_history=repair_history
@@ -1914,13 +1918,15 @@ async def _compose_pair(inputs: dict) -> dict:
                 degraded = True
                 if repair_error:
                     repair_history.append(f"repair_target_fallback:{repair_error}")
-            sub_report = await _evaluate_with_critic(
-                content=submittable, facts=facts, requirements=requirements, mode="submittable",
-                **strategy_kwargs,
-            )
-            tgt_report = await _evaluate_with_critic(
-                content=target, facts=facts, requirements=requirements, mode="target",
-                **strategy_kwargs,
+            sub_report, tgt_report = await asyncio.gather(
+                _evaluate_with_critic(
+                    content=submittable, facts=facts, requirements=requirements, mode="submittable",
+                    **strategy_kwargs,
+                ),
+                _evaluate_with_critic(
+                    content=target, facts=facts, requirements=requirements, mode="target",
+                    **strategy_kwargs,
+                ),
             )
             _record_critic_completeness(
                 sub_report=sub_report,
@@ -1948,26 +1954,32 @@ async def _compose_pair(inputs: dict) -> dict:
         # back to the deterministic content, which must satisfy the same STAR
         # contract; a placeholder fallback is rejected below rather than
         # delivered as degraded.
-        if not sub_report["hard_passed"] or sub_semantic_open:
+        need_sub_fallback = not sub_report["hard_passed"] or sub_semantic_open
+        need_tgt_fallback = not tgt_report["hard_passed"] or tgt_semantic_open
+        if need_sub_fallback:
             submittable = _fallback_version(
                 facts, requirements, kind="submittable", headline=headline, contact=contact
             )
-            sub_report = await _evaluate_with_critic(
-                content=submittable, facts=facts, requirements=requirements, mode="submittable",
-                **strategy_kwargs,
-            )
             degraded = True
             repair_history.append("deterministic_submittable_fallback")
-        if not tgt_report["hard_passed"] or tgt_semantic_open:
+        if need_tgt_fallback:
             target = _fallback_version(
                 facts, requirements, kind="target", headline=headline, contact=contact
             )
-            tgt_report = await _evaluate_with_critic(
-                content=target, facts=facts, requirements=requirements, mode="target",
-                **strategy_kwargs,
-            )
             degraded = True
             repair_history.append("deterministic_target_fallback")
+        if need_sub_fallback or need_tgt_fallback:
+            fallback_reports = await asyncio.gather(
+                _evaluate_with_critic(
+                    content=submittable, facts=facts, requirements=requirements, mode="submittable",
+                    **strategy_kwargs,
+                ),
+                _evaluate_with_critic(
+                    content=target, facts=facts, requirements=requirements, mode="target",
+                    **strategy_kwargs,
+                ),
+            )
+            sub_report, tgt_report = fallback_reports
 
         if not sub_report["hard_passed"] or not tgt_report["hard_passed"]:
             return {

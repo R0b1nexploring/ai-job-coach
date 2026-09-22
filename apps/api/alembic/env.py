@@ -58,15 +58,28 @@ def run_migrations_offline():
 def run_migrations_online():
     from app.database import make_engine
 
-    with make_engine(config.get_main_option("sqlalchemy.url")).connect() as connection:
+    url = config.get_main_option("sqlalchemy.url")
+    is_sqlite = url.startswith("sqlite")
+    with make_engine(url).connect() as connection:
         _ensure_version_table(connection)
         # Commit the widened table before Alembic starts managing the
         # transaction. Alembic treats an already-open transaction as its own and
         # would otherwise roll this DDL back with the migration batch.
         connection.commit()
+        if is_sqlite:
+            # SQLite cannot add a foreign key without rebuilding the table, and
+            # a rebuild drops the table. With child rows present (for example
+            # resume_versions.bundle_id -> resume_bundles) FK enforcement makes
+            # that drop fail. Disable it for the migration window and restore it
+            # afterwards; the batch copy still preserves the existing rows.
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            connection.commit()
         context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
         with context.begin_transaction():
             context.run_migrations()
+        if is_sqlite:
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            connection.commit()
 
 
 run_migrations_offline() if context.is_offline_mode() else run_migrations_online()

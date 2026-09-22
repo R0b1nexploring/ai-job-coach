@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from html import escape
 from copy import deepcopy
+import asyncio
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -89,11 +90,18 @@ async def generate_guides_for_bundle(db: Session, bundle: ResumeBundle) -> list[
         guide.id: db.get(ResumeVersion, guide.resume_version_id) for guide in guides
     }
     db.commit()
-    for guide in guides:
-        version = versions.get(guide.id)
-        if version is None:
-            continue
-        await _fill_guide(db, guide, version, bundle=bundle, profile=profile, facts=facts)
+    # Both version guides are independent; run their model calls concurrently,
+    # then persist sequentially because they share one Session.
+    targets = [(guide, versions.get(guide.id)) for guide in guides]
+    targets = [(guide, version) for guide, version in targets if version is not None]
+    built_rows = await asyncio.gather(
+        *[
+            _build_guide_content(version, bundle=bundle, profile=profile, facts=facts)
+            for _guide, version in targets
+        ]
+    )
+    for (guide, version), built in zip(targets, built_rows):
+        _persist_guide(guide, version, built)
     db.flush()
     return guides
 
@@ -145,6 +153,16 @@ def _upsert_guide(db: Session, bundle: ResumeBundle, version: ResumeVersion) -> 
 
 
 async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bundle, profile, facts) -> None:
+    built = await _build_guide_content(version, bundle=bundle, profile=profile, facts=facts)
+    _persist_guide(guide, version, built)
+
+
+async def _build_guide_content(version: ResumeVersion, *, bundle, profile, facts) -> dict:
+    """Run the guide model call and local alignment without touching the DB.
+
+    Splitting this from persistence lets the two version guides run their model
+    calls concurrently while the shared Session is only written sequentially.
+    """
     bullets = visible_bullets(version.content_json or {})
     needed = list(bullets)
     strategy = deepcopy((bundle.generation_metadata_json or {}).get("writing_brief") or {})
@@ -258,6 +276,26 @@ async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bund
         covered = {card.get("bullet_id") for card in cards}
         missing = [bullet["id"] for bullet in needed if bullet["id"] not in covered]
     missing_projects = _missing_project_cards(needed_projects, content.get("project_cards") or [])
+    return {
+        "content": content,
+        "source": source,
+        "coverage_repaired": coverage_repaired,
+        "needed": needed,
+        "needed_projects": needed_projects,
+        "missing": missing,
+        "missing_projects": missing_projects,
+        "facts": list(facts or []),
+    }
+
+
+def _persist_guide(guide: InterviewGuide, version: ResumeVersion, built: dict) -> None:
+    content = built["content"]
+    source = built["source"]
+    needed = built["needed"]
+    needed_projects = built["needed_projects"]
+    missing = built["missing"]
+    missing_projects = built["missing_projects"]
+    facts = built.get("facts") or []
     if missing or missing_projects:
         guide.status = "queued"
         guide.quality_report_json = {
@@ -294,7 +332,7 @@ async def _fill_guide(db, guide: InterviewGuide, version: ResumeVersion, *, bund
     guide.quality_report_json = {
         "hard_passed": True,
         "coverage": 1,
-        "issues": ["coverage_repaired"] if coverage_repaired else [],
+        "issues": ["coverage_repaired"] if built.get("coverage_repaired") else [],
         "project_coverage": 1 if needed_projects else None,
         "star_contract_version": 1 if has_star_contract(version.content_json or {}) else None,
         "content_hash": version.content_hash,
